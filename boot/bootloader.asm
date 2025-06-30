@@ -70,7 +70,25 @@ gdt_start: ; This label marks the very beginning of our GDT map.
     db 10011010b ; "Access" byte: describes how this memory can be used (e.g., executable)
     db 11001111b ; "Flags" and another part of the "size" (e.g., 32-bit, 4KB blocks)
     db 0x0       ; The last part of the "starting address"
+
+    ; 3. Our "Data" Entry (for storing program data) - 8 bytes
+    ; This rule tells the CPU: "You can read and write data from memory starting at address 0,
+    ; all the way up to 4 Gigabytes. Treat this memory as 32-bit."
+    dw 0xFFFF    ; Part of the "size" of this memory chunk
+    dw 0x0       ; Part of the "starting address"
+    db 0x0       ; Another part of the "starting address"
+    db 10010010b ; "Access" byte: describes how this memory can be used (e.g., writable)
+    db 11001111b ; "Flags" and another part of the "size" (e.g., 32-bit, 4KB blocks)
+    db 0x0       ; The last part of the "starting address"
 gdt_end: ; This label marks the end of our GDT map for now.
+
+; --- GDT Pointer (for the CPU to find our GDT map) ---
+; This special 6-byte structure tells the CPU:
+; 1. The total size of our GDT map (minus 1).
+; 2. The exact memory address where our GDT map starts.
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1 ; The "size" of our GDT map (2 bytes)
+    dd gdt_start               ; The "starting address" of our GDT map (4 bytes)
 
 ; --------------------------------------------------------------------------
 ; Boot Signature (Crucial for BIOS)
