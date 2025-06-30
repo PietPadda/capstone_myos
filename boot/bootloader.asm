@@ -55,6 +55,23 @@ hang:
 msg_welcome:
     db 'MyOS has booted successfully!', 0
 
+; --- Global Descriptor Table (GDT) - Our Memory Map ---
+; This table defines how the CPU can access different chunks of memory.
+gdt_start: ; This label marks the very beginning of our GDT map.
+    ; 1. The "Null" Entry (Required Empty Slot) - always 8 bytes of zeros
+    dq 0x0
+
+    ; 2. Our "Code" Entry (for running program instructions) - 8 bytes
+    ; This rule tells the CPU: "You can execute code from memory starting at address 0,
+    ; all the way up to 4 Gigabytes. Treat this memory as 32-bit."
+    dw 0xFFFF    ; Part of the "size" of this memory chunk
+    dw 0x0       ; Part of the "starting address" of this memory chunk
+    db 0x0       ; Another part of the "starting address"
+    db 10011010b ; "Access" byte: describes how this memory can be used (e.g., executable)
+    db 11001111b ; "Flags" and another part of the "size" (e.g., 32-bit, 4KB blocks)
+    db 0x0       ; The last part of the "starting address"
+gdt_end: ; This label marks the end of our GDT map for now.
+
 ; --------------------------------------------------------------------------
 ; Boot Signature (Crucial for BIOS)
 ; --------------------------------------------------------------------------
