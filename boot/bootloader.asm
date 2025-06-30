@@ -75,6 +75,13 @@ start:                  ; label marks very first instruction bootloader will exe
     ; where to find our memory map for Protected Mode.
     lgdt [gdt_descriptor]
 
+    ; --- Set Protected Mode Enable (PE) bit in CR0 register ---
+    ; This is the instruction that officially switches the CPU from
+    ; 16-bit Real Mode to 32-bit Protected Mode.
+    mov eax, cr0         ; Read the current value of CR0 into EAX (a 32-bit register)
+    or eax, 0x1          ; Set the lowest bit (bit 0), which is the PE (Protected Mode Enable) bit
+    mov cr0, eax         ; Write the modified value back to CR0
+
     ; --- Print our welcome message to the screen ---
     mov si, msg_welcome ; Point SI to our message string.
     mov ah, 0x0E        ; Use BIOS teletype function.
