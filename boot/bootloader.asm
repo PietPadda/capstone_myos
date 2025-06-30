@@ -20,3 +20,18 @@ start:                  ; label marks very first instruction bootloader will exe
     ; stack will grow into memory *before* our code (addresses < 0x7C00),
     ; preventing it from overwriting the bootloader's own instructions (which are at 0x7C00 to 0x7DFF).
     mov sp, 0x7C00      ; Set SP to the beginning of our segment (offset 0x7C00 from its base, which is 0x7C0).
+
+; --------------------------------------------------------------------------
+; Infinite Loop (Halt)
+; --------------------------------------------------------------------------
+    jmp $               ; jump to  current instruction, creating infinite loop
+                        ; prevents CPU from executing random memory after our code
+
+; --------------------------------------------------------------------------
+; Boot Signature (Crucial for BIOS)
+; --------------------------------------------------------------------------
+times 510 - ($ - $$) db 0 ; fill rest of 512-byte sector with zeros
+                          ; ($ - $$) calculates current size from 'org 0x7C00'
+                          ; ensures boot sector is precisely 512 bytes long before the signature
+dw 0xAA55                 ; Boot signature: 0xAA55 must be at offset 510 (0x1FE) of boot sector
+                          ; BIOS verifies signature to consider the sector "bootable"
