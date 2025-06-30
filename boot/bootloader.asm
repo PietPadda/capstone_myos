@@ -33,6 +33,11 @@ start:                  ; label marks very first instruction bootloader will exe
     mov al, 0x03  ; Mode 3 is 80x25 16-color text mode.
     int 0x10
 
+    ; --- Disable interrupts (CLI) ---
+    ; This instruction tells the CPU to temporarily ignore most hardware signals
+    ; (like keyboard presses or timer ticks) that could interrupt our process.
+    cli
+
     ; --- Print our welcome message to the screen ---
     mov si, msg_welcome ; Point SI to our message string.
     mov ah, 0x0E        ; Use BIOS teletype function.
