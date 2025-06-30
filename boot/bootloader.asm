@@ -113,16 +113,26 @@ bits 32 ; Instruct NASM to assemble all following code as 32-bit instructions.
 ; This label marks the very first instruction the CPU will execute in 32-bit Protected Mode.
 start_32bit:
     ; We are now officially running in 32-bit Protected Mode!
-    ; At this point, only the CS register is correctly loaded for 32-bit.
-    ; Other segment registers (DS, ES, SS, etc.) are still using old 16-bit values,
-    ; or are effectively invalid. We'll fix them next.
 
-    ; For now, let's just make sure the CPU doesn't crash immediately.
-    ; We'll add more code here in the next step.
-    ; Simple infinite loop to halt execution for now
-hang_32bit:
-    hlt
-    jmp hang_32bit
+    ; --- Initialize 32-bit Segment Registers ---
+    ; In Protected Mode, segment registers hold 'selectors' (offsets into the GDT),
+    ; not direct base addresses. We load them with our GDT_DATA selector (0x10).
+    mov ax, GDT_DATA     ; Load the GDT_DATA selector (0x10) into AX
+    mov ds, ax           ; Set Data Segment register
+    mov es, ax           ; Set Extra Segment register
+    mov fs, ax           ; Set FS Segment register
+    mov gs, ax           ; Set GS Segment register
+    mov ss, ax           ; Set Stack Segment register
+
+    ; --- Set up the 32-bit Stack Pointer (ESP) ---
+    ; Choose a safe address for the 32-bit stack, e.g., near the end of 1MB (0x90000).
+    ; The stack grows downwards in x86, so 0x90000 is a high address, safe from code.
+    mov esp, 0x90000     ; Set the 32-bit Stack Pointer
+
+    ; For now, let's just halt the CPU after setting up the registers.
+    hang_32bit:
+        hlt              ; Halt the CPU
+        jmp hang_32bit   ; Infinite loop if somehow woken up
 
 ; --- Data Section ---
 msg_welcome:
