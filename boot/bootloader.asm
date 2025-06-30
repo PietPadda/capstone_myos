@@ -5,6 +5,13 @@
 org 0x7C00              ; tells NASM that code will be loaded by BIOS at physical address 0x7C00.
 bits 16                 ; instructs NASM  generate 16-bit instruction opcodes for Real Mode.
 
+; --- GDT Constants (Labels for our Memory Map) ---
+; Each "segment" (chunk of memory) in our map will have an "entry".
+; Each entry is 8 bytes big. These numbers are just positions within the map.
+GDT_NULL equ 0       ; Label for the very first (empty) entry in our map
+GDT_CODE equ 0x8     ; Label for the entry describing where our program code is
+GDT_DATA equ 0x10    ; Label for the entry describing where our program data is
+
 start:                  ; label marks very first instruction bootloader will execute
     ; setup segment registers.
     ; in 16-bit Real Mode, segment registers are explicitly set
