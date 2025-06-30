@@ -129,6 +129,71 @@ start_32bit:
     ; The stack grows downwards in x86, so 0x90000 is a high address, safe from code.
     mov esp, 0x90000     ; Set the 32-bit Stack Pointer
 
+    ; --- Print a welcome message directly to VGA text mode memory ---
+    ; In 32-bit Protected Mode, we write directly to video memory at 0xB8000.
+    ; Each character takes 2 bytes: ASCII code + Color Attribute.
+    ; 0x0F means 'white text on black background'.
+
+    ; "P"
+    mov byte [0xB8000], 'P' ; Character 'P'
+    mov byte [0xB8001], 0x0F ; Color (white on black)
+
+    ; "R"
+    mov byte [0xB8002], 'R'
+    mov byte [0xB8003], 0x0F
+
+    ; "O"
+    mov byte [0xB8004], 'O'
+    mov byte [0xB8005], 0x0F
+    
+    ; "T"
+    mov byte [0xB8006], 'T'
+    mov byte [0xB8007], 0x0F
+    
+    ; "E"
+    mov byte [0xB8008], 'E'
+    mov byte [0xB8009], 0x0F
+    
+    ; "C"
+    mov byte [0xB800A], 'C'
+    mov byte [0xB800B], 0x0F
+    
+    ; "T"
+    mov byte [0xB800C], 'T'
+    mov byte [0xB800D], 0x0F
+    
+    ; "E"
+    mov byte [0xB800E], 'E'
+    mov byte [0xB800F], 0x0F
+    
+    ; "D"
+    mov byte [0xB8010], 'D'
+    mov byte [0xB8011], 0x0F
+
+    ; Space
+    mov byte [0xB8012], ' '
+    mov byte [0xB8013], 0x0F
+
+    ; "M"
+    mov byte [0xB8014], 'M'
+    mov byte [0xB8015], 0x0F
+
+    ; "O"
+    mov byte [0xB8016], 'O'
+    mov byte [0xB8017], 0x0F
+
+    ; "D"
+    mov byte [0xB8018], 'D'
+    mov byte [0xB8019], 0x0F
+
+    ; "E"
+    mov byte [0xB801A], 'E'
+    mov byte [0xB801B], 0x0F
+
+    ; "!"
+    mov byte [0xB801C], '!'
+    mov byte [0xB801D], 0x0F
+
     ; For now, let's just halt the CPU after setting up the registers.
     hang_32bit:
         hlt              ; Halt the CPU
