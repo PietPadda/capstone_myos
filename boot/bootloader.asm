@@ -82,6 +82,13 @@ start:                  ; label marks very first instruction bootloader will exe
     or eax, 0x1          ; Set the lowest bit (bit 0), which is the PE (Protected Mode Enable) bit
     mov cr0, eax         ; Write the modified value back to CR0
 
+    ; --- Far Jump to 32-bit Protected Mode Code Segment ---
+    ; This is a special jump that does two things:
+    ; 1. Reloads the Code Segment (CS) register using our 32-bit GDT_CODE selector.
+    ; 2. Jumps execution to the 'protected_mode_start' label.
+    ; This clears any old 16-bit instructions from the CPU's internal "pipeline".
+    jmp GDT_CODE:start_32bit
+
     ; --- Print our welcome message to the screen ---
     mov si, msg_welcome ; Point SI to our message string.
     mov ah, 0x0E        ; Use BIOS teletype function.
@@ -99,6 +106,23 @@ hang:
     hlt                 ; Halt the CPU.
     jmp hang            ; Loop here to be safe.
 
+; IMPORTANT: The code below this far jump will be assembled as 32-bit.
+; We need to tell NASM this!
+bits 32 ; Instruct NASM to assemble all following code as 32-bit instructions.
+
+; This label marks the very first instruction the CPU will execute in 32-bit Protected Mode.
+start_32bit:
+    ; We are now officially running in 32-bit Protected Mode!
+    ; At this point, only the CS register is correctly loaded for 32-bit.
+    ; Other segment registers (DS, ES, SS, etc.) are still using old 16-bit values,
+    ; or are effectively invalid. We'll fix them next.
+
+    ; For now, let's just make sure the CPU doesn't crash immediately.
+    ; We'll add more code here in the next step.
+    ; Simple infinite loop to halt execution for now
+hang_32bit:
+    hlt
+    jmp hang_32bit
 
 ; --- Data Section ---
 msg_welcome:
