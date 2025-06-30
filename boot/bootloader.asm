@@ -38,6 +38,37 @@ start:                  ; label marks very first instruction bootloader will exe
     ; (like keyboard presses or timer ticks) that could interrupt our process.
     cli
 
+    ; --- Enable A20 Line ---
+    ; This historical step allows the CPU to access memory beyond 1MB.
+    ; We communicate with the keyboard controller (ports 0x64 and 0x60).
+
+    ; Wait for keyboard controller to be ready (input buffer empty)
+.wait_a20_kb_ready_1:
+    in al, 0x64          ; Read keyboard controller status port
+    test al, 0x2         ; Check if input buffer (bit 1) is full (0x2 = 00000010b)
+    jnz .wait_a20_kb_ready_1 ; If not ready (buffer full), loop
+
+    mov al, 0xAE         ; Command: Tell controller we want to write to port 0x60 (A20 gate)
+    out 0x64, al         ; Send command to keyboard controller command port
+
+    ; Wait for keyboard controller to be ready again
+.wait_a20_kb_ready_2:
+    in al, 0x64
+    test al, 0x2
+    jnz .wait_a20_kb_ready_2
+
+    mov al, 0xD1         ; Command: Tell controller we want to write to output port
+    out 0x64, al         ; Send command to keyboard controller command port
+
+    ; Wait for keyboard controller to be ready a third time
+.wait_a20_kb_ready_3:
+    in al, 0x64
+    test al, 0x2
+    jnz .wait_a20_kb_ready_3
+
+    mov al, 0xDF         ; Data: 'DF' tells the controller to enable the A20 line
+    out 0x60, al         ; Send data to keyboard controller data port
+
     ; --- Print our welcome message to the screen ---
     mov si, msg_welcome ; Point SI to our message string.
     mov ah, 0x0E        ; Use BIOS teletype function.
