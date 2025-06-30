@@ -69,6 +69,12 @@ start:                  ; label marks very first instruction bootloader will exe
     mov al, 0xDF         ; Data: 'DF' tells the controller to enable the A20 line
     out 0x60, al         ; Send data to keyboard controller data port
 
+    ; --- Load GDT (LGDT) ---
+    ; This instruction loads the base address and limit of our GDT
+    ; into the CPU's special 'GDTR' register. The CPU now knows
+    ; where to find our memory map for Protected Mode.
+    lgdt [gdt_descriptor]
+
     ; --- Print our welcome message to the screen ---
     mov si, msg_welcome ; Point SI to our message string.
     mov ah, 0x0E        ; Use BIOS teletype function.
