@@ -14,13 +14,10 @@ GDT_DATA equ 0x10    ; Label for the entry describing where our program data is
 
 start:                  ; label marks very first instruction bootloader will execute
     ; setup segment registers.
-    ; in 16-bit Real Mode, segment registers are explicitly set
-    ; we set DS, ES, SS to current code segment (CS), typically holds 0x7C0.
-    ; this makes all memory accesses relative to our code's base address (0x7C00).
-    mov ax, cs          ; Move value from CS (Code Segment) into AX.
-    mov ds, ax          ; Set DS (Data Segment) to same value as CS.
-    mov es, ax          ; Set ES (Extra Segment) to same value as CS.
-    mov ss, ax          ; Set SS (Stack Segment) to same value as CS.
+    xor ax, ax      ; Set AX to zero
+    mov ds, ax      ; Set Data Segment to 0
+    mov es, ax      ; Set Extra Segment to 0
+    mov ss, ax      ; Set Stack Segment to 0
 
     ; set up the Stack Pointer (SP).
     ; stack grows downwards in x86. By starting SP at 0x7C00 (our segment base),
@@ -31,43 +28,44 @@ start:                  ; label marks very first instruction bootloader will exe
     ; --- Set video mode to 80x25 text mode ---
     mov ah, 0x00
     mov al, 0x03  ; Mode 3 is 80x25 16-color text mode.
-    int 0x10
+    int 0x10      ; this is the command that sets the video mode!
+
+    ; --- Print our welcome message to the screen ---
+    mov si, msg_welcome ; Point SI to our message string.
+    mov ah, 0x0E        ; Use BIOS teletype function.
+print_loop:
+    lodsb               ; Load byte from [DS:SI] into AL, advance SI.
+    or al, al           ; Check if AL is zero (end of string).
+    jz done_printing    ; If zero, we are done.
+    int 0x10            ; Call BIOS video interrupt to print.
+    jmp print_loop      ; Loop to the next character.
+
+done_printing:
+    ; --- Load Kernel from Disk ---
+    mov ax, 0x1000      ; Set ES to 0x1000. ES:BX will be our destination address.
+    mov es, ax
+    xor bx, bx          ; Set BX to 0. Full address is ES:BX = 0x1000:0x0000 = 0x10000.
+
+    mov ah, 0x02        ; BIOS read sectors function
+    mov al, 8           ; Read 8 sectors (4KB), enough for a small kernel
+    mov ch, 0x00        ; Cylinder 0
+    mov cl, 0x02        ; Sector 2 (where our kernel starts)
+    mov dh, 0x00        ; Head 0
+    mov dl, 0x00        ; Drive 0 (A:)
+    int 0x13            ; Call BIOS disk service
+
+    jc disk_error       ; If the read failed, the Carry Flag is set. Jump to an error handler.
+
+    cmp al, 8           ; Compare AL (sectors actually read) with 8 (sectors requested)
+    jne disk_error      ; If they're Not Equal, jump to our error handler
+
+    ; --- Enable A20 Line (Fast A20 Gate Method) ---
+    in al, 0x92     ; Read from system control port A
+    or al, 2        ; Set bit 1 (the A20 enable bit), turning it on
+    out 0x92, al    ; Write the new value back to the port
 
     ; --- Disable interrupts (CLI) ---
-    ; This instruction tells the CPU to temporarily ignore most hardware signals
-    ; (like keyboard presses or timer ticks) that could interrupt our process.
     cli
-
-    ; --- Enable A20 Line ---
-    ; This historical step allows the CPU to access memory beyond 1MB.
-    ; We communicate with the keyboard controller (ports 0x64 and 0x60).
-
-    ; Wait for keyboard controller to be ready (input buffer empty)
-.wait_a20_kb_ready_1:
-    in al, 0x64          ; Read keyboard controller status port
-    test al, 0x2         ; Check if input buffer (bit 1) is full (0x2 = 00000010b)
-    jnz .wait_a20_kb_ready_1 ; If not ready (buffer full), loop
-
-    mov al, 0xAE         ; Command: Tell controller we want to write to port 0x60 (A20 gate)
-    out 0x64, al         ; Send command to keyboard controller command port
-
-    ; Wait for keyboard controller to be ready again
-.wait_a20_kb_ready_2:
-    in al, 0x64
-    test al, 0x2
-    jnz .wait_a20_kb_ready_2
-
-    mov al, 0xD1         ; Command: Tell controller we want to write to output port
-    out 0x64, al         ; Send command to keyboard controller command port
-
-    ; Wait for keyboard controller to be ready a third time
-.wait_a20_kb_ready_3:
-    in al, 0x64
-    test al, 0x2
-    jnz .wait_a20_kb_ready_3
-
-    mov al, 0xDF         ; Data: 'DF' tells the controller to enable the A20 line
-    out 0x60, al         ; Send data to keyboard controller data port
 
     ; --- Load GDT (LGDT) ---
     ; This instruction loads the base address and limit of our GDT
@@ -89,119 +87,29 @@ start:                  ; label marks very first instruction bootloader will exe
     ; This clears any old 16-bit instructions from the CPU's internal "pipeline".
     jmp GDT_CODE:start_32bit
 
-    ; --- Print our welcome message to the screen ---
-    mov si, msg_welcome ; Point SI to our message string.
-    mov ah, 0x0E        ; Use BIOS teletype function.
-print_loop:
-    lodsb               ; Load byte from [DS:SI] into AL, advance SI.
-    or al, al           ; Check if AL is zero (end of string).
-    jz done_printing    ; If zero, we are done.
-    int 0x10            ; Call BIOS video interrupt to print.
-    jmp print_loop      ; Loop to the next character.
+disk_error:
+    mov ah, 0x0E    ; BIOS teletype function
+    mov al, 'X'     ; Character to print
+    int 0x10        ; Print it
+    ; Fall through to hang
 
-done_printing:
-    ; --- Halt the CPU ---
-    cli                 ; Disable interrupts.
 hang:
-    hlt                 ; Halt the CPU.
-    jmp hang            ; Loop here to be safe.
+    cli             ; Disable interrupts
+    hlt             ; Halt the CPU
+    jmp hang        ; Loop just in case
 
-; IMPORTANT: The code below this far jump will be assembled as 32-bit.
-; We need to tell NASM this!
-bits 32 ; Instruct NASM to assemble all following code as 32-bit instructions.
+; =======================================================
+; Data Section
+; All data used by the bootloader goes here.
+; =======================================================
 
-; This label marks the very first instruction the CPU will execute in 32-bit Protected Mode.
-start_32bit:
-    ; We are now officially running in 32-bit Protected Mode!
-
-    ; --- Initialize 32-bit Segment Registers ---
-    ; In Protected Mode, segment registers hold 'selectors' (offsets into the GDT),
-    ; not direct base addresses. We load them with our GDT_DATA selector (0x10).
-    mov ax, GDT_DATA     ; Load the GDT_DATA selector (0x10) into AX
-    mov ds, ax           ; Set Data Segment register
-    mov es, ax           ; Set Extra Segment register
-    mov fs, ax           ; Set FS Segment register
-    mov gs, ax           ; Set GS Segment register
-    mov ss, ax           ; Set Stack Segment register
-
-    ; --- Set up the 32-bit Stack Pointer (ESP) ---
-    ; Choose a safe address for the 32-bit stack, e.g., near the end of 1MB (0x90000).
-    ; The stack grows downwards in x86, so 0x90000 is a high address, safe from code.
-    mov esp, 0x90000     ; Set the 32-bit Stack Pointer
-
-    ; --- Print a welcome message directly to VGA text mode memory ---
-    ; In 32-bit Protected Mode, we write directly to video memory at 0xB8000.
-    ; Each character takes 2 bytes: ASCII code + Color Attribute.
-    ; 0x0F means 'white text on black background'.
-
-    ; "P"
-    mov byte [0xB8000], 'P' ; Character 'P'
-    mov byte [0xB8001], 0x0F ; Color (white on black)
-
-    ; "R"
-    mov byte [0xB8002], 'R'
-    mov byte [0xB8003], 0x0F
-
-    ; "O"
-    mov byte [0xB8004], 'O'
-    mov byte [0xB8005], 0x0F
-    
-    ; "T"
-    mov byte [0xB8006], 'T'
-    mov byte [0xB8007], 0x0F
-    
-    ; "E"
-    mov byte [0xB8008], 'E'
-    mov byte [0xB8009], 0x0F
-    
-    ; "C"
-    mov byte [0xB800A], 'C'
-    mov byte [0xB800B], 0x0F
-    
-    ; "T"
-    mov byte [0xB800C], 'T'
-    mov byte [0xB800D], 0x0F
-    
-    ; "E"
-    mov byte [0xB800E], 'E'
-    mov byte [0xB800F], 0x0F
-    
-    ; "D"
-    mov byte [0xB8010], 'D'
-    mov byte [0xB8011], 0x0F
-
-    ; Space
-    mov byte [0xB8012], ' '
-    mov byte [0xB8013], 0x0F
-
-    ; "M"
-    mov byte [0xB8014], 'M'
-    mov byte [0xB8015], 0x0F
-
-    ; "O"
-    mov byte [0xB8016], 'O'
-    mov byte [0xB8017], 0x0F
-
-    ; "D"
-    mov byte [0xB8018], 'D'
-    mov byte [0xB8019], 0x0F
-
-    ; "E"
-    mov byte [0xB801A], 'E'
-    mov byte [0xB801B], 0x0F
-
-    ; "!"
-    mov byte [0xB801C], '!'
-    mov byte [0xB801D], 0x0F
-
-    ; For now, let's just halt the CPU after setting up the registers.
-    hang_32bit:
-        hlt              ; Halt the CPU
-        jmp hang_32bit   ; Infinite loop if somehow woken up
-
-; --- Data Section ---
-msg_welcome:
-    db 'MyOS has booted successfully!', 0
+; --- GDT Pointer (for the CPU to find our GDT map) ---
+; This special 6-byte structure tells the CPU:
+; 1. The total size of our GDT map (minus 1).
+; 2. The exact memory address where our GDT map starts.
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1 ; The "size" of our GDT map (2 bytes)
+    dd gdt_start               ; The "starting address" of our GDT map (4 bytes)
 
 ; --- Global Descriptor Table (GDT) - Our Memory Map ---
 ; This table defines how the CPU can access different chunks of memory.
@@ -230,13 +138,44 @@ gdt_start: ; This label marks the very beginning of our GDT map.
     db 0x0       ; The last part of the "starting address"
 gdt_end: ; This label marks the end of our GDT map for now.
 
-; --- GDT Pointer (for the CPU to find our GDT map) ---
-; This special 6-byte structure tells the CPU:
-; 1. The total size of our GDT map (minus 1).
-; 2. The exact memory address where our GDT map starts.
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1 ; The "size" of our GDT map (2 bytes)
-    dd gdt_start               ; The "starting address" of our GDT map (4 bytes)
+msg_welcome:
+    db 'MyOS Bootloader: Loading Kernel...', 0
+
+; IMPORTANT: The code below this far jump will be assembled as 32-bit.
+; We need to tell NASM this!
+bits 32 ; Instruct NASM to assemble all following code as 32-bit instructions.
+
+; This label marks the very first instruction the CPU will execute in 32-bit Protected Mode.
+start_32bit:
+    ; We are now officially running in 32-bit Protected Mode!
+    ; DEBUG: Confirm we reached 32-bit mode
+    mov al, '1'
+    out 0xE9, al
+
+    ; --- Initialize 32-bit Segment Registers ---
+    ; In Protected Mode, segment registers hold 'selectors' (offsets into the GDT),
+    ; not direct base addresses. We load them with our GDT_DATA selector (0x10).
+    mov ax, GDT_DATA     ; Load the GDT_DATA selector (0x10) into AX
+    mov ds, ax           ; Set Data Segment register
+    mov es, ax           ; Set Extra Segment register
+    mov fs, ax           ; Set FS Segment register
+    mov gs, ax           ; Set GS Segment register
+    mov ss, ax           ; Set Stack Segment register
+
+    ; --- Set up the 32-bit Stack Pointer (ESP) ---
+    ; Choose a safe address for the 32-bit stack, e.g., near the end of 1MB (0x90000).
+    ; The stack grows downwards in x86, so 0x90000 is a high address, safe from code.
+    mov esp, 0x90000     ; Set the 32-bit Stack Pointer
+
+    ; DEBUG: Confirm segment registers and stack are set up
+    mov al, '2'
+    out 0xE9, al
+
+    ; Pass VGA buffer address to the kernel in EAX
+    mov eax, 0xB8000
+
+    ; Jump to kernel
+    jmp 0x10000
 
 ; --------------------------------------------------------------------------
 ; Boot Signature (Crucial for BIOS)
@@ -246,3 +185,4 @@ times 510 - ($ - $$) db 0 ; fill rest of 512-byte sector with zeros
                           ; ensures boot sector is precisely 512 bytes long before the signature
 dw 0xAA55                 ; Boot signature: 0xAA55 must be at offset 510 (0x1FE) of boot sector
                           ; BIOS verifies signature to consider the sector "bootable"
+

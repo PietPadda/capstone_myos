@@ -18,15 +18,18 @@ KERNEL_C_SRC := kernel/kernel.c
 # Output binary for the kernel
 KERNEL_BIN := $(BUILD_DIR)/kernel.bin
 
+# Disk image for both bootloader and kernel
+DISK_IMAGE := $(BUILD_DIR)/os_image.bin
+
 # --- QEMU specific variables ---
 # Command to run QEMU for a 64-bit x86 system
 QEMU_CMD := qemu-system-x86_64
 # QEMU options: -fda treats our .bin as a floppy disk;
-# For now, we only boot the bootloader. Later, we'll combine them.
-QEMU_OPTS := -fda $(BOOT_BIN)
+# We use DISK_IMAGE for a combined bootloader + kernel.
+QEMU_OPTS := -fda $(DISK_IMAGE) -debugcon stdio
 
-# --- Default target: Builds both the bootloader and kernel (but not linked yet) ---
-all: $(BOOT_BIN) $(KERNEL_BIN) # Add KERNEL_BIN to the 'all' target
+# --- Default target: Builds both the bootloader and kernel ---
+all: $(DISK_IMAGE) # Add DISK IMAGE to the 'all' target
 
 # --- Rule to build the bootloader binary (.bin) from its assembly source (.asm) ---
 $(BOOT_BIN): $(BOOT_ASM_SRC)
@@ -54,11 +57,19 @@ $(KERNEL_BIN): $(KERNEL_C_SRC)
 	gcc -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -nodefaultlibs \
 		-c $(KERNEL_C_SRC) -o $(BUILD_DIR)/kernel.o
 	ld -m elf_i386 -Ttext 0x10000 --oformat binary \
+		--entry=main \
 		$(BUILD_DIR)/kernel.o -o $(KERNEL_BIN)
 	@echo "Kernel built: $(KERNEL_BIN)"
 
+# --- Rule to create the final disk image ---
+$(DISK_IMAGE): $(BOOT_BIN) $(KERNEL_BIN)
+	@echo "Creating disk image: $(DISK_IMAGE)"
+	@dd if=/dev/zero of=$(DISK_IMAGE) bs=512 count=2880 2>/dev/null
+	@dd if=$(BOOT_BIN) of=$(DISK_IMAGE) bs=512 seek=0 conv=notrunc 2>/dev/null
+	@dd if=$(KERNEL_BIN) of=$(DISK_IMAGE) bs=512 seek=1 conv=notrunc 2>/dev/null
+
 # --- Rule to run the bootloader in QEMU ---
-run: $(BOOT_BIN)
+run: $(DISK_IMAGE)
 	@echo "Running bootloader in QEMU..."
 	$(QEMU_CMD) $(QEMU_OPTS)
 
