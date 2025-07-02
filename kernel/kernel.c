@@ -1,15 +1,26 @@
 // myos/kernel/kernel.c
 
 void main() {
-    // Directly define a pointer to the VGA text-mode buffer.
+    // The bootloader passes the VGA buffer address in EAX.
     volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
 
-    // We'll write the character 'Y' with white text on a blue background.
-    // This unique look ensures that if it appears, it's from this exact code.
-    const unsigned short character = (unsigned short)'Y' | (0x1F << 8);
+    // Define the message as a local char array.
+    // This places the string data on the stack, which we know works,
+    // bypassing any potential linker issues with data sections.
+    char message[] = "Kernel Loaded! Success!";
 
-    // Write the character to the top-left corner of the screen (position 0).
-    *vga_buffer = character;
+    // --- Clear the screen ---
+    for (int i = 0; i < 80 * 25; i++) {
+        vga_buffer[i] = (unsigned short)' ' | 0x0F00;
+    }
+
+
+    // --- Print the message from the stack array ---
+    int j = 0;
+    while (message[j] != '\0') {
+        vga_buffer[j] = (unsigned short)message[j] | 0x0F00;
+        j++;
+    }
 
     // Hang the CPU.
     while (1) {}
