@@ -1,5 +1,26 @@
 // myos/kernel/kernel.c
 
+/**
+ * Writes a byte to the specified I/O port.
+ */
+void port_byte_out(unsigned short port, unsigned char data) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
+}
+
+/**
+ * Updates the VGA cursor's position.
+ */
+void update_cursor(int row, int col) {
+    unsigned short position = (row * 80) + col;
+
+    // Send the high byte of the cursor position
+    port_byte_out(0x3D4, 0x0E);
+    port_byte_out(0x3D5, (unsigned char)(position >> 8));
+    // Send the low byte of the cursor position
+    port_byte_out(0x3D4, 0x0F);
+    port_byte_out(0x3D5, (unsigned char)(position & 0xFF));
+}
+
 void kmain() {
     // The bootloader passes the VGA buffer address in EAX.
     volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
@@ -20,6 +41,9 @@ void kmain() {
         vga_buffer[j] = (unsigned short)message[j] | 0x0F00;
         j++;
     }
+
+    // --- Update the cursor to the position after the message ---
+    update_cursor(0, j);
 
     // Hang the CPU.
     while (1) {}
