@@ -47,7 +47,7 @@ done_printing:
     xor bx, bx          ; Set BX to 0. Full address is ES:BX = 0x1000:0x0000 = 0x10000.
 
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 8           ; Read 8 sectors (4KB), enough for a small kernel
+    mov al, 32           ; Read X sectors (4KB), enough for a small kernel
     mov ch, 0x00        ; Cylinder 0
     mov cl, 0x02        ; Sector 2 (where our kernel starts)
     mov dh, 0x00        ; Head 0
@@ -56,7 +56,7 @@ done_printing:
 
     jc disk_error       ; If the read failed, the Carry Flag is set. Jump to an error handler.
 
-    cmp al, 8           ; Compare AL (sectors actually read) with 8 (sectors requested)
+    cmp al, 32           ; Compare AL (sectors actually read) with X (sectors requested)
     jne disk_error      ; If they're Not Equal, jump to our error handler
 
     ; --- Enable A20 Line (Fast A20 Gate Method) ---
