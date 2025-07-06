@@ -1,5 +1,11 @@
 // myos/kernel/kernel.c
 
+// headers
+#include "idt.h"
+
+// Forward declare our install function
+void idt_install();
+
 /**
  * Writes a byte to the specified I/O port.
  */
@@ -22,6 +28,9 @@ void update_cursor(int row, int col) {
 }
 
 void kmain() {
+    // Install our Interrupt Descriptor Table
+    idt_install();
+    
     // The bootloader passes the VGA buffer address in EAX.
     volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
     // Define the message as a local char array.

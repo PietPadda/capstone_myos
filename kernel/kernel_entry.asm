@@ -15,3 +15,11 @@ _start:
     ; loop should never exit.
     cli
     hlt
+
+; This function is called from our C code to load the IDT pointer.
+global idt_load
+idt_load:
+    ; The first argument (a pointer to our idt_ptr_struct) is on the stack.
+    mov eax, [esp + 4]  ; Get the pointer from the stack
+    lidt [eax]          ; Load the IDT pointer into the IDTR register
+    ret                 ; Return to the C code
