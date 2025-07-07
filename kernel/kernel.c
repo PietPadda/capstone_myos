@@ -4,6 +4,7 @@
 #include "idt.h"
 #include "vga.h"
 #include "types.h"
+#include "io.h"
 
 // Forward-declare functions from other files that we'll call.
 void idt_install();
@@ -11,6 +12,9 @@ void idt_install();
 void kmain() {
     // Set up the Interrupt Descriptor Table
     idt_install();
+
+    // Remap the PIC
+    pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
 
     // Clear the screen to start with a blank slate
     clear_screen();
