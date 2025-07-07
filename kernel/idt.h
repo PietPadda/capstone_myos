@@ -20,4 +20,7 @@ struct idt_ptr_struct {
    uint32_t base;        // The linear address where the IDT starts
 } __attribute__((packed));
 
+void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags);
+void idt_install();
+
 #endif
