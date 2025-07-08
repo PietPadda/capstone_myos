@@ -5,5 +5,6 @@
 
 void clear_screen();
 void update_cursor(int row, int col);
+void print_string(const char* str);
 
 #endif

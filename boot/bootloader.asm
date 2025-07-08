@@ -71,7 +71,7 @@ done_printing:
     ; This instruction loads the base address and limit of our GDT
     ; into the CPU's special 'GDTR' register. The CPU now knows
     ; where to find our memory map for Protected Mode.
-    lgdt [gdt_descriptor]
+    lgdt [cs:gdt_descriptor]
 
     ; --- Set Protected Mode Enable (PE) bit in CR0 register ---
     ; This is the instruction that officially switches the CPU from

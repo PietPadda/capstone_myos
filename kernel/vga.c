@@ -26,3 +26,13 @@ void update_cursor(int row, int col) {
     port_byte_out(0x3D4, 0x0F);
     port_byte_out(0x3D5, (unsigned char)(position & 0xFF));
 }
+
+void print_string(const char* str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        // For simplicity, we'll just write to a fixed location for now.
+        // A real driver would manage cursor position.
+        VGA_BUFFER[i] = (VGA_BUFFER[i] & 0xFF00) | str[i];
+        i++;
+    }
+}
