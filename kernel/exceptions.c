@@ -5,8 +5,11 @@
 
 // C-level handler for all exceptions
 void fault_handler(registers_t r) {
-    // A simple message indicating an exception has occurred.
-    print_string("CPU Exception Caught! System Halted.");
+    clear_screen(); // Start with a clean slate
+    print_string("CPU Exception Caught!\n");
+    print_string("Interrupt Number: ");
+    print_hex(r.int_no); // Print the number from the registers struct
+    print_string("\nSystem Halted.");
 
     // We hang forever.
     for (;;);
