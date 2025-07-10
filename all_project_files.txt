@@ -13,6 +13,8 @@ GDT_CODE equ 0x8     ; Label for the entry describing where our program code is
 GDT_DATA equ 0x10    ; Label for the entry describing where our program data is
 
 start:                  ; label marks very first instruction bootloader will execute
+    mov bh, dl      ; BIOS stores boot drive in DL, save it in BH
+
     ; setup segment registers.
     xor ax, ax      ; Set AX to zero
     mov ds, ax      ; Set Data Segment to 0
@@ -41,28 +43,63 @@ print_loop:
     jmp print_loop      ; Loop to the next character.
 
 done_printing:
+    ; --- Reset disk system (INT 13h, AH=00h) ---
+    mov ah, 0x00        ; Function 00h = Reset Disk System
+    mov dl, bh          ; Use the boot drive number we saved in BH
+    int 0x13            ; Call BIOS disk service
+    jc disk_error       ; If Carry Flag is set, reset failed.
+
     ; --- Load Kernel from Disk ---
     mov ax, 0x1000      ; Set ES to 0x1000. ES:BX will be our destination address.
     mov es, ax
     xor bx, bx          ; Set BX to 0. Full address is ES:BX = 0x1000:0x0000 = 0x10000.
 
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 32           ; Read X sectors (4KB), enough for a small kernel
+    mov al, 10          ; Read X sectors (4KB), enough for a small kernel
     mov ch, 0x00        ; Cylinder 0
     mov cl, 0x02        ; Sector 2 (where our kernel starts)
     mov dh, 0x00        ; Head 0
-    mov dl, 0x00        ; Drive 0 (A:)
+    mov dl, bh          ; Use the boot drive number saved from the BIOS
     int 0x13            ; Call BIOS disk service
 
     jc disk_error       ; If the read failed, the Carry Flag is set. Jump to an error handler.
 
-    cmp al, 32           ; Compare AL (sectors actually read) with X (sectors requested)
+    cmp al, 10           ; Compare AL (sectors actually read) with X (sectors requested)
     jne disk_error      ; If they're Not Equal, jump to our error handler
 
-    ; --- Enable A20 Line (Fast A20 Gate Method) ---
-    in al, 0x92     ; Read from system control port A
-    or al, 2        ; Set bit 1 (the A20 enable bit), turning it on
-    out 0x92, al    ; Write the new value back to the port
+    mov al, '1'
+    out 0xE9, al ; Checkpoint 1: Disk read OK
+
+    ; --- Enable A20 Line (Keyboard Controller Method) ---
+    call a20_wait_input   ; Wait for controller to be ready
+    mov al, 0xAD          ; Command to disable the keyboard
+    out 0x64, al
+
+    call a20_wait_input
+    mov al, 0xD0          ; Command to read the output port
+    out 0x64, al
+
+    call a20_wait_output  ; Wait for data to be ready
+    in al, 0x60           ; Read the data
+    push eax              ; Save it
+
+    call a20_wait_input
+    mov al, 0xD1          ; Command to write to the output port
+    out 0x64, al
+
+    call a20_wait_input
+    pop eax               ; Get the original value back
+    or al, 2              ; Set bit 1 (the A20 bit)
+    out 0x60, al          ; Write it back to the controller
+
+    call a20_wait_input
+    mov al, 0xAE          ; Command to re-enable the keyboard
+    out 0x64, al
+
+    call a20_wait_input
+
+    mov al, '2'
+    out 0xE9, al ; Checkpoint 2: A20 enabled
 
     ; --- Disable interrupts (CLI) ---
     cli
@@ -73,6 +110,9 @@ done_printing:
     ; where to find our memory map for Protected Mode.
     lgdt [cs:gdt_descriptor]
 
+    mov al, '3'
+    out 0xE9, al ; Checkpoint 3: GDT loaded
+
     ; --- Set Protected Mode Enable (PE) bit in CR0 register ---
     ; This is the instruction that officially switches the CPU from
     ; 16-bit Real Mode to 32-bit Protected Mode.
@@ -80,12 +120,14 @@ done_printing:
     or eax, 0x1          ; Set the lowest bit (bit 0), which is the PE (Protected Mode Enable) bit
     mov cr0, eax         ; Write the modified value back to CR0
 
-    ; --- Far Jump to 32-bit Protected Mode Code Segment ---
-    ; This is a special jump that does two things:
-    ; 1. Reloads the Code Segment (CS) register using our 32-bit GDT_CODE selector.
-    ; 2. Jumps execution to the 'protected_mode_start' label.
-    ; This clears any old 16-bit instructions from the CPU's internal "pipeline".
-    jmp GDT_CODE:start_32bit
+    mov al, '4'
+    out 0xE9, al ; Checkpoint 4: Protected Mode enabled
+
+    ; --- Far Jump Directly to the Kernel's Entry Point ---
+    ; This is now the final action of the bootloader.
+    mov al, 'J'
+    out 0xE9, al ; Checkpoint 5: About to Jump
+    jmp GDT_CODE:0x10000
 
 disk_error:
     mov ah, 0x0E    ; BIOS teletype function
@@ -97,6 +139,18 @@ hang:
     cli             ; Disable interrupts
     hlt             ; Halt the CPU
     jmp hang        ; Loop just in case
+
+a20_wait_input:
+    in al, 0x64
+    test al, 2
+    jnz a20_wait_input
+    ret
+
+a20_wait_output:
+    in al, 0x64
+    test al, 1
+    jz a20_wait_output
+    ret
 
 ; =======================================================
 ; Data Section
@@ -141,42 +195,6 @@ gdt_end: ; This label marks the end of our GDT map for now.
 msg_welcome:
     db 'MyOS Bootloader: Loading Kernel...', 0
 
-; IMPORTANT: The code below this far jump will be assembled as 32-bit.
-; We need to tell NASM this!
-bits 32 ; Instruct NASM to assemble all following code as 32-bit instructions.
-
-; This label marks the very first instruction the CPU will execute in 32-bit Protected Mode.
-start_32bit:
-    ; We are now officially running in 32-bit Protected Mode!
-    ; DEBUG: Confirm we reached 32-bit mode
-    mov al, '1'
-    out 0xE9, al
-
-    ; --- Initialize 32-bit Segment Registers ---
-    ; In Protected Mode, segment registers hold 'selectors' (offsets into the GDT),
-    ; not direct base addresses. We load them with our GDT_DATA selector (0x10).
-    mov ax, GDT_DATA     ; Load the GDT_DATA selector (0x10) into AX
-    mov ds, ax           ; Set Data Segment register
-    mov es, ax           ; Set Extra Segment register
-    mov fs, ax           ; Set FS Segment register
-    mov gs, ax           ; Set GS Segment register
-    mov ss, ax           ; Set Stack Segment register
-
-    ; --- Set up the 32-bit Stack Pointer (ESP) ---
-    ; Choose a safe address for the 32-bit stack, e.g., near the end of 1MB (0x90000).
-    ; The stack grows downwards in x86, so 0x90000 is a high address, safe from code.
-    mov esp, 0x90000     ; Set the 32-bit Stack Pointer
-
-    ; DEBUG: Confirm segment registers and stack are set up
-    mov al, '2'
-    out 0xE9, al
-
-    ; Pass VGA buffer address to the kernel in EAX
-    mov eax, 0xB8000
-
-    ; Jump to kernel
-    jmp 0x10000
-
 ; --------------------------------------------------------------------------
 ; Boot Signature (Crucial for BIOS)
 ; --------------------------------------------------------------------------
@@ -195,13 +213,14 @@ dw 0xAA55                 ; Boot signature: 0xAA55 must be at offset 510 (0x1FE)
 
 // A struct which defines the registers we pushed onto the stack in isr.asm.
 typedef struct {
-   uint32_t ds;                                      // Data segment selector
+   uint32_t ds;                                      // Pushed by us
    uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;  // Pushed by pusha
-   uint32_t int_no, err_code;                        // Pushed by our ISR stub
+   uint32_t err_code, int_no;                        // Pushed by our ISR stub (err_code first!)
    uint32_t eip, cs, eflags, useresp, ss;            // Pushed by the processor automatically
-} registers_t;
+} __attribute__((packed)) registers_t;               // No padding GCC attribute
 
 void isr_install();
+void fault_handler(registers_t *r); // Changed to take a pointer
 
 #endif// myos/kernel/io.c
 
@@ -271,9 +290,10 @@ extern void isr28(); extern void isr29(); extern void isr30(); extern void isr31
 struct idt_entry_struct idt_entries[256];
 struct idt_ptr_struct   idt_ptr;
 
-// This is the assembly function.
-// It's defined in another file, so we use 'extern'.
-extern void idt_load(struct idt_ptr_struct* idt_ptr);
+// This is our new, self-contained function to load the IDT.
+static inline void idt_load_inline(struct idt_ptr_struct* idt_ptr) {
+    __asm__ __volatile__("lidt %0" : : "m"(*idt_ptr));
+}
 
 /**
  * Sets a single gate (entry) in the IDT.
@@ -305,41 +325,42 @@ void idt_install() {
         idt_set_gate(i, 0, 0, 0);
     }
     
-    idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8E);
-    idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8E);
-    idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8E);
-    idt_set_gate(3, (uint32_t)isr3, 0x08, 0x8E);
-    idt_set_gate(4, (uint32_t)isr4, 0x08, 0x8E);
-    idt_set_gate(5, (uint32_t)isr5, 0x08, 0x8E);
-    idt_set_gate(6, (uint32_t)isr6, 0x08, 0x8E);
-    idt_set_gate(7, (uint32_t)isr7, 0x08, 0x8E);
-    idt_set_gate(8, (uint32_t)isr8, 0x08, 0x8E);
-    idt_set_gate(9, (uint32_t)isr9, 0x08, 0x8E);
-    idt_set_gate(10, (uint32_t)isr10, 0x08, 0x8E);
-    idt_set_gate(11, (uint32_t)isr11, 0x08, 0x8E);
-    idt_set_gate(12, (uint32_t)isr12, 0x08, 0x8E);
-    idt_set_gate(13, (uint32_t)isr13, 0x08, 0x8E);
-    idt_set_gate(14, (uint32_t)isr14, 0x08, 0x8E);
-    idt_set_gate(15, (uint32_t)isr15, 0x08, 0x8E);
-    idt_set_gate(16, (uint32_t)isr16, 0x08, 0x8E);
-    idt_set_gate(17, (uint32_t)isr17, 0x08, 0x8E);
-    idt_set_gate(18, (uint32_t)isr18, 0x08, 0x8E);
-    idt_set_gate(19, (uint32_t)isr19, 0x08, 0x8E);
-    idt_set_gate(20, (uint32_t)isr20, 0x08, 0x8E);
-    idt_set_gate(21, (uint32_t)isr21, 0x08, 0x8E);
-    idt_set_gate(22, (uint32_t)isr22, 0x08, 0x8E);
-    idt_set_gate(23, (uint32_t)isr23, 0x08, 0x8E);
-    idt_set_gate(24, (uint32_t)isr24, 0x08, 0x8E);
-    idt_set_gate(25, (uint32_t)isr25, 0x08, 0x8E);
-    idt_set_gate(26, (uint32_t)isr26, 0x08, 0x8E);
-    idt_set_gate(27, (uint32_t)isr27, 0x08, 0x8E);
-    idt_set_gate(28, (uint32_t)isr28, 0x08, 0x8E);
-    idt_set_gate(29, (uint32_t)isr29, 0x08, 0x8E);
-    idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8E);
-    idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8E);
+    // Use Trap Gate flags (0x8F) for CPU exceptions!
+    idt_set_gate(0, (uint32_t)isr0, 0x08, 0x8F);
+    idt_set_gate(1, (uint32_t)isr1, 0x08, 0x8F);
+    idt_set_gate(2, (uint32_t)isr2, 0x08, 0x8F);
+    idt_set_gate(3, (uint32_t)isr3, 0x08, 0x8F);
+    idt_set_gate(4, (uint32_t)isr4, 0x08, 0x8F);
+    idt_set_gate(5, (uint32_t)isr5, 0x08, 0x8F);
+    idt_set_gate(6, (uint32_t)isr6, 0x08, 0x8F);
+    idt_set_gate(7, (uint32_t)isr7, 0x08, 0x8F);
+    idt_set_gate(8, (uint32_t)isr8, 0x08, 0x8F);
+    idt_set_gate(9, (uint32_t)isr9, 0x08, 0x8F);
+    idt_set_gate(10, (uint32_t)isr10, 0x08, 0x8F);
+    idt_set_gate(11, (uint32_t)isr11, 0x08, 0x8F);
+    idt_set_gate(12, (uint32_t)isr12, 0x08, 0x8F);
+    idt_set_gate(13, (uint32_t)isr13, 0x08, 0x8F);
+    idt_set_gate(14, (uint32_t)isr14, 0x08, 0x8F);
+    idt_set_gate(15, (uint32_t)isr15, 0x08, 0x8F);
+    idt_set_gate(16, (uint32_t)isr16, 0x08, 0x8F);
+    idt_set_gate(17, (uint32_t)isr17, 0x08, 0x8F);
+    idt_set_gate(18, (uint32_t)isr18, 0x08, 0x8F);
+    idt_set_gate(19, (uint32_t)isr19, 0x08, 0x8F);
+    idt_set_gate(20, (uint32_t)isr20, 0x08, 0x8F);
+    idt_set_gate(21, (uint32_t)isr21, 0x08, 0x8F);
+    idt_set_gate(22, (uint32_t)isr22, 0x08, 0x8F);
+    idt_set_gate(23, (uint32_t)isr23, 0x08, 0x8F);
+    idt_set_gate(24, (uint32_t)isr24, 0x08, 0x8F);
+    idt_set_gate(25, (uint32_t)isr25, 0x08, 0x8F);
+    idt_set_gate(26, (uint32_t)isr26, 0x08, 0x8F);
+    idt_set_gate(27, (uint32_t)isr27, 0x08, 0x8F);
+    idt_set_gate(28, (uint32_t)isr28, 0x08, 0x8F);
+    idt_set_gate(29, (uint32_t)isr29, 0x08, 0x8F);
+    idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8F);
+    idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8F);
 
-    // Load the IDT pointer using our assembly routine.
-    idt_load(&idt_ptr);
+    // Load the IDT using our new inline assembly function
+    idt_load_inline(&idt_ptr);
 }// myos/kernel/kernel.c
 
 // headers
@@ -347,15 +368,26 @@ void idt_install() {
 #include "vga.h"
 #include "io.h"
 
+// Helper for debug prints
+static inline void outb(unsigned short port, unsigned char data) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
+}
+
 void kmain() {
+    outb(0xE9, 'K'); // Checkpoint: kmain entered
+
     // Set up the IDT AND install the exception handlers
-    idt_install();
-    
-    // Remap the PIC
+    /// Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
+    outb(0xE9, 'P'); // Checkpoint: PIC remapped
+
+    // Now, install our Interrupt Service Routines and load the IDT.
+    idt_install();
+    outb(0xE9, 'I'); // Checkpoint: IDT installed
 
     // Clear the screen to start with a blank slate
     clear_screen();
+    outb(0xE9, 'V'); // Checkpoint: VGA (clear_screen)
     
     // Print a new message
     char message[] = "Kernel Loaded! Code is now organized.";
@@ -374,14 +406,15 @@ void kmain() {
     // Hang the CPU.
     while (1) {}
 }; myos/kernel/isr.asm
+bits 32
 
 ; This macro creates a stub for an ISR that does not push an error code
 %macro ISR_NOERRCODE 1
 [GLOBAL isr%1]
 isr%1:
     cli          ; Disable interrupts
-    push 0       ; Push a dummy error code
-    push %1      ; Push the interrupt number
+    push dword 0       ; Push a dummy error code (explicitly 32-bit)
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
@@ -390,7 +423,7 @@ isr%1:
 [GLOBAL isr%1]
 isr%1:
     cli          ; Disable interrupts
-    push %1      ; Push the interrupt number
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
@@ -433,27 +466,27 @@ ISR_NOERRCODE 31
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
 isr_common_stub:
-    pusha        ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
-    mov ax, ds   ; Lower 16 bits of ds register
-    push eax     ; Save the data segment descriptor
+    pusha          ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
 
-    mov ax, 0x10 ; Load the kernel data segment descriptor
+    mov ax, ds      ; Save the original data segment.
+    push eax        ; Save it on the stack
+
+    mov ax, 0x10    ; Load the kernel data segment descriptor
     mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
 
+    push esp          ; Push a pointer to the registers_t struct
     call fault_handler
+    add esp, 4        ; Pop the pointer we pushed
 
-    pop eax      ; Restore original data segment
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+    pop eax           ; Restore original data segment
+    mov ds, ax        ; Restore ONLY the ds register. es, fs, gs were not manually saved,
+                      ; so we don't restore them. Their original values are preserved
+                      ; as part of the interrupted task's state.
 
-    popa         ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
-    add esp, 8   ; Clean up the pushed error code and interrupt number
-    iret         ; Return from interrupt// myos/kernel/io.h
+    popa              ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
+    add esp, 8        ; Clean up the pushed error code and interrupt number
+    iret              ; Return from interrupt
+// myos/kernel/io.h
 
 #ifndef IO_H
 #define IO_H
@@ -473,9 +506,23 @@ extern bss_end
 extern kmain    ; Tell NASM that kmain is defined in another file.
 
 ; Define the entry point for the linker.
-global _start, idt_load ; Make idt_load global here too
+global _start
 
 _start:
+    mov al, 'S'
+    out 0xE9, al ; Checkpoint: Kernel Start
+
+    ; The bootloader has jumped here directly.
+    ; The only register that is properly set is CS.
+    ; We must set up our data segments and stack now.
+    mov ax, 0x10    ; 0x10 is the GDT_DATA selector from the bootloader's GDT
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, 0x90000 ; Set up the stack pointer
+
     ; Crucial: Clear the direction flag.
     ; This ensures 'rep stosb' increments EDI, not decrements it.
     cld
@@ -487,38 +534,60 @@ _start:
     xor eax, eax            ; Value to clear with (zero)
     rep stosb               ; Repeat store-byte ECX times
 
+    mov al, 'B'
+    out 0xE9, al ; Checkpoint: BSS cleared
+
 
     ; The bootloader has already set up the stack pointer (ESP).
     ; We can now safely call our main C function.
+    mov al, 'C'
+    out 0xE9, al ; Checkpoint: Calling C
+
     call kmain
 
     ; If kmain returns, hang the system. A real kernel's main
     ; loop should never exit.
     cli
     hlt
-
-; This function is called from our C code to load the IDT pointer.
-global idt_load
-idt_load:
-    ; The first argument (a pointer to our idt_ptr_struct) is on the stack.
-    mov eax, [esp + 4]  ; Get the pointer from the stack
-    lidt [eax]          ; Load the IDT pointer into the IDTR register
-    ret                 ; Return to the C code// myos/kernel/exceptions.c
+// myos/kernel/exceptions.c
 
 #include "exceptions.h"
-#include "vga.h" // We will add a print function to this soon
+#include "vga.h" // for printing to screen
 
-// C-level handler for all exceptions
-void fault_handler(registers_t r) {
-    // For now, we'll just hang. In the future, we can print an error.
+// C-level handler for all exceptions - now takes a pointer!
+void fault_handler(registers_t *r) {
+    clear_screen(); // Start with a clean slate
+    print_string("CPU Exception Caught!\n\n");
+    print_string("Interrupt Number: ");
+    print_hex(r->int_no);
+    print_string("\nError Code:       ");
+    print_hex(r->err_code);
+    print_string("\n\n-- Register Dump --\n");
+    print_string("EIP: ");
+    print_hex(r->eip);
+    print_string("  CS: ");
+    print_hex(r->cs);
+    print_string("  EFLAGS: ");
+    print_hex(r->eflags);
+    print_string("\nESP: ");
+    print_hex(r->esp);
+    print_string("  EAX: ");
+    print_hex(r->eax);
+    print_string("\n\nSystem Halted.");
+
+    // We hang forever.
     for (;;);
 }// myos/kernel/vga.h
 
 #ifndef VGA_H
 #define VGA_H
 
+#include "types.h" // to include uint32_t
+
 void clear_screen();
 void update_cursor(int row, int col);
+void print_string(const char* str);
+void print_hex(uint32_t n);
 
 #endif// myos/kernel/idt.h
 #ifndef IDT_H
@@ -551,6 +620,10 @@ void idt_install();
 #include "io.h"
 #include "types.h"
 
+// Define a static cursor position
+static int cursor_row = 0;
+static int cursor_col = 0;
+
 // Define the VGA buffer as a global, constant pointer to a volatile memory region.
 volatile unsigned short* const VGA_BUFFER = (unsigned short*)0xB8000;
 
@@ -572,6 +645,39 @@ void update_cursor(int row, int col) {
     // Send the low byte of the cursor position
     port_byte_out(0x3D4, 0x0F);
     port_byte_out(0x3D5, (unsigned char)(position & 0xFF));
+}
+
+void print_char(char c) {
+    if (c == '\n') {
+        cursor_row++;
+        cursor_col = 0;
+    } else {
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = (VGA_BUFFER[(cursor_row * 80) + cursor_col] & 0xFF00) | c;
+        cursor_col++;
+    }
+
+    if (cursor_col >= 80) {
+        cursor_col = 0;
+        cursor_row++;
+    }
+    update_cursor(cursor_row, cursor_col);
+}
+
+void print_string(const char* str) {
+    int i = 0;
+    while (str[i] != '\0') {
+        print_char(str[i]);
+        i++;
+    }
+}
+
+void print_hex(uint32_t n) {
+    print_string("0x");
+    for (int i = 28; i >= 0; i -= 4) {
+        uint32_t nibble = (n >> i) & 0xF;
+        nibble += nibble > 9 ? 0x37 : 0x30;
+        print_char((char)nibble);
+    }
 }// myos/kernel/types.h
 #ifndef TYPES_H
 #define TYPES_H
@@ -582,11 +688,11 @@ typedef unsigned short  uint16_t;
 typedef unsigned int    uint32_t;
 typedef unsigned long long uint64_t;
 
-#endif/* kernel/linker.ld */
+#endif/* myos/kernel/linker.ld */
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x10000;
+    . = 0x10000; /* Kernel starts at 1MB */
 
     .text : {
         *(.text)
@@ -606,9 +712,10 @@ SECTIONS {
     }
     bss_end = .;
 
-    /* This section prevents the "executable stack" warning */
+    /* This section prevents the "executable stack" warning and cleans up output */
     /DISCARD/ : {
         *(.note.GNU-stack)
+        *(.eh_frame)
     }
 }# myos/Makefile
 # A robust and scalable Makefile for myos
@@ -618,7 +725,7 @@ SECTIONS {
 
 # --- Variables ---
 BUILD_DIR := build
-QEMU_CMD := qemu-system-x86_64
+QEMU_CMD := qemu-system-i386
 QEMU_OPTS := -fda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---

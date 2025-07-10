@@ -1,8 +1,8 @@
-/* kernel/linker.ld */
+/* myos/kernel/linker.ld */
 ENTRY(_start)
 
 SECTIONS {
-    . = 0x10000;
+    . = 0x10000; /* Kernel starts at 1MB */
 
     .text : {
         *(.text)
@@ -22,8 +22,9 @@ SECTIONS {
     }
     bss_end = .;
 
-    /* This section prevents the "executable stack" warning */
+    /* This section prevents the "executable stack" warning and cleans up output */
     /DISCARD/ : {
         *(.note.GNU-stack)
+        *(.eh_frame)
     }
 }

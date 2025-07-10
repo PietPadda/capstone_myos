@@ -6,7 +6,7 @@
 
 # --- Variables ---
 BUILD_DIR := build
-QEMU_CMD := qemu-system-x86_64
+QEMU_CMD := qemu-system-i386
 QEMU_OPTS := -fda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---

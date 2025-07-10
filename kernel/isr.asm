@@ -1,12 +1,13 @@
 ; myos/kernel/isr.asm
+bits 32
 
 ; This macro creates a stub for an ISR that does not push an error code
 %macro ISR_NOERRCODE 1
 [GLOBAL isr%1]
 isr%1:
     cli          ; Disable interrupts
-    push 0       ; Push a dummy error code
-    push %1      ; Push the interrupt number
+    push dword 0       ; Push a dummy error code (explicitly 32-bit)
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
@@ -15,7 +16,7 @@ isr%1:
 [GLOBAL isr%1]
 isr%1:
     cli          ; Disable interrupts
-    push %1      ; Push the interrupt number
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
@@ -58,24 +59,23 @@ ISR_NOERRCODE 31
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
 isr_common_stub:
-    pusha        ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
-    mov ax, ds   ; Lower 16 bits of ds register
-    push eax     ; Save the data segment descriptor
+    pusha          ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
 
-    mov ax, 0x10 ; Load the kernel data segment descriptor
+    mov ax, ds      ; Save the original data segment.
+    push eax        ; Save it on the stack
+
+    mov ax, 0x10    ; Load the kernel data segment descriptor
     mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
 
+    push esp          ; Push a pointer to the registers_t struct
     call fault_handler
+    add esp, 4        ; Pop the pointer we pushed
 
-    pop eax      ; Restore original data segment
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
+    pop eax           ; Restore original data segment
+    mov ds, ax        ; Restore ONLY the ds register. es, fs, gs were not manually saved,
+                      ; so we don't restore them. Their original values are preserved
+                      ; as part of the interrupted task's state.
 
-    popa         ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
-    add esp, 8   ; Clean up the pushed error code and interrupt number
-    iret         ; Return from interrupt
+    popa              ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
+    add esp, 8        ; Clean up the pushed error code and interrupt number
+    iret              ; Return from interrupt
