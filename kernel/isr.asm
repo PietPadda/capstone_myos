@@ -1,45 +1,47 @@
 ; myos/kernel/isr.asm
 bits 32
 
-; For ISRs with no error code, we push a dummy one for a consistent stack frame
+; This macro creates a stub for an ISR that does not push an error code
 %macro ISR_NOERRCODE 1
 [GLOBAL isr%1]
 isr%1:
-    cli
-    push dword 0    ; Dummy error code
-    push dword %1   ; Interrupt number
+    cli          ; Disable interrupts
+    push dword 0       ; Push a dummy error code (explicitly 32-bit)
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
-; For ISRs with a CPU-pushed error code, we just push the interrupt number
+; This macro creates a stub for an ISR that DOES push an error code
 %macro ISR_ERRCODE 1
 [GLOBAL isr%1]
 isr%1:
-    cli
-    push dword %1   ; Interrupt number
+    cli          ; Disable interrupts
+    push dword %1      ; Push the interrupt number (explicitly 32-bit)
     jmp isr_common_stub
 %endmacro
 
-ISR_NOERRCODE 0
-ISR_NOERRCODE 1
-ISR_NOERRCODE 2
-ISR_NOERRCODE 3
-ISR_NOERRCODE 4
-ISR_NOERRCODE 5
-ISR_NOERRCODE 6
-ISR_NOERRCODE 7
-ISR_ERRCODE   8
-ISR_NOERRCODE 9
-ISR_ERRCODE   10
-ISR_ERRCODE   11
-ISR_ERRCODE   12
-ISR_ERRCODE   13
-ISR_ERRCODE   14
-ISR_NOERRCODE 15
-ISR_NOERRCODE 16
-ISR_ERRCODE   17
-ISR_NOERRCODE 18
-ISR_NOERRCODE 19
+; --- Define the 32 exception handlers ---
+ISR_NOERRCODE 0  ; 0: Divide By Zero Exception
+ISR_NOERRCODE 1  ; 1: Debug Exception
+ISR_NOERRCODE 2  ; 2: Non Maskable Interrupt Exception
+ISR_NOERRCODE 3  ; 3: Breakpoint Exception
+ISR_NOERRCODE 4  ; 4: Into Detected Overflow Exception
+ISR_NOERRCODE 5  ; 5: Out of Bounds Exception
+ISR_NOERRCODE 6  ; 6: Invalid Opcode Exception
+ISR_NOERRCODE 7  ; 7: No Coprocessor Exception
+ISR_ERRCODE   8  ; 8: Double Fault Exception (with error code)
+ISR_NOERRCODE 9  ; 9: Coprocessor Segment Overrun Exception
+ISR_ERRCODE   10 ; 10: Bad TSS Exception (with error code)
+ISR_ERRCODE   11 ; 11: Segment Not Present Exception (with error code)
+ISR_ERRCODE   12 ; 12: Stack Fault Exception (with error code)
+ISR_ERRCODE   13 ; 13: General Protection Fault Exception (with error code)
+ISR_ERRCODE   14 ; 14: Page Fault Exception (with error code)
+ISR_NOERRCODE 15 ; 15: Unassigned Exception
+ISR_NOERRCODE 16 ; 16: Coprocessor Fault Exception
+ISR_ERRCODE   17 ; 17: Alignment Check Exception (with error code)
+ISR_NOERRCODE 18 ; 18: Machine Check Exception
+ISR_NOERRCODE 19 ; 19: SIMD Fault Exception
+; Interrupts 20-31 are reserved by Intel.
 ISR_NOERRCODE 20
 ISR_NOERRCODE 21
 ISR_NOERRCODE 22
@@ -53,28 +55,27 @@ ISR_NOERRCODE 29
 ISR_NOERRCODE 30
 ISR_NOERRCODE 31
 
-extern fault_handler
+; --- Common Assembly Stub ---
+; All ISRs jump here after pushing their number and a (optional) error code
+extern fault_handler ; This is our C-level handler
 isr_common_stub:
-    pusha
-    mov ax, ds
-    push eax
+    pusha          ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
 
-    mov ax, 0x10
+    mov ax, ds      ; Save the original data segment.
+    push eax        ; Save it on the stack
+
+    mov ax, 0x10    ; Load the kernel data segment descriptor
     mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
 
-    push esp
+    push esp          ; Push a pointer to the registers_t struct
     call fault_handler
-    add esp, 4
+    add esp, 4        ; Pop the pointer we pushed
 
-    pop eax
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    
-    popa
-    add esp, 8
-    iret
+    pop eax           ; Restore original data segment
+    mov ds, ax        ; Restore ONLY the ds register. es, fs, gs were not manually saved,
+                      ; so we don't restore them. Their original values are preserved
+                      ; as part of the interrupted task's state.
+
+    popa              ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
+    add esp, 8        ; Clean up the pushed error code and interrupt number
+    iret              ; Return from interrupt
