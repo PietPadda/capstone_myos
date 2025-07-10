@@ -1,22 +1,20 @@
 ; myos/kernel/isr.asm
 bits 32
 
-; This macro creates a stub for an ISR that does not push an error code
 %macro ISR_NOERRCODE 1
-[GLOBAL isr%1]
+global isr%1
 isr%1:
-    cli          ; Disable interrupts
-    push dword 0       ; Push a dummy error code (explicitly 32-bit)
-    push dword %1      ; Push the interrupt number (explicitly 32-bit)
+    cli
+    push dword 0
+    push dword %1
     jmp isr_common_stub
 %endmacro
 
-; This macro creates a stub for an ISR that DOES push an error code
 %macro ISR_ERRCODE 1
-[GLOBAL isr%1]
+global isr%1
 isr%1:
-    cli          ; Disable interrupts
-    push dword %1      ; Push the interrupt number (explicitly 32-bit)
+    cli
+    push dword %1
     jmp isr_common_stub
 %endmacro
 
@@ -59,23 +57,46 @@ ISR_NOERRCODE 31
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
 isr_common_stub:
-    pusha          ; Pushes edi,esi,ebp,esp,ebx,edx,ecx,eax
+    ; 1. Save the general purpose registers
+    pusha
 
-    mov ax, ds      ; Save the original data segment.
-    push eax        ; Save it on the stack
+    ; 2. Save the segment registers
+    mov eax, ds
+    push eax
+    mov eax, es
+    push eax
+    mov eax, fs
+    push eax
+    mov eax, gs
+    push eax
 
-    mov ax, 0x10    ; Load the kernel data segment descriptor
+    ; 3. Load kernel segments for the C handler to use
+    mov ax, 0x10  ; 0x10 is our kernel data segment selector
     mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
 
-    push esp          ; Push a pointer to the registers_t struct
+    ; 4. Push a pointer to the register block and call the C handler
+    push esp
     call fault_handler
-    add esp, 4        ; Pop the pointer we pushed
 
-    pop eax           ; Restore original data segment
-    mov ds, ax        ; Restore ONLY the ds register. es, fs, gs were not manually saved,
-                      ; so we don't restore them. Their original values are preserved
-                      ; as part of the interrupted task's state.
+    ; 5. Clean up the pushed pointer from the stack
+    add esp, 4
 
-    popa              ; Pop edi,esi,ebp,esp,ebx,edx,ecx,eax
-    add esp, 8        ; Clean up the pushed error code and interrupt number
-    iret              ; Return from interrupt
+    ; 6. Restore the original segment registers
+    pop eax
+    mov gs, eax
+    pop eax
+    mov fs, eax
+    pop eax
+    mov es, eax
+    pop eax
+    mov ds, eax
+
+    ; 7. Restore general purpose registers
+    popa
+
+    ; 8. Clean up error code & interrupt number, and return
+    add esp, 8
+    iret

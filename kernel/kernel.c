@@ -11,34 +11,23 @@ static inline void outb(unsigned short port, unsigned char data) {
 }
 
 void kmain() {
-    outb(0xE9, 'K'); // Checkpoint: kmain entered
+    outb(0xE9, '1'); // Checkpoint 1: kmain entered
 
-    // Set up the IDT AND install the exception handlers
-    /// Remap the PIC first to get the hardware into a stable state.
+    // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
-    outb(0xE9, 'P'); // Checkpoint: PIC remapped
+    outb(0xE9, '2'); // Checkpoint 2: PIC remapped
 
     // Now, install our Interrupt Service Routines and load the IDT.
     idt_install();
-    outb(0xE9, 'I'); // Checkpoint: IDT installed
+    outb(0xE9, '3'); // Checkpoint 3: IDT installed and loaded
 
     // Clear the screen to start with a blank slate
     clear_screen();
-    outb(0xE9, 'V'); // Checkpoint: VGA (clear_screen)
+    outb(0xE9, '4'); // Checkpoint 4: VGA cleared
     
     // Print a new message
-    char message[] = "Kernel Loaded! Code is now organized.";
-    volatile unsigned short* vga_buffer = (unsigned short*)0xB8000;
-    int j = 0;
-
-    // --- Print the message from the stack array ---
-    while (message[j] != '\0') {
-        vga_buffer[j] = (unsigned short)message[j] | 0x0F00;
-        j++;
-    }
-
-    // Move the cursor to the end of the message
-    update_cursor(0, j);
+    print_string("Kernel loaded successfully!");
+    outb(0xE9, '5'); // Checkpoint 5: Message printed
 
     // Hang the CPU.
     while (1) {}
