@@ -12,6 +12,12 @@ extern void isr20(); extern void isr21(); extern void isr22(); extern void isr23
 extern void isr24(); extern void isr25(); extern void isr26(); extern void isr27(); 
 extern void isr28(); extern void isr29(); extern void isr30(); extern void isr31();
 
+// Forward-declarations for our 16 IRQ stubs in isr.asm
+extern void irq0(); extern void irq1(); extern void irq2(); extern void irq3();
+extern void irq4(); extern void irq5(); extern void irq6(); extern void irq7();
+extern void irq8(); extern void irq9(); extern void irq10(); extern void irq11();
+extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
+
 // Declare our IDT with 256 entries.
 struct idt_entry_struct idt_entries[256];
 struct idt_ptr_struct   idt_ptr;
@@ -84,6 +90,24 @@ void idt_install() {
     idt_set_gate(29, (uint32_t)isr29, 0x08, 0x8F);
     idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8F);
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8F);
+
+    // Use Interrupt Gate flags (0x8E) for IRQs!
+    idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);
+    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);
+    idt_set_gate(34, (uint32_t)irq2, 0x08, 0x8E);
+    idt_set_gate(35, (uint32_t)irq3, 0x08, 0x8E);
+    idt_set_gate(36, (uint32_t)irq4, 0x08, 0x8E);
+    idt_set_gate(37, (uint32_t)irq5, 0x08, 0x8E);
+    idt_set_gate(38, (uint32_t)irq6, 0x08, 0x8E);
+    idt_set_gate(39, (uint32_t)irq7, 0x08, 0x8E);
+    idt_set_gate(40, (uint32_t)irq8, 0x08, 0x8E);
+    idt_set_gate(41, (uint32_t)irq9, 0x08, 0x8E);
+    idt_set_gate(42, (uint32_t)irq10, 0x08, 0x8E);
+    idt_set_gate(43, (uint32_t)irq11, 0x08, 0x8E);
+    idt_set_gate(44, (uint32_t)irq12, 0x08, 0x8E);
+    idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
+    idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
+    idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
 
     // Load the IDT using our new inline assembly function
     idt_load_inline(&idt_ptr);
