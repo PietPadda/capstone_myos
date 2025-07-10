@@ -62,7 +62,21 @@ void print_char(char c) {
         cursor_col = 0;
         cursor_row++;
     }
-    // TODO: Add scrolling logic when cursor_row >= 25
+    // scrolling logic when cursor_row >= 25
+    if (cursor_row >= 25) {
+        // Move the text of every line up by one row.
+        for (int i = 0; i < 24 * 80; i++) {
+            VGA_BUFFER[i] = VGA_BUFFER[i + 80];
+        }
+
+        // Clear the last line.
+        for (int i = 24 * 80; i < 25 * 80; i++) {
+            VGA_BUFFER[i] = ' ' | 0x0F00;
+        }
+        
+        // Set the cursor to the beginning of the last line.
+        cursor_row = 24;
+    }
 
     // Update the hardware cursor's position.
     update_cursor(cursor_row, cursor_col);
