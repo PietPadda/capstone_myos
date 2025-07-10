@@ -17,6 +17,9 @@ void clear_screen() {
     for (int i = 0; i < 80 * 25; i++) {
         VGA_BUFFER[i] = (unsigned short)' ' | 0x0F00;
     }
+    cursor_row = 0;
+    cursor_col = 0;
+    update_cursor(cursor_row, cursor_col);
 }
 
 // Updates the VGA cursor's position.
@@ -32,18 +35,36 @@ void update_cursor(int row, int col) {
 }
 
 void print_char(char c) {
-    if (c == '\n') {
+    // Handle backspace
+    if (c == '\b') {
+        // Only backspace if the cursor isn't at the very beginning.
+        if (cursor_col > 0) {
+            cursor_col--;
+        } else if (cursor_row > 0) {
+            cursor_row--;
+            cursor_col = 79; // Move to the end of the previous line.
+        }
+        // Write a blank space to the current cursor position to 'erase' the char.
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | 0x0F00;
+
+    // Handle newline
+    } else if (c == '\n') {
         cursor_row++;
         cursor_col = 0;
     } else {
+        // Handle a normal character.
         VGA_BUFFER[(cursor_row * 80) + cursor_col] = (VGA_BUFFER[(cursor_row * 80) + cursor_col] & 0xFF00) | c;
         cursor_col++;
     }
 
+    // If we're at the end of the line, wrap to the next line.
     if (cursor_col >= 80) {
         cursor_col = 0;
         cursor_row++;
     }
+    // TODO: Add scrolling logic when cursor_row >= 25
+
+    // Update the hardware cursor's position.
     update_cursor(cursor_row, cursor_col);
 }
 
