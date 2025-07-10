@@ -4,6 +4,7 @@
 #include "idt.h"
 #include "vga.h"
 #include "io.h"
+#include "keyboard.h" // Include our new keyboard driver header
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -21,14 +22,18 @@ void kmain() {
     idt_install();
     outb(0xE9, '3'); // Checkpoint 3: IDT installed and loaded
 
+    // Install the keyboard driver.
+    keyboard_install();
+    outb(0xE9, '4'); // Checkpoint 4: Keyboard installed
+
     // Clear the screen to start with a blank slate
     clear_screen();
-    outb(0xE9, '4'); // Checkpoint 4: VGA cleared
-    
-    // Print a new message
-    print_string("Kernel loaded successfully!");
-    outb(0xE9, '5'); // Checkpoint 5: Message printed
+    print_string("Kernel loaded successfully! Type something...\n");
+    outb(0xE9, '5'); // Checkpoint 5: Screen cleared and message printed
 
-    // Hang the CPU.
+    // Enable interrupts! From this point on, the CPU will respond to hardware.
+    __asm__ __volatile__ ("sti");
+
+    // Hang the CPU. The keyboard handler will run when keys are pressed.
     while (1) {}
 }
