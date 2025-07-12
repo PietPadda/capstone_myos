@@ -9,16 +9,7 @@ static uint32_t tick = 0;
 
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
-    tick++;
-    
-    // Every 100 ticks (approx. 1 second), print the uptime.
-    if (tick % 100 == 0) {
-        // This is not an ideal way to print, but it's great for a demo!
-        // A better way would involve a separate kernel thread or task.
-        print_string("\nSystem Uptime: ");
-        print_hex(tick / 100);
-        print_string(" seconds");
-    }
+    tick++; // This is all the handler should do
 }
 
 // Configures the PIT and installs the timer handler.
