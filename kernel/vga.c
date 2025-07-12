@@ -92,9 +92,12 @@ void print_string(const char* str) {
 
 void print_hex(uint32_t n) {
     print_string("0x");
+    // Loop through each of the 8 hex digits (nibbles)
     for (int i = 28; i >= 0; i -= 4) {
+        // Get the 4 bits for this digit
         uint32_t nibble = (n >> i) & 0xF;
-        nibble += nibble > 9 ? 0x37 : 0x30;
-        print_char((char)nibble);
+        // Convert the number (0-15) to its ASCII character ('0'-'9', 'A'-'F')
+        char c = (nibble > 9) ? (nibble - 10 + 'A') : (nibble + '0');
+        print_char(c);
     }
 }

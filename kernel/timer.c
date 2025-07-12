@@ -29,3 +29,8 @@ void timer_install() {
     port_byte_out(0x40, (uint8_t)(divisor & 0xFF));
     port_byte_out(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }
+
+// tick getter func
+uint32_t timer_get_ticks() {
+    return tick;
+}
