@@ -7,6 +7,7 @@
 #include "keyboard.h" // Include our new keyboard driver header
 #include "timer.h" // Include our new timer driver header
 #include "shell.h"
+#include "memory.h"
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -34,6 +35,10 @@ void kmain() {
 
     // clear the bios text
     clear_screen();
+
+    // initiate dynamic mem allocation
+    init_memory(); 
+    outb(0xE9, 'M');
 
     // Initialize the shell
     shell_init();

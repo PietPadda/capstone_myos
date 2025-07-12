@@ -21,6 +21,7 @@ SECTIONS {
         *(.bss)
     }
     bss_end = .;
+    kernel_end = .;
 
     /* This section prevents the "executable stack" warning and cleans up output */
     /DISCARD/ : {
