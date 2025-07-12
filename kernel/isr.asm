@@ -58,8 +58,8 @@ ISR_NOERRCODE 31
 global irq%1
 irq%1:
     cli
-    push byte 0
-    push byte %2  ; Push the interrupt number
+    push dword  0
+    push dword  %2  ; Push the interrupt number
     jmp irq_common_stub
 %endmacro
 
@@ -145,12 +145,19 @@ irq_common_stub:
     mov eax, gs
     push eax
 
+    ; Load the kernel's data segment for C code
+    mov ax, 0x10  ; 0x10 is our GDT data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
     ; Push a pointer to the registers and call the C handler
     push esp
     call irq_handler
     add esp, 4 ; Clean up the pushed pointer
 
-    ; Restore segment registers
+    ; Restore original segment registers
     pop eax
     mov gs, eax
     pop eax
@@ -164,4 +171,4 @@ irq_common_stub:
     popa
     add esp, 8 ; Clean up the error code and interrupt number
     sti
-    iret
+    iret       ; Safely return from the interrupt

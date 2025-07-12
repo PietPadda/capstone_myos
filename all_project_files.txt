@@ -196,6 +196,124 @@ void pic_remap(int offset1, int offset2) {
     // Restore saved masks
     port_byte_out(PIC1_DATA, a1);
     port_byte_out(PIC2_DATA, a2);
+}// myos/kernel/shell.h
+
+#ifndef SHELL_H
+#define SHELL_H
+
+// Initializes the shell.
+void shell_init();
+
+// Handles a single character of input.
+void shell_handle_input(char c);
+
+#endif// myos/kernel/keyboard.c
+
+#include "keyboard.h"
+#include "irq.h"
+#include "io.h"
+#include "shell.h" // Changed from vga.h
+#include "vga.h"
+
+// --- State and Character Maps ---
+static volatile int shift_pressed = 0;
+
+// Scancode set 1 for a US QWERTY keyboard layout - Normal
+// A 0 means the key is not printable.
+unsigned char kbd_us[128] = {
+    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
+    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
+    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,
+    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0,
+    ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, 0, 0, '+',
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+// Scancode set 1 for a US QWERTY keyboard layout - Shifted
+unsigned char kbd_us_shift[128] = {
+    0,  27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
+    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
+    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0,
+    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, '*', 0,
+    ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, 0, 0, '+',
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+};
+
+// The main keyboard handler function, called by our IRQ dispatcher.
+static void keyboard_handler(registers_t *r) {
+    unsigned char scancode = port_byte_in(0x60);
+
+    // Handle a key release first
+    if (scancode & 0x80) {
+        // If a shift key was released, update the flag.
+        if ((scancode & 0x7F) == 0x2A || (scancode & 0x7F) == 0x36) {
+            shift_pressed = 0;
+        }
+        return; // Nothing more to do on key release.
+    }
+
+    // Handle a key press
+    // If it's a shift key, update the flag and exit.
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return;
+    }
+
+    // If we're still here, it must be a normal character key.
+    if (scancode < 128) {
+        char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
+        if (character) {
+            shell_handle_input(character);
+        }
+    }
+}
+
+// The installation function that hooks the handler into the IRQ system.
+void keyboard_install() {
+    // Register `keyboard_handler` to be called when IRQ 1 is triggered.
+    irq_install_handler(1, keyboard_handler);
+}// myos/kernel/keyboard.h
+
+#ifndef KEYBOARD_H
+#define KEYBOARD_H
+
+// Initializes the keyboard driver and registers its IRQ handler.
+void keyboard_install();
+
+#endif// myos/kernel/irq.c
+
+#include "irq.h"
+#include "io.h"
+#include "vga.h"
+
+// Array of function pointers for handling custom IRQ handlers
+static void *irq_routines[16] = {0};
+
+// Install a custom handler for a given IRQ
+void irq_install_handler(int irq, void (*handler)(registers_t *r)) {
+    irq_routines[irq] = handler;
+}
+
+// Clear a handler for a given IRQ
+void irq_uninstall_handler(int irq) {
+    irq_routines[irq] = 0;
+}
+
+// The main IRQ handler, called from our assembly stub
+void irq_handler(registers_t *r) {
+    void (*handler)(registers_t *r);
+
+    // Find the handler for this IRQ number
+    handler = irq_routines[r->int_no - 32];
+    if (handler) {
+        handler(r);
+    }
+
+    // Send the EOI (End of Interrupt) signal to the PICs
+    if (r->int_no >= 40) {
+        port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
+    }
+    port_byte_out(0x20, 0x20); // Send EOI to master PIC
 }// myos/kernel/idt.c
 
 #include "idt.h"
@@ -209,6 +327,12 @@ extern void isr16(); extern void isr17(); extern void isr18(); extern void isr19
 extern void isr20(); extern void isr21(); extern void isr22(); extern void isr23(); 
 extern void isr24(); extern void isr25(); extern void isr26(); extern void isr27(); 
 extern void isr28(); extern void isr29(); extern void isr30(); extern void isr31();
+
+// Forward-declarations for our 16 IRQ stubs in isr.asm
+extern void irq0(); extern void irq1(); extern void irq2(); extern void irq3();
+extern void irq4(); extern void irq5(); extern void irq6(); extern void irq7();
+extern void irq8(); extern void irq9(); extern void irq10(); extern void irq11();
+extern void irq12(); extern void irq13(); extern void irq14(); extern void irq15();
 
 // Declare our IDT with 256 entries.
 struct idt_entry_struct idt_entries[256];
@@ -283,6 +407,24 @@ void idt_install() {
     idt_set_gate(30, (uint32_t)isr30, 0x08, 0x8F);
     idt_set_gate(31, (uint32_t)isr31, 0x08, 0x8F);
 
+    // Use Interrupt Gate flags (0x8E) for IRQs!
+    idt_set_gate(32, (uint32_t)irq0, 0x08, 0x8E);
+    idt_set_gate(33, (uint32_t)irq1, 0x08, 0x8E);
+    idt_set_gate(34, (uint32_t)irq2, 0x08, 0x8E);
+    idt_set_gate(35, (uint32_t)irq3, 0x08, 0x8E);
+    idt_set_gate(36, (uint32_t)irq4, 0x08, 0x8E);
+    idt_set_gate(37, (uint32_t)irq5, 0x08, 0x8E);
+    idt_set_gate(38, (uint32_t)irq6, 0x08, 0x8E);
+    idt_set_gate(39, (uint32_t)irq7, 0x08, 0x8E);
+    idt_set_gate(40, (uint32_t)irq8, 0x08, 0x8E);
+    idt_set_gate(41, (uint32_t)irq9, 0x08, 0x8E);
+    idt_set_gate(42, (uint32_t)irq10, 0x08, 0x8E);
+    idt_set_gate(43, (uint32_t)irq11, 0x08, 0x8E);
+    idt_set_gate(44, (uint32_t)irq12, 0x08, 0x8E);
+    idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
+    idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
+    idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
+
     // Load the IDT using our new inline assembly function
     idt_load_inline(&idt_ptr);
 }// myos/kernel/kernel.c
@@ -291,6 +433,9 @@ void idt_install() {
 #include "idt.h"
 #include "vga.h"
 #include "io.h"
+#include "keyboard.h" // Include our new keyboard driver header
+#include "timer.h" // Include our new timer driver header
+#include "shell.h"
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -298,26 +443,39 @@ static inline void outb(unsigned short port, unsigned char data) {
 }
 
 void kmain() {
-    outb(0xE9, '1'); // Checkpoint 1: kmain entered
+    outb(0xE9, 'S');
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
-    outb(0xE9, '2'); // Checkpoint 2: PIC remapped
+    outb(0xE9, 'P');
 
     // Now, install our Interrupt Service Routines and load the IDT.
     idt_install();
-    outb(0xE9, '3'); // Checkpoint 3: IDT installed and loaded
+    outb(0xE9, 'I');
 
-    // Clear the screen to start with a blank slate
+    // Install the keyboard driver.
+    keyboard_install();
+    outb(0xE9, 'K');
+
+    // Install the timer driver.
+    timer_install(); // Install our new timer driver
+    outb(0xE9, 'T');
+
+    // clear the bios text
     clear_screen();
-    outb(0xE9, '4'); // Checkpoint 4: VGA cleared
-    
-    // Print a new message
-    print_string("Kernel loaded successfully!");
-    outb(0xE9, '5'); // Checkpoint 5: Message printed
 
-    // Hang the CPU.
-    while (1) {}
+    // Initialize the shell
+    shell_init();
+    outb(0xE9, 's');
+
+    // Enable interrupts! From this point on, the CPU will respond to hardware.
+    __asm__ __volatile__ ("sti");
+
+    // Hang the CPU. The keyboard handler will run when keys are pressed.
+    // Use hlt to efficiently idle the CPU until an interrupt occurs.
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }; myos/kernel/isr.asm
 bits 32
 
@@ -373,6 +531,34 @@ ISR_NOERRCODE 29
 ISR_NOERRCODE 30
 ISR_NOERRCODE 31
 
+; --- Define the 16 IRQ handlers ---
+%macro IRQ 2
+global irq%1
+irq%1:
+    cli
+    push byte 0
+    push byte %2  ; Push the interrupt number
+    jmp irq_common_stub
+%endmacro
+
+; IRQs 0-15. Remember we remapped them to 32-47.
+IRQ 0, 32   ; Timer
+IRQ 1, 33   ; Keyboard
+IRQ 2, 34   ; Cascade
+IRQ 3, 35   ; COM2
+IRQ 4, 36   ; COM1
+IRQ 5, 37   ; LPT2
+IRQ 6, 38   ; Floppy Disk
+IRQ 7, 39   ; LPT1
+IRQ 8, 40   ; CMOS real-time clock
+IRQ 9, 41   ; Free for peripherals
+IRQ 10, 42  ; Free for peripherals
+IRQ 11, 43  ; Free for peripherals
+IRQ 12, 44  ; PS2 Mouse
+IRQ 13, 45  ; FPU
+IRQ 14, 46  ; Primary ATA Hard Disk
+IRQ 15, 47  ; Secondary ATA Hard Disk
+
 ; --- Common Assembly Stub ---
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
@@ -420,6 +606,50 @@ isr_common_stub:
     ; 8. Clean up error code & interrupt number, and return
     add esp, 8
     iret
+
+; --- Common IRQ Stub ---
+extern irq_handler ; Our new C-level IRQ handler
+irq_common_stub:
+    ; Save general purpose registers
+    pusha
+
+    ; Save segment registers
+    mov eax, ds
+    push eax
+    mov eax, es
+    push eax
+    mov eax, fs
+    push eax
+    mov eax, gs
+    push eax
+
+    ; Load the kernel's data segment for C code
+    mov ax, 0x10  ; 0x10 is our GDT data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; Push a pointer to the registers and call the C handler
+    push esp
+    call irq_handler
+    add esp, 4 ; Clean up the pushed pointer
+
+    ; Restore original segment registers
+    pop eax
+    mov gs, eax
+    pop eax
+    mov fs, eax
+    pop eax
+    mov es, eax
+    pop eax
+    mov ds, eax
+
+    ; Restore general purpose registers
+    popa
+    add esp, 8 ; Clean up the error code and interrupt number
+    sti
+    iret       ; Safely return from the interrupt
 // myos/kernel/io.h
 
 #ifndef IO_H
@@ -514,6 +744,19 @@ void update_cursor(int row, int col);
 void print_string(const char* str);
 void print_hex(uint32_t n);
 
+#endif// myos/kernel/irq.h
+
+#ifndef IRQ_H
+#define IRQ_H
+
+#include "types.h"
+#include "exceptions.h" // For registers_t struct
+
+void irq_install_handler(int irq, void (*handler)(registers_t *r));
+void irq_uninstall_handler(int irq);
+void irq_install();
+void irq_handler(registers_t *r);
+
 #endif// myos/kernel/idt.h
 #ifndef IDT_H
 #define IDT_H
@@ -558,6 +801,9 @@ void clear_screen() {
     for (int i = 0; i < 80 * 25; i++) {
         VGA_BUFFER[i] = (unsigned short)' ' | 0x0F00;
     }
+    cursor_row = 0;
+    cursor_col = 0;
+    update_cursor(cursor_row, cursor_col);
 }
 
 // Updates the VGA cursor's position.
@@ -573,18 +819,50 @@ void update_cursor(int row, int col) {
 }
 
 void print_char(char c) {
-    if (c == '\n') {
+    // Handle backspace
+    if (c == '\b') {
+        // Only backspace if the cursor isn't at the very beginning.
+        if (cursor_col > 0) {
+            cursor_col--;
+        } else if (cursor_row > 0) {
+            cursor_row--;
+            cursor_col = 79; // Move to the end of the previous line.
+        }
+        // Write a blank space to the current cursor position to 'erase' the char.
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | 0x0F00;
+
+    // Handle newline
+    } else if (c == '\n') {
         cursor_row++;
         cursor_col = 0;
     } else {
+        // Handle a normal character.
         VGA_BUFFER[(cursor_row * 80) + cursor_col] = (VGA_BUFFER[(cursor_row * 80) + cursor_col] & 0xFF00) | c;
         cursor_col++;
     }
 
+    // If we're at the end of the line, wrap to the next line.
     if (cursor_col >= 80) {
         cursor_col = 0;
         cursor_row++;
     }
+    // scrolling logic when cursor_row >= 25
+    if (cursor_row >= 25) {
+        // Move the text of every line up by one row.
+        for (int i = 0; i < 24 * 80; i++) {
+            VGA_BUFFER[i] = VGA_BUFFER[i + 80];
+        }
+
+        // Clear the last line.
+        for (int i = 24 * 80; i < 25 * 80; i++) {
+            VGA_BUFFER[i] = ' ' | 0x0F00;
+        }
+        
+        // Set the cursor to the beginning of the last line.
+        cursor_row = 24;
+    }
+
+    // Update the hardware cursor's position.
     update_cursor(cursor_row, cursor_col);
 }
 
@@ -603,6 +881,36 @@ void print_hex(uint32_t n) {
         nibble += nibble > 9 ? 0x37 : 0x30;
         print_char((char)nibble);
     }
+}// myos/kernel/timer.c
+
+#include "timer.h"
+#include "irq.h"
+#include "io.h"
+#include "vga.h" // For printing output
+
+static uint32_t tick = 0;
+
+// The handler that is called on every timer interrupt (IRQ 0).
+static void timer_handler(registers_t *r) {
+    tick++; // This is all the handler should do
+}
+
+// Configures the PIT and installs the timer handler.
+void timer_install() {
+    // 1. Install the handler for IRQ 0
+    irq_install_handler(0, timer_handler);
+
+    // 2. Configure the PIT
+    uint32_t frequency = 100; // Target frequency in Hz
+    uint32_t divisor = 1193180 / frequency;
+
+    // Send the command byte to the PIT command port.
+    // Command 0x36 means: Channel 0, Access lo/hi, Mode 3 (square wave).
+    port_byte_out(0x43, 0x36);
+
+    // Send the frequency divisor, low byte then high byte.
+    port_byte_out(0x40, (uint8_t)(divisor & 0xFF));
+    port_byte_out(0x40, (uint8_t)((divisor >> 8) & 0xFF));
 }// myos/kernel/types.h
 #ifndef TYPES_H
 #define TYPES_H
@@ -613,7 +921,61 @@ typedef unsigned short  uint16_t;
 typedef unsigned int    uint32_t;
 typedef unsigned long long uint64_t;
 
-#endif/* myos/kernel/linker.ld */
+#endif// myos/kernel/timer.h
+
+#ifndef TIMER_H
+#define TIMER_H
+
+// Initializes the PIT and registers its IRQ handler.
+void timer_install();
+
+#endif// myos/kernel/shell.c
+
+#include "shell.h"
+#include "vga.h" // We need this for print_char
+
+#define PROMPT "PGOS> "
+#define MAX_CMD_LEN 256
+
+// A buffer to store the command being typed.
+static char cmd_buffer[MAX_CMD_LEN];
+// The current position in the command buffer.
+static int cmd_index = 0;
+
+// Initialize the shell.
+void shell_init() {
+    // Print the prompt when the shell starts.
+    print_string(PROMPT);
+}
+
+// This function is called by the keyboard driver for each keypress.
+void shell_handle_input(char c) {
+    // If the user pressed Enter
+    if (c == '\n') {
+        print_char(c); // Echo the newline
+        
+        // For now, we don't process the command. Just reset the buffer.
+        cmd_buffer[cmd_index] = '\0';
+        cmd_index = 0;
+        
+        // Print the prompt for the next command
+        print_string(PROMPT);
+        
+    // If the user pressed Backspace
+    } else if (c == '\b') {
+        if (cmd_index > 0) {
+            // Go back one character in the buffer and on the screen.
+            cmd_index--;
+            print_char(c);
+        }
+
+    // For any other printable character
+    } else if (cmd_index < MAX_CMD_LEN - 1) {
+        // Add the character to the buffer and echo it to the screen.
+        cmd_buffer[cmd_index++] = c;
+        print_char(c);
+    }
+}/* myos/kernel/linker.ld */
 ENTRY(_start)
 
 SECTIONS {

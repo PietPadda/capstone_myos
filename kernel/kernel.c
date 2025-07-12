@@ -32,14 +32,12 @@ void kmain() {
     timer_install(); // Install our new timer driver
     outb(0xE9, 'T');
 
+    // clear the bios text
+    clear_screen();
+
     // Initialize the shell
     shell_init();
     outb(0xE9, 's');
-
-    // Clear the screen to start with a blank slate
-    clear_screen();
-    print_string("Kernel loaded successfully! Type something...\n");
-    outb(0xE9, 'C'); // Checkpoint 5: Screen cleared and message printed
 
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");

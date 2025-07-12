@@ -31,14 +31,14 @@ start:
     xor bx, bx          ; BX = 0
 
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 10          ; Read 10 sectors (5 KB)
+    mov al, 128          ; Read X sectors (512b each)
     mov ch, 0x00        ; Cylinder 0
     mov cl, 0x02        ; Sector 2 (Kernel starts after boot sector)
     mov dh, 0x00        ; Head 0
     mov dl, bh          ; Use the saved boot drive number
     int 0x13
     jc disk_error
-    cmp al, 10          ; Verify number of sectors read
+    cmp al, 128          ; Verify number of sectors read
     jne disk_error
 
     ; --- Enter Protected Mode ---
