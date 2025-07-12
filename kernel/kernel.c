@@ -6,6 +6,7 @@
 #include "io.h"
 #include "keyboard.h" // Include our new keyboard driver header
 #include "timer.h" // Include our new timer driver header
+#include "shell.h"
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -31,6 +32,10 @@ void kmain() {
     timer_install(); // Install our new timer driver
     outb(0xE9, 'T');
 
+    // Initialize the shell
+    shell_init();
+    outb(0xE9, 's');
+
     // Clear the screen to start with a blank slate
     clear_screen();
     print_string("Kernel loaded successfully! Type something...\n");
@@ -40,5 +45,8 @@ void kmain() {
     __asm__ __volatile__ ("sti");
 
     // Hang the CPU. The keyboard handler will run when keys are pressed.
-    while (1) {}
+    // Use hlt to efficiently idle the CPU until an interrupt occurs.
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }
