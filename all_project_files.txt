@@ -31,14 +31,14 @@ start:
     xor bx, bx          ; BX = 0
 
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 10          ; Read 10 sectors (5 KB)
+    mov al, 128          ; Read X sectors (512b each)
     mov ch, 0x00        ; Cylinder 0
     mov cl, 0x02        ; Sector 2 (Kernel starts after boot sector)
     mov dh, 0x00        ; Head 0
     mov dl, bh          ; Use the saved boot drive number
     int 0x13
     jc disk_error
-    cmp al, 10          ; Verify number of sectors read
+    cmp al, 128          ; Verify number of sectors read
     jne disk_error
 
     ; --- Enter Protected Mode ---
@@ -219,24 +219,37 @@ void shell_handle_input(char c);
 static volatile int shift_pressed = 0;
 
 // Scancode set 1 for a US QWERTY keyboard layout - Normal
-// A 0 means the key is not printable.
 unsigned char kbd_us[128] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
-    '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
-    0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', '\'', '`', 0,
-    '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0,
-    ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, 0, 0, '+',
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,  27, '1', '2', '3', '4', '5', '6', '7', '8',     // 0-9
+    '9', '0', '-', '=', '\b', '\t', 'q', 'w', 'e', 'r', // 10-19
+    't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,   // 20-29
+    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',  // 30-39 (0x1E='a')
+    '\'', '`', 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n',  // 40-49
+    'm', ',', '.', '/', 0, '*', 0, ' ', 0, 0,           // 50-59
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
+    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
 };
 
 // Scancode set 1 for a US QWERTY keyboard layout - Shifted
 unsigned char kbd_us_shift[128] = {
-    0,  27, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', '\b',
-    '\t', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n',
-    0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~', 0,
-    '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?', 0, '*', 0,
-    ' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '-', 0, 0, 0, '+',
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0,  27, '!', '@', '#', '$', '%', '^', '&', '*',     // 0-9
+    '(', ')', '_', '+', '\b', '\t', 'Q', 'W', 'E', 'R', // 10-19
+    'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,   // 20-29
+    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':',  // 30-39 (0x1E='A')
+    '"', '~', 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N',    // 40-49
+    'M', '<', '>', '?', 0, '*', 0, ' ', 0, 0,           // 50-59
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
+    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
 };
 
 // The main keyboard handler function, called by our IRQ dispatcher.
@@ -262,6 +275,7 @@ static void keyboard_handler(registers_t *r) {
     // If we're still here, it must be a normal character key.
     if (scancode < 128) {
         char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
+        
         if (character) {
             shell_handle_input(character);
         }
@@ -270,6 +284,7 @@ static void keyboard_handler(registers_t *r) {
 
 // The installation function that hooks the handler into the IRQ system.
 void keyboard_install() {
+    
     // Register `keyboard_handler` to be called when IRQ 1 is triggered.
     irq_install_handler(1, keyboard_handler);
 }// myos/kernel/keyboard.h
@@ -536,8 +551,8 @@ ISR_NOERRCODE 31
 global irq%1
 irq%1:
     cli
-    push byte 0
-    push byte %2  ; Push the interrupt number
+    push dword  0
+    push dword  %2  ; Push the interrupt number
     jmp irq_common_stub
 %endmacro
 
@@ -950,6 +965,7 @@ void shell_init() {
 
 // This function is called by the keyboard driver for each keypress.
 void shell_handle_input(char c) {
+
     // If the user pressed Enter
     if (c == '\n') {
         print_char(c); // Echo the newline

@@ -9,5 +9,6 @@ void clear_screen();
 void update_cursor(int row, int col);
 void print_string(const char* str);
 void print_hex(uint32_t n);
+void print_char(char c);
 
 #endif
