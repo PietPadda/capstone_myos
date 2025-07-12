@@ -2,36 +2,35 @@
 
 #include "shell.h"
 #include "vga.h" // We need this for print_char
+#include "string.h" // Needed for strcmp
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
 
-// A buffer to store the command being typed.
+// Static variables to hold the command buffer state
 static char cmd_buffer[MAX_CMD_LEN];
-// The current position in the command buffer.
 static int cmd_index = 0;
+
+// Forward-declaration for our command processor
+void process_command();
 
 // Initialize the shell.
 void shell_init() {
-    // Print the prompt when the shell starts.
+    // first prompt
     print_string(PROMPT);
 }
 
 // This function is called by the keyboard driver for each keypress.
 void shell_handle_input(char c) {
-
-    // If the user pressed Enter
+    // On Enter, null-terminate the string and process it
     if (c == '\n') {
         print_char(c); // Echo the newline
-        
-        // For now, we don't process the command. Just reset the buffer.
+
         cmd_buffer[cmd_index] = '\0';
-        cmd_index = 0;
+        process_command();
+
         
-        // Print the prompt for the next command
-        print_string(PROMPT);
-        
-    // If the user pressed Backspace
+    // On Backspace, delete a character
     } else if (c == '\b') {
         if (cmd_index > 0) {
             // Go back one character in the buffer and on the screen.
@@ -39,10 +38,36 @@ void shell_handle_input(char c) {
             print_char(c);
         }
 
-    // For any other printable character
+    // On any other key, add it to the buffer
     } else if (cmd_index < MAX_CMD_LEN - 1) {
         // Add the character to the buffer and echo it to the screen.
         cmd_buffer[cmd_index++] = c;
         print_char(c);
     }
+}
+
+// This function processes the completed command
+void process_command() {
+    // help command
+    if (strcmp(cmd_buffer, "help") == 0) {
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen");
+
+    // cls command
+    } else if (strcmp(cmd_buffer, "cls") == 0) {
+        clear_screen();
+
+    // invalid command
+    } else if (cmd_index > 0) { // Only show error for non-empty commands
+        print_string("Unknown command: ");
+        print_string(cmd_buffer);
+    }
+
+    // Only print a newline for spacing if the command wasn't "cls".
+    if (strcmp(cmd_buffer, "cls") != 0) {
+        print_string("\n");
+    }
+
+    // Reset buffer and print a new prompt for the next command
+    cmd_index = 0;
+    print_string(PROMPT);
 }
