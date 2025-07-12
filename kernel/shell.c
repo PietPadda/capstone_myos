@@ -7,6 +7,10 @@
 #include "io.h" // for port_byte_out
 #include "memory.h" // for dynamic heap memory
 
+// These labels are defined in data.asm
+extern char file_start[];
+extern char file_end[];
+
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
 
@@ -53,7 +57,7 @@ void shell_handle_input(char c) {
 void process_command() {
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -80,6 +84,13 @@ void process_command() {
         print_string("Block 1: "); print_hex((uint32_t)addr1);
         print_string("\nBlock 2: "); print_hex((uint32_t)addr2);
         print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
+
+    // cat command
+    } else if (strcmp(cmd_buffer, "cat") == 0) {
+    // Loop from the start address to the end address, printing each char
+    for (char* p = file_start; p < file_end; p++) {
+        print_char(*p);
+    }
 
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
