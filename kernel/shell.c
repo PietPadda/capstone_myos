@@ -4,6 +4,7 @@
 #include "vga.h" // We need this for print_char
 #include "string.h" // Needed for strcmp
 #include "timer.h" // for tick getter
+#include "io.h" // for port_byte_out
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
@@ -51,7 +52,7 @@ void shell_handle_input(char c) {
 void process_command() {
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -62,6 +63,12 @@ void process_command() {
         // Our timer is set to 100Hz, so 100 ticks = 1 second
         print_string("Uptime (seconds): ");
         print_hex(timer_get_ticks() / 100);
+
+    // reboot command
+    } else if (strcmp(cmd_buffer, "reboot") == 0) {
+        print_string("Rebooting system...");
+        // Send the reboot command to the keyboard controller
+        port_byte_out(0x64, 0xFE);
 
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
