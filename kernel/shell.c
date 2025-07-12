@@ -55,6 +55,27 @@ void shell_handle_input(char c) {
 
 // This function processes the completed command
 void process_command() {
+
+    // command arg parsing
+    char* command = cmd_buffer;
+    char* argument = 0; // Starts as null
+
+    // Find the first space to separate command from argument
+    int i = 0;
+    while (command[i] != ' ' && command[i] != '\0') {
+        i++;
+    }
+
+    if (command[i] == ' ') {
+        // If we found a space, null-terminate the command part
+        command[i] = '\0';
+        // And the argument starts right after
+        argument = command + i + 1;
+    }
+
+    // Command Handling
+    print_string("\n");
+
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
         print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n");
@@ -87,10 +108,20 @@ void process_command() {
 
     // cat command
     } else if (strcmp(cmd_buffer, "cat") == 0) {
-    // Loop from the start address to the end address, printing each char
-    for (char* p = file_start; p < file_end; p++) {
-        print_char(*p);
-    }
+        // For now, let's just prove we received the argument correctly.
+        if (argument) {
+            print_string("Argument received: '");
+            print_string(argument);
+            print_string("'");
+        } else {
+            // For now, if no argument, do what it did before
+            print_string("Displaying embedded file:\n");
+            extern char file_start[]; // Get the labels from data.asm
+            extern char file_end[];
+            for (char* p = file_start; p < file_end; p++) {
+                print_char(*p);
+            }
+        }
 
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
@@ -98,12 +129,14 @@ void process_command() {
         print_string(cmd_buffer);
     }
 
+    // Reset buffer for the next command
+    cmd_index = 0;
+
     // Only print a newline for spacing if the command wasn't "cls".
     if (strcmp(cmd_buffer, "cls") != 0) {
         print_string("\n");
     }
 
-    // Reset buffer and print a new prompt for the next command
-    cmd_index = 0;
+    //print a new prompt for the next command
     print_string(PROMPT);
 }
