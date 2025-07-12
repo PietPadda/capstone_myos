@@ -3,7 +3,7 @@
 #include "keyboard.h"
 #include "irq.h"
 #include "io.h"
-#include "vga.h"
+#include "shell.h" // Changed from vga.h
 
 // --- State and Character Maps ---
 static int shift_pressed = 0;
@@ -32,29 +32,25 @@ unsigned char kbd_us_shift[128] = {
 // The main keyboard handler function, called by our IRQ dispatcher.
 static void keyboard_handler(registers_t *r) {
     unsigned char scancode;
-
     // Read the scancode from the keyboard's data port.
     scancode = port_byte_in(0x60);
 
-    // --- Handle Key Releases ---
-    if (scancode & 0x80) {
-        // Remove the 0x80 bit to get the original press scancode
-        scancode &= 0x7F; 
+    if (scancode & 0x80) { // Key release
+        scancode &= 0x7F; // Remove the 0x80 bit to get the original press scancode
         if (scancode == 0x2A || scancode == 0x36) { // L/R Shift released
             shift_pressed = 0;
         }
-        
-    // --- Handle Key Presses ---
-    } else {
+    } else { // Key press
         if (scancode == 0x2A || scancode == 0x36) { // L/R Shift pressed
             shift_pressed = 1;
         } else {
-            // Select the correct character map based on shift state
-            char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
-            
-            // Only print if the character is valid (not 0)
-            if (character) {
-                print_char(character);
+            // Bounds check to prevent crash
+            if (scancode < 128) {
+                char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
+                if (character) {
+                    // This now sends the character to the shell instead of the screen.
+                    shell_handle_input(character);
+                }
             }
         }
     }
