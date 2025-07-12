@@ -6,6 +6,7 @@
 #include "timer.h" // for tick getter
 #include "io.h" // for port_byte_out
 #include "memory.h" // for dynamic heap memory
+#include "disk.h" // for disk sector read
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -78,7 +79,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -122,6 +123,25 @@ void process_command() {
                 print_char(*p);
             }
         }
+
+    // disktest command
+    } else if (strcmp(command, "disktest") == 0) {
+        print_string("Reading sector 0 from disk...\n");
+
+        // Allocate a 512-byte buffer for the sector data
+        uint8_t* buffer = (uint8_t*)malloc(512);
+
+        // Read sector 0
+        read_disk_sector(0, buffer);
+
+        // Print the first 16 bytes to see if it looks like a bootloader
+        print_string("First 16 bytes: ");
+        for (int i = 0; i < 16; i++) {
+            print_hex(buffer[i]);
+            print_char(' ');
+        }
+        // Note: We don't free the buffer because we haven't written free() yet!
+    
 
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands

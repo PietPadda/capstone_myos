@@ -19,6 +19,12 @@ unsigned char port_byte_in(unsigned short port) {
     return result;
 }
 
+unsigned short port_word_in(unsigned short port) {
+    unsigned short result;
+    __asm__("inw %1, %0" : "=a" (result) : "Nd" (port));
+    return result;
+}
+
 /**
  * Remaps the PIC to use non-conflicting interrupt vectors.
  * @param offset1 Vector offset for master PIC (e.g., 0x20)
