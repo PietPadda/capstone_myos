@@ -5,7 +5,7 @@
 #include "io.h"
 #include "vga.h" // For printing output
 
-static uint32_t tick = 0;
+static volatile uint32_t tick = 0;
 
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
@@ -33,4 +33,16 @@ void timer_install() {
 // tick getter func
 uint32_t timer_get_ticks() {
     return tick;
+}
+
+// delay tick func
+void sleep(uint32_t ms) {
+    // Our timer is at 100Hz, so 1 tick = 10ms.
+    uint32_t ticks_to_wait = ms / 10;
+    uint32_t end_ticks = timer_get_ticks() + ticks_to_wait;
+
+    while (timer_get_ticks() < end_ticks) {
+        // Use hlt to save CPU cycles while we wait
+        __asm__ __volatile__("hlt");
+    }
 }

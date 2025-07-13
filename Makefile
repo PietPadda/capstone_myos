@@ -87,3 +87,8 @@ run: $(DISK_IMAGE)
 clean:
 	@echo "Cleaning build directory..."
 	rm -rf $(BUILD_DIR)
+
+# Rule to start debugger
+debug: all
+	@echo "--- Starting QEMU, waiting for GDB on localhost:1234 ---"
+	qemu-system-i386 -fda build/os_image.bin -debugcon stdio -S -gdb tcp::1234

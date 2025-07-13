@@ -31,7 +31,7 @@ start:
     xor bx, bx          ; BX = 0
 
     mov ah, 0x02        ; BIOS read sectors function
-    mov al, 128          ; Read X sectors (512b each)
+    mov al, 128          ; Read X sectors (5 KB)
     mov ch, 0x00        ; Cylinder 0
     mov cl, 0x02        ; Sector 2 (Kernel starts after boot sector)
     mov dh, 0x00        ; Head 0

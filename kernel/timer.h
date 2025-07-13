@@ -8,5 +8,6 @@
 // Initializes the PIT and registers its IRQ handler.
 void timer_install();
 uint32_t timer_get_ticks(); // getter func
+void sleep(uint32_t ms);
 
 #endif

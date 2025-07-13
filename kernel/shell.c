@@ -79,7 +79,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -141,8 +141,19 @@ void process_command() {
             print_char(' ');
         }
         // Note: We don't free the buffer because we haven't written free() yet!
-    
 
+    // sleep command
+    } else if (strcmp(command, "sleep") == 0) {
+        if (argument) {
+            int ms = atoi(argument);
+            print_string("Sleeping for ");
+            print_string(argument);
+            print_string("ms...");
+            sleep(ms);
+        } else {
+            print_string("Usage: sleep <milliseconds>");
+        }
+    
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
         print_string("Unknown command: ");
