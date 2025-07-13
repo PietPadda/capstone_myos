@@ -1,13 +1,14 @@
 // myos/kernel/kernel.c
 
 // headers
-#include "idt.h"
-#include "vga.h"
-#include "io.h"
+#include "idt.h" // interrupt tables
+#include "vga.h" // writing to screen
+#include "io.h" // hardware comms
 #include "keyboard.h" // Include our new keyboard driver header
 #include "timer.h" // Include our new timer driver header
-#include "shell.h"
-#include "memory.h"
+#include "shell.h" // shell for CLI
+#include "memory.h" // heap memory allocation
+#include "gdt.h" // kernel permanent GDT
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -16,6 +17,10 @@ static inline void outb(unsigned short port, unsigned char data) {
 
 void kmain() {
     outb(0xE9, 'S');
+
+     // Install the kernel's GDT first.
+    gdt_install();
+    outb(0xE9, 'G');
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
