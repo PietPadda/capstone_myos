@@ -14,10 +14,10 @@ static void timer_handler(registers_t *r) {
 
 // Configures the PIT and installs the timer handler.
 void timer_install() {
-    // 1. Install the handler for IRQ 0
+    // Install the handler for IRQ 0
     irq_install_handler(0, timer_handler);
 
-    // 2. Configure the PIT
+    //  Configure the PIT
     uint32_t frequency = 100; // Target frequency in Hz
     uint32_t divisor = 1193180 / frequency;
 
@@ -36,13 +36,21 @@ uint32_t timer_get_ticks() {
 }
 
 // delay tick func
-void sleep(uint32_t ms) {
-    // Our timer is at 100Hz, so 1 tick = 10ms.
-    uint32_t ticks_to_wait = ms / 10;
-    uint32_t end_ticks = timer_get_ticks() + ticks_to_wait;
+void sleep(uint32_t milliseconds) {
+    uint32_t start_tick = timer_get_ticks();
+    // Our timer is at 100Hz, so 1 tick happens every 10ms.
+    uint32_t ticks_to_wait = milliseconds / 10;
 
-    while (timer_get_ticks() < end_ticks) {
-        // Use hlt to save CPU cycles while we wait
-        __asm__ __volatile__("hlt");
+    // If the duration is very short, still wait for at least one tick.
+    if (ticks_to_wait == 0) {
+        ticks_to_wait = 1;
+    }
+
+    uint32_t end_tick = start_tick + ticks_to_wait;
+
+    while (timer_get_ticks() < end_tick) {
+        // This is the fix: Re-enable interrupts and then immediately halt.
+        // The CPU will wait here until the next timer interrupt arrives.
+        __asm__ __volatile__("sti\n\thlt");
     }
 }
