@@ -45,10 +45,20 @@ all: $(DISK_IMAGE)
 
 # Rule to create the final disk image
 $(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
-	@echo "Creating disk image: $@"
-	@dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
-	@dd if=$(BOOT_OBJ) of=$@ bs=512 seek=0 conv=notrunc >/dev/null 2>&1
-	@dd if=$(KERNEL_BIN) of=$@ bs=512 seek=1 conv=notrunc >/dev/null 2>&1
+	@echo "--> Creating blank disk image..."
+	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
+
+	@echo "--> Formatting disk with FAT12..."
+	mkfs.fat -F 12 $@ >/dev/null 2>&1
+
+	@echo "--> Copying test files to disk image..."
+	mcopy -i $@ -s test_files/* ::/
+
+	@echo "--> Installing custom bootloader..."
+	dd if=$(BOOT_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
+	
+	@echo "--> Installing kernel..."
+	dd if=$(KERNEL_BIN) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
 
 # Rule to link all kernel objects into a single ELF file
 # KERNEL_ENTRY_OBJ is listed first to ensure correct linking.

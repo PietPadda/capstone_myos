@@ -1,56 +1,46 @@
 ; myos/boot/bootloader.asm
-; A bootloader that loads a kernel, enters 32-bit protected mode,
+; A modern bootloader that uses LBA to load a kernel, enters 32-bit protected mode,
 ; and then jumps to the kernel.
 
 org 0x7C00
 bits 16
 
-GDT_NULL equ 0
-GDT_CODE equ 0x8
+GDT_CODE equ 0x08
 GDT_DATA equ 0x10
 
 start:
-    mov bh, dl      ; BIOS stores boot drive in DL, save it in BH
+    ; The BIOS provides the boot drive in DL. We must save it immediately.
+    mov [boot_drive], dl
 
-    ; Set up segments to a known state (0)
+    ; Set up segments and stack for a clean 16-bit environment
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
-    mov sp, 0x7C00  ; Set stack pointer below our code
+    mov sp, 0x7C00
 
-    ; --- Reset disk system ---
-    mov ah, 0x00
-    mov dl, bh
+    ; --- Load Kernel using modern LBA Extended Read ---
+    ; This is more reliable than the old CHS method.
+    mov si, dap                 ; Point SI to our Disk Address Packet
+    mov word [si + 2], 20       ; Set sectors to read = 20
+    mov word [si + 4], 0x0000   ; Target buffer offset
+    mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
+    mov dword [si + 8], 1       ; LBA Start = 1 (sector after bootloader)
+
+    mov ah, 0x42                ; BIOS Extended Read function
+    mov dl, [boot_drive]        ; Use the saved drive number
     int 0x13
     jc disk_error
-
-    ; --- Load Kernel from Disk into memory address 0x10000 ---
-    mov ax, 0x1000      ; Set ES to 0x1000. ES:BX = 0x1000:0x0000 = 0x10000
-    mov es, ax
-    xor bx, bx          ; BX = 0
-
-    mov ah, 0x02        ; BIOS read sectors function
-    mov al, 128          ; Read X sectors (512b each)
-    mov ch, 0x00        ; Cylinder 0
-    mov cl, 0x02        ; Sector 2 (Kernel starts after boot sector)
-    mov dh, 0x00        ; Head 0
-    mov dl, bh          ; Use the saved boot drive number
-    int 0x13
-    jc disk_error
-    cmp al, 128          ; Verify number of sectors read
-    jne disk_error
 
     ; --- Enter Protected Mode ---
-    cli                 ; 1. Disable interrupts
-    lgdt [cs:gdt_descriptor] ; 2. Load the GDT descriptor
-
-    mov eax, cr0        ; 3. Set the PE bit in CR0
-    or eax, 0x1
+    cli                         ; 1. Disable interrupts
+    lgdt [gdt_descriptor]       ; 2. Load our GDT
+    
+    mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
+    or eax, 0x01
     mov cr0, eax
-
-    ; 4. Far jump to our 32-bit code to flush the pipeline
-    jmp GDT_CODE:start_32bit
+    
+    jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
 
 disk_error:
     mov si, msg_disk_error
@@ -79,7 +69,7 @@ start_32bit:
     mov gs, ax
     mov ss, ax
 
-    ; Set up the stack
+    ; Set up the stack in a high memory area
     mov esp, 0x90000
 
     ; Jump to the kernel's entry point
@@ -88,6 +78,16 @@ start_32bit:
 ; =======================================================
 ; ### DATA SECTION ###
 ; =======================================================
+boot_drive:     db 0
+msg_disk_error: db 'Disk read error!', 0
+
+; Disk Address Packet (DAP) for the extended read call
+dap:
+    db 0x10, 0  ; Size of packet (16 bytes), reserved
+    dw 0        ; Number of sectors (filled at runtime)
+    dd 0        ; Buffer address (filled at runtime)
+    dq 0        ; LBA start (filled at runtime)
+
 gdt_descriptor:
     dw gdt_end - gdt_start - 1 ; GDT limit
     dd gdt_start               ; GDT base
@@ -96,25 +96,22 @@ gdt_start:
     ; Null descriptor
     dq 0x0
 
-    ; Code segment descriptor (base=0, limit=4GB, 32-bit, Ring 0)
-    dw 0xFFFF       ; Limit (low)
-    dw 0x0          ; Base (low)
-    db 0x0          ; Base (mid)
-    db 10011010b    ; Access byte
-    db 11001111b    ; Granularity and limit (high)
-    db 0x0          ; Base (high)
+    ; Code Segment Descriptor (base=0, limit=4GB, Ring 0)
+    dw 0xFFFF    ; Limit (low)
+    dw 0x0       ; Base (low)
+    db 0x0       ; Base (mid)
+    db 0x9A      ; Access (Present, Ring 0, Code, Exec/Read)
+    db 0xCF      ; Granularity (4K pages, 32-bit)
+    db 0x0       ; Base (high)
 
-    ; Data segment descriptor (base=0, limit=4GB, 32-bit, Ring 0)
-    dw 0xFFFF       ; Limit (low)
-    dw 0x0          ; Base (low)
-    db 0x0          ; Base (mid)
-    db 10010010b    ; Access byte
-    db 11001111b    ; Granularity and limit (high)
-    db 0x0          ; Base (high)
+    ; Data Segment Descriptor (base=0, limit=4GB, Ring 0)
+    dw 0xFFFF    ; Limit (low)
+    dw 0x0       ; Base (low)
+    db 0x0       ; Base (mid)
+    db 0x92      ; Access (Present, Ring 0, Data, Read/Write)
+    db 0xCF      ; Granularity (4K pages, 32-bit)
+    db 0x0       ; Base (high)
 gdt_end:
-
-msg_disk_error:
-    db 'Disk read error!', 0
 
 ; =======================================================
 ; ### BOOT SIGNATURE ###
@@ -167,6 +164,12 @@ unsigned char port_byte_in(unsigned short port) {
     return result;
 }
 
+unsigned short port_word_in(unsigned short port) {
+    unsigned short result;
+    __asm__("inw %1, %0" : "=a" (result) : "Nd" (port));
+    return result;
+}
+
 /**
  * Remaps the PIC to use non-conflicting interrupt vectors.
  * @param offset1 Vector offset for master PIC (e.g., 0x20)
@@ -196,7 +199,15 @@ void pic_remap(int offset1, int offset2) {
     // Restore saved masks
     port_byte_out(PIC1_DATA, a1);
     port_byte_out(PIC2_DATA, a2);
-}// myos/kernel/shell.h
+}// myos/kernel/gdt.h
+
+#ifndef GDT_H
+#define GDT_H
+
+// This function initializes the kernel's GDT.
+void gdt_install();
+
+#endif// myos/kernel/shell.h
 
 #ifndef SHELL_H
 #define SHELL_H
@@ -206,6 +217,15 @@ void shell_init();
 
 // Handles a single character of input.
 void shell_handle_input(char c);
+
+#endif// myos/kernel/string.h
+
+#ifndef STRING_H
+#define STRING_H
+
+// Compares two strings. Returns 0 if they are equal.
+int strcmp(const char* str1, const char* str2);
+int atoi(const char* str);
 
 #endif// myos/kernel/keyboard.c
 
@@ -329,7 +349,116 @@ void irq_handler(registers_t *r) {
         port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
     }
     port_byte_out(0x20, 0x20); // Send EOI to master PIC
-}// myos/kernel/idt.c
+}// myos/kernel/gdt.c
+
+#include "gdt.h"
+#include "types.h"
+
+// GDT entry structure
+struct gdt_entry_struct {
+    uint16_t limit_low;
+    uint16_t base_low;
+    uint8_t  base_middle;
+    uint8_t  access;
+    uint8_t  granularity;
+    uint8_t  base_high;
+} __attribute__((packed));
+
+// GDT pointer structure
+struct gdt_ptr_struct {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed));
+
+// Our GDT with 3 entries: Null, Kernel Code, Kernel Data
+static struct gdt_entry_struct gdt_entries[3];
+static struct gdt_ptr_struct   gdt_ptr;
+
+// Assembly function to load the GDT (defined in gdt_load.asm)
+extern void gdt_flush(uint32_t);
+
+// Helper function to create a GDT entry
+static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+    gdt_entries[num].base_low    = (base & 0xFFFF);
+    gdt_entries[num].base_middle = (base >> 16) & 0xFF;
+    gdt_entries[num].base_high   = (base >> 24) & 0xFF;
+
+    gdt_entries[num].limit_low   = (limit & 0xFFFF);
+    gdt_entries[num].granularity = ((limit >> 16) & 0x0F) | (gran & 0xF0);
+    gdt_entries[num].access      = access;
+}
+
+// Main function to install the GDT
+void gdt_install() {
+    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 3) - 1;
+    gdt_ptr.base  = (uint32_t)&gdt_entries;
+
+    gdt_set_gate(0, 0, 0, 0, 0);                // Null segment
+    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF); // Code segment (Ring 0)
+    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment (Ring 0)
+
+    // Load our new GDT
+    gdt_flush((uint32_t)&gdt_ptr);
+}// myos/kernel/fs.h
+
+#ifndef FS_H
+#define FS_H
+
+#include "types.h"
+
+// This struct maps to the FAT12 BIOS Parameter Block (BPB) in the boot sector.
+// It contains all the essential metadata about the filesystem.
+typedef struct {
+    uint8_t  jump_code[3];          // The x86 JMP instruction to the boot code.
+    uint8_t  oem_name[8];           // A string identifying who formatted the disk.
+    uint16_t bytes_per_sector;      // How many bytes in a sector (usually 512).
+    uint8_t  sectors_per_cluster;   // How many sectors are in an allocation unit (a "cluster").
+    uint16_t reserved_sectors;      // Number of sectors before the first FAT, including this one.
+    uint8_t  num_fats;              // The number of File Allocation Tables (usually 2).
+    uint16_t root_dir_entries;      // Maximum number of files in the root directory.
+    uint16_t total_sectors;         // Total sectors on the disk (if < 65536).
+    uint8_t  media_type;            // An old field describing the disk type.
+    uint16_t sectors_per_fat;       // How many sectors each FAT occupies.
+    uint16_t sectors_per_track;     // Part of the old CHS geometry.
+    uint16_t num_heads;             // Part of the old CHS geometry.
+    uint32_t hidden_sectors;        // Sectors before this partition begins.
+    uint32_t total_sectors_large;   // Total sectors on the disk (used if total_sectors is 0).
+} __attribute__((packed)) fat12_bpb_t;
+
+// This struct defines the exact 32-byte layout of a single directory entry
+// as it is stored on a FAT12/16/32 formatted disk.
+typedef struct {
+    uint8_t  name[8];              // 8-byte filename, padded with spaces.
+    uint8_t  extension[3];         // 3-byte extension, padded with spaces.
+    uint8_t  attributes;           // Bitmask of file attributes (e.g., Read-Only, Directory).
+    uint8_t  reserved;             // Reserved for use by Windows NT.
+    uint8_t  creation_time_tenths; // Timestamp for creation time (tenths of a second).
+    uint16_t creation_time;        // Time file was created.
+    uint16_t creation_date;        // Date file was created.
+    uint16_t last_access_date;     // Date of last access.
+    uint16_t first_cluster_high;   // High 16 bits of the start cluster (used in FAT32).
+    uint16_t last_mod_time;        // Time of last modification.
+    uint16_t last_mod_date;        // Date of last modification.
+    uint16_t first_cluster_low;    // Low 16 bits of the file's starting cluster number.
+    uint32_t file_size;            // The size of the file in bytes.
+} __attribute__((packed)) fat_dir_entry_t;
+
+// The main function to initialize the filesystem driver.
+void init_fs();
+
+#endif // FS_H; myos/kernel/data.asm
+
+bits 32
+
+global file_start
+global file_end
+
+section .rodata
+
+file_start:
+    ; Include the raw binary contents of data.txt
+    incbin "kernel/data.txt"
+file_end:// myos/kernel/idt.c
 
 #include "idt.h"
 
@@ -445,12 +574,14 @@ void idt_install() {
 }// myos/kernel/kernel.c
 
 // headers
-#include "idt.h"
-#include "vga.h"
-#include "io.h"
+#include "idt.h" // interrupt tables
+#include "vga.h" // writing to screen
+#include "io.h" // hardware comms
 #include "keyboard.h" // Include our new keyboard driver header
 #include "timer.h" // Include our new timer driver header
-#include "shell.h"
+#include "shell.h" // shell for CLI
+#include "memory.h" // heap memory allocation
+#include "gdt.h" // kernel permanent GDT
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -459,6 +590,10 @@ static inline void outb(unsigned short port, unsigned char data) {
 
 void kmain() {
     outb(0xE9, 'S');
+
+     // Install the kernel's GDT first.
+    gdt_install();
+    outb(0xE9, 'G');
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
@@ -478,6 +613,10 @@ void kmain() {
 
     // clear the bios text
     clear_screen();
+
+    // initiate dynamic mem allocation
+    init_memory(); 
+    outb(0xE9, 'M');
 
     // Initialize the shell
     shell_init();
@@ -665,7 +804,38 @@ irq_common_stub:
     add esp, 8 ; Clean up the error code and interrupt number
     sti
     iret       ; Safely return from the interrupt
-// myos/kernel/io.h
+// myos/kernel/memory.c
+
+#include "memory.h"
+
+// This symbol is defined by the linker script
+extern uint32_t kernel_end;
+
+// This pointer will be "bumped" forward as we allocate memory
+static uint32_t heap_top;
+
+void init_memory() {
+    // The heap starts right where the kernel binary ends
+    heap_top = (uint32_t)&kernel_end;
+}
+
+void* malloc(uint32_t size) {
+        // Check if the current heap top is aligned to a 4-byte boundary.
+    if (heap_top % 4 != 0) {
+        // If not, align it by "bumping" it up to the next multiple of 4.
+        // This is a common bit-twiddling trick for alignment.
+        heap_top = (heap_top + 3) & ~3;
+    }
+    
+    // Save the current top of the heap, this is the address we will return
+    uint32_t old_top = heap_top;
+
+    // "Bump" the pointer forward by the requested size
+    heap_top += size;
+
+    // Return the start of the newly allocated block
+    return (void*)old_top;
+}// myos/kernel/io.h
 
 #ifndef IO_H
 #define IO_H
@@ -673,6 +843,7 @@ irq_common_stub:
 void port_byte_out(unsigned short port, unsigned char data);
 unsigned char port_byte_in(unsigned short port);
 void pic_remap(int offset1, int offset2); // remapping interrupt vectors func
+unsigned short port_word_in(unsigned short port);
 
 #endif; myos/kernel/kernel_entry.asm
 bits 32
@@ -758,6 +929,8 @@ void clear_screen();
 void update_cursor(int row, int col);
 void print_string(const char* str);
 void print_hex(uint32_t n);
+void print_char(char c);
+void print_hex(uint32_t n);
 
 #endif// myos/kernel/irq.h
 
@@ -772,7 +945,25 @@ void irq_uninstall_handler(int irq);
 void irq_install();
 void irq_handler(registers_t *r);
 
-#endif// myos/kernel/idt.h
+#endif// myos/kernel/string.c
+
+#include "string.h"
+
+int strcmp(const char* str1, const char* str2) {
+    while (*str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    return *(const unsigned char*)str1 - *(const unsigned char*)str2;
+}
+
+int atoi(const char* str) {
+    int res = 0;
+    for (int i = 0; str[i] != '\0'; ++i) {
+        res = res * 10 + str[i] - '0';
+    }
+    return res;
+}// myos/kernel/idt.h
 #ifndef IDT_H
 #define IDT_H
 
@@ -796,6 +987,28 @@ struct idt_ptr_struct {
 
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags);
 void idt_install();
+
+#endif// myos/kernel/disk.h
+
+#ifndef DISK_H
+#define DISK_H
+
+#include "types.h"
+
+// Reads a 512-byte sector from the disk.
+// lba: The linear block address of the sector.
+// buffer: A pointer to a 512-byte buffer to store the data.
+void read_disk_sector(uint32_t lba, uint8_t* buffer);
+
+#endif// myos/kernel/memory.h
+
+#ifndef MEMORY_H
+#define MEMORY_H
+
+#include "types.h"
+
+void init_memory();
+void* malloc(uint32_t size);
 
 #endif// myos/kernel/vga.c
 
@@ -891,10 +1104,65 @@ void print_string(const char* str) {
 
 void print_hex(uint32_t n) {
     print_string("0x");
+    // Loop through each of the 8 hex digits (nibbles)
     for (int i = 28; i >= 0; i -= 4) {
+        // Get the 4 bits for this digit
         uint32_t nibble = (n >> i) & 0xF;
-        nibble += nibble > 9 ? 0x37 : 0x30;
-        print_char((char)nibble);
+        // Convert the number (0-15) to its ASCII character ('0'-'9', 'A'-'F')
+        char c = (nibble > 9) ? (nibble - 10 + 'A') : (nibble + '0');
+        print_char(c);
+    }
+}; myos/kernel/gdt_load.asm
+
+bits 32
+
+global gdt_flush ; Makes this function visible to C code
+
+gdt_flush:
+    ; Get the pointer to the GDT structure from the stack
+    mov eax, [esp + 4]
+    ; Load the new GDT into the CPU's GDTR register
+    lgdt [eax]
+
+    ; Do a far jump to our new code segment to flush the CPU pipeline
+    ; and reload the segment registers.
+    mov ax, 0x10  ; 0x10 is the offset of our new data segment
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    jmp 0x08:.flush ; 0x08 is the offset of our new code segment
+.flush:
+    ret// myos/kernel/fs.c
+
+#include "fs.h"
+#include "disk.h"
+#include "vga.h"
+#include "memory.h"
+
+static fat12_bpb_t* bpb; // keep private to fs/c
+uint8_t* root_directory_buffer; // global ie no static
+uint32_t root_directory_size; // global ie no static
+
+void init_fs() {
+    // Read the BIOS Parameter Block (Sector 0)
+    uint8_t* buffer = (uint8_t*)malloc(512);
+    read_disk_sector(0, buffer);
+    bpb = (fat12_bpb_t*)buffer;
+
+    // Calculate the location and size of the root directory
+    uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
+    root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
+    uint32_t root_dir_size_sectors = root_directory_size / bpb->bytes_per_sector;
+    if (root_directory_size % bpb->bytes_per_sector > 0) {
+        root_dir_size_sectors++; // Handle non-even division
+    }
+
+    // Read the entire root directory into a new buffer
+    root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
+    for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
+        read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
     }
 }// myos/kernel/timer.c
 
@@ -903,7 +1171,7 @@ void print_hex(uint32_t n) {
 #include "io.h"
 #include "vga.h" // For printing output
 
-static uint32_t tick = 0;
+static volatile uint32_t tick = 0;
 
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
@@ -912,10 +1180,10 @@ static void timer_handler(registers_t *r) {
 
 // Configures the PIT and installs the timer handler.
 void timer_install() {
-    // 1. Install the handler for IRQ 0
+    // Install the handler for IRQ 0
     irq_install_handler(0, timer_handler);
 
-    // 2. Configure the PIT
+    //  Configure the PIT
     uint32_t frequency = 100; // Target frequency in Hz
     uint32_t divisor = 1193180 / frequency;
 
@@ -926,58 +1194,146 @@ void timer_install() {
     // Send the frequency divisor, low byte then high byte.
     port_byte_out(0x40, (uint8_t)(divisor & 0xFF));
     port_byte_out(0x40, (uint8_t)((divisor >> 8) & 0xFF));
+}
+
+// tick getter func
+uint32_t timer_get_ticks() {
+    return tick;
+}
+
+// delay tick func
+void sleep(uint32_t milliseconds) {
+    uint32_t start_tick = timer_get_ticks();
+    // Our timer is at 100Hz, so 1 tick happens every 10ms.
+    uint32_t ticks_to_wait = milliseconds / 10;
+
+    // If the duration is very short, still wait for at least one tick.
+    if (ticks_to_wait == 0) {
+        ticks_to_wait = 1;
+    }
+
+    uint32_t end_tick = start_tick + ticks_to_wait;
+
+    while (timer_get_ticks() < end_tick) {
+        // This is the fix: Re-enable interrupts and then immediately halt.
+        // The CPU will wait here until the next timer interrupt arrives.
+        __asm__ __volatile__("sti\n\thlt");
+    }
 }// myos/kernel/types.h
 #ifndef TYPES_H
 #define TYPES_H
 
 // Define fixed-width integer types for cross-platform compatibility
+// Unsigned integer types
 typedef unsigned char   uint8_t;
 typedef unsigned short  uint16_t;
 typedef unsigned int    uint32_t;
 typedef unsigned long long uint64_t;
+
+// Signed integer types
+typedef signed char        int8_t;
+typedef signed short       int16_t;
+typedef signed int         int32_t;
+typedef signed long long   int64_t;
 
 #endif// myos/kernel/timer.h
 
 #ifndef TIMER_H
 #define TIMER_H
 
+#include "types.h"
+
 // Initializes the PIT and registers its IRQ handler.
 void timer_install();
+uint32_t timer_get_ticks(); // getter func
+void sleep(uint32_t ms);
 
-#endif// myos/kernel/shell.c
+#endif// myos/kernel/disk.c
+
+#include "disk.h"
+#include "io.h" // for port_word_in
+
+// Helper function to wait for the disk to be ready.
+static void wait_disk_ready() {
+    // Wait until the BSY (busy) bit is cleared in the status port.
+    while (port_byte_in(0x1F7) & 0x80) {
+        // Loop and do nothing while the disk is busy.
+    }
+}
+
+void read_disk_sector(uint32_t lba, uint8_t* buffer) {
+    wait_disk_ready();
+
+    // Wait for the drive to settle by reading the status port 4 times.
+    // This is the "400ns delay".
+    port_byte_in(0x1F7);
+    port_byte_in(0x1F7);
+    port_byte_in(0x1F7);
+    port_byte_in(0x1F7);
+
+    // Send drive select and highest LBA bits
+    port_byte_out(0x1F6, 0xE0 | ((lba >> 24) & 0x0F));
+
+    // Send the number of sectors to read (1)
+    port_byte_out(0x1F2, 1);
+
+    // Send the LBA address bytes
+    port_byte_out(0x1F3, (uint8_t)lba);
+    port_byte_out(0x1F4, (uint8_t)(lba >> 8));
+    port_byte_out(0x1F5, (uint8_t)(lba >> 16));
+
+
+    // Send the READ SECTORS command
+    port_byte_out(0x1F7, 0x20);
+
+    wait_disk_ready();
+
+    // Read 256 words (512 bytes) from the data port into the buffer
+    for (int i = 0; i < 256; i++) {
+        ((uint16_t*)buffer)[i] = port_word_in(0x1F0);
+    }
+}// myos/kernel/shell.c
 
 #include "shell.h"
 #include "vga.h" // We need this for print_char
+#include "string.h" // Needed for strcmp
+#include "timer.h" // for tick getter
+#include "io.h" // for port_byte_out
+#include "memory.h" // for dynamic heap memory
+#include "disk.h" // for disk sector read
+#include "fs.h" // for FAT12 entries
+
+// These labels are defined in data.asm
+extern char file_start[];
+extern char file_end[];
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
 
-// A buffer to store the command being typed.
+// Static variables to hold the command buffer state
 static char cmd_buffer[MAX_CMD_LEN];
-// The current position in the command buffer.
 static int cmd_index = 0;
+
+// Forward-declaration for our command processor
+void process_command();
 
 // Initialize the shell.
 void shell_init() {
-    // Print the prompt when the shell starts.
+    // first prompt
     print_string(PROMPT);
 }
 
 // This function is called by the keyboard driver for each keypress.
 void shell_handle_input(char c) {
-
-    // If the user pressed Enter
+    // On Enter, null-terminate the string and process it
     if (c == '\n') {
         print_char(c); // Echo the newline
-        
-        // For now, we don't process the command. Just reset the buffer.
+
         cmd_buffer[cmd_index] = '\0';
-        cmd_index = 0;
+        process_command();
+
         
-        // Print the prompt for the next command
-        print_string(PROMPT);
-        
-    // If the user pressed Backspace
+    // On Backspace, delete a character
     } else if (c == '\b') {
         if (cmd_index > 0) {
             // Go back one character in the buffer and on the screen.
@@ -985,12 +1341,163 @@ void shell_handle_input(char c) {
             print_char(c);
         }
 
-    // For any other printable character
+    // On any other key, add it to the buffer
     } else if (cmd_index < MAX_CMD_LEN - 1) {
         // Add the character to the buffer and echo it to the screen.
         cmd_buffer[cmd_index++] = c;
         print_char(c);
     }
+}
+
+// This function processes the completed command
+void process_command() {
+
+    // command arg parsing
+    char* command = cmd_buffer;
+    char* argument = 0; // Starts as null
+
+    // Find the first space to separate command from argument
+    int i = 0;
+    while (command[i] != ' ' && command[i] != '\0') {
+        i++;
+    }
+
+    if (command[i] == ' ') {
+        // If we found a space, null-terminate the command part
+        command[i] = '\0';
+        // And the argument starts right after
+        argument = command + i + 1;
+    }
+
+    // Command Handling
+    print_string("\n");
+
+    // help command
+    if (strcmp(cmd_buffer, "help") == 0) {
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n");
+
+    // cls command
+    } else if (strcmp(cmd_buffer, "cls") == 0) {
+        clear_screen();
+
+    // uptime command
+    } else if (strcmp(cmd_buffer, "uptime") == 0) {
+        // Our timer is set to 100Hz, so 100 ticks = 1 second
+        print_string("Uptime (seconds): ");
+        print_hex(timer_get_ticks() / 100);
+
+    // reboot command
+    } else if (strcmp(cmd_buffer, "reboot") == 0) {
+        print_string("Rebooting system...");
+        // Send the reboot command to the keyboard controller
+        port_byte_out(0x64, 0xFE);
+
+    // memtest command
+    } else if (strcmp(cmd_buffer, "memtest") == 0) {
+        // Allocate a few blocks and print their addresses
+        void* addr1 = malloc(1);
+        void* addr2 = malloc(1);
+        void* addr3 = malloc(1024);
+        print_string("Block 1: "); print_hex((uint32_t)addr1);
+        print_string("\nBlock 2: "); print_hex((uint32_t)addr2);
+        print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
+
+    // cat command
+    } else if (strcmp(cmd_buffer, "cat") == 0) {
+        // For now, let's just prove we received the argument correctly.
+        if (argument) {
+            print_string("Argument received: '");
+            print_string(argument);
+            print_string("'");
+        } else {
+            // For now, if no argument, do what it did before
+            print_string("Displaying embedded file:\n");
+            extern char file_start[]; // Get the labels from data.asm
+            extern char file_end[];
+            for (char* p = file_start; p < file_end; p++) {
+                print_char(*p);
+            }
+        }
+
+    // disktest command
+    } else if (strcmp(command, "disktest") == 0) {
+        print_string("Reading sector 0 from disk...\n");
+
+        // Allocate a 512-byte buffer for the sector data
+        uint8_t* buffer = (uint8_t*)malloc(512);
+
+        // Read sector 0
+        read_disk_sector(0, buffer);
+
+        // Print the first 16 bytes to see if it looks like a bootloader
+        print_string("First 16 bytes: ");
+        for (int i = 0; i < 16; i++) {
+            print_hex(buffer[i]);
+            print_char(' ');
+        }
+        // Note: We don't free the buffer because we haven't written free() yet!
+
+    // sleep command
+    } else if (strcmp(command, "sleep") == 0) {
+        if (argument) {
+            int ms = atoi(argument);
+            print_string("Sleeping for ");
+            print_string(argument);
+            print_string("ms...");
+            sleep(ms);
+        } else {
+            print_string("Usage: sleep <milliseconds>");
+        }
+
+    // ls command
+    } else if (strcmp(command, "ls") == 0) {
+        // These labels are defined in fs.c
+        extern uint8_t* root_directory_buffer;
+        extern uint32_t root_directory_size;
+
+        print_string("Name      Ext  Attr  Size\n");
+        print_string("---------------------------\n");
+
+        // Loop through every 32-byte entry in the root directory
+        for (uint32_t i = 0; i < root_directory_size; i += 32) {
+            fat_dir_entry_t* entry = (fat_dir_entry_t*)(root_directory_buffer + i);
+
+            // Stop if we've reached the end of the directory list
+            if (entry->name[0] == 0x00) {
+                break;
+            }
+            // Skip deleted files
+            if (entry->name[0] == 0xE5) {
+                continue;
+            }
+
+            // Print the 8.3 filename
+            for (int j = 0; j < 8; j++) print_char(entry->name[j]);
+            print_string("  ");
+            for (int j = 0; j < 3; j++) print_char(entry->extension[j]);
+
+            // Print attributes and size
+            print_string("  0x"); print_hex(entry->attributes);
+            print_string("  ");  print_hex(entry->file_size);
+            print_string("\n");
+        }
+    
+    // invalid command
+    } else if (cmd_index > 0) { // Only show error for non-empty commands
+        print_string("Unknown command: ");
+        print_string(cmd_buffer);
+    }
+
+    // Reset buffer for the next command
+    cmd_index = 0;
+
+    // Only print a newline for spacing if the command wasn't "cls".
+    if (strcmp(cmd_buffer, "cls") != 0) {
+        print_string("\n");
+    }
+
+    //print a new prompt for the next command
+    print_string(PROMPT);
 }/* myos/kernel/linker.ld */
 ENTRY(_start)
 
@@ -1014,6 +1521,7 @@ SECTIONS {
         *(.bss)
     }
     bss_end = .;
+    kernel_end = .;
 
     /* This section prevents the "executable stack" warning and cleans up output */
     /DISCARD/ : {
@@ -1029,7 +1537,7 @@ SECTIONS {
 # --- Variables ---
 BUILD_DIR := build
 QEMU_CMD := qemu-system-i386
-QEMU_OPTS := -fda $(BUILD_DIR)/os_image.bin -debugcon stdio
+QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---
 BOOT_SRC := boot/bootloader.asm
@@ -1067,10 +1575,20 @@ all: $(DISK_IMAGE)
 
 # Rule to create the final disk image
 $(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
-	@echo "Creating disk image: $@"
-	@dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
-	@dd if=$(BOOT_OBJ) of=$@ bs=512 seek=0 conv=notrunc >/dev/null 2>&1
-	@dd if=$(KERNEL_BIN) of=$@ bs=512 seek=1 conv=notrunc >/dev/null 2>&1
+	@echo "--> Creating blank disk image..."
+	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
+
+	@echo "--> Formatting disk with FAT12..."
+	mkfs.fat -F 12 $@ >/dev/null 2>&1
+
+	@echo "--> Copying test files to disk image..."
+	mcopy -i $@ -s test_files/* ::/
+
+	@echo "--> Installing custom bootloader..."
+	dd if=$(BOOT_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
+	
+	@echo "--> Installing kernel..."
+	dd if=$(KERNEL_BIN) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
 
 # Rule to link all kernel objects into a single ELF file
 # KERNEL_ENTRY_OBJ is listed first to ensure correct linking.
@@ -1109,3 +1627,8 @@ run: $(DISK_IMAGE)
 clean:
 	@echo "Cleaning build directory..."
 	rm -rf $(BUILD_DIR)
+
+# Rule to start debugger
+debug: all
+	@echo "--- Starting QEMU, waiting for GDB on localhost:1234 ---"
+	qemu-system-i386 -hda build/os_image.bin -debugcon stdio -S -gdb tcp::1234

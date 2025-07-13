@@ -7,6 +7,7 @@
 #include "io.h" // for port_byte_out
 #include "memory.h" // for dynamic heap memory
 #include "disk.h" // for disk sector read
+#include "fs.h" // for FAT12 entries
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -79,7 +80,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -152,6 +153,39 @@ void process_command() {
             sleep(ms);
         } else {
             print_string("Usage: sleep <milliseconds>");
+        }
+
+    // ls command
+    } else if (strcmp(command, "ls") == 0) {
+        // These labels are defined in fs.c
+        extern uint8_t* root_directory_buffer;
+        extern uint32_t root_directory_size;
+
+        print_string("Name      Ext  Attr  Size\n");
+        print_string("---------------------------\n");
+
+        // Loop through every 32-byte entry in the root directory
+        for (uint32_t i = 0; i < root_directory_size; i += 32) {
+            fat_dir_entry_t* entry = (fat_dir_entry_t*)(root_directory_buffer + i);
+
+            // Stop if we've reached the end of the directory list
+            if (entry->name[0] == 0x00) {
+                break;
+            }
+            // Skip deleted files
+            if (entry->name[0] == 0xE5) {
+                continue;
+            }
+
+            // Print the 8.3 filename
+            for (int j = 0; j < 8; j++) print_char(entry->name[j]);
+            print_string("  ");
+            for (int j = 0; j < 3; j++) print_char(entry->extension[j]);
+
+            // Print attributes and size
+            print_string("  0x"); print_hex(entry->attributes);
+            print_string("  ");  print_hex(entry->file_size);
+            print_string("\n");
         }
     
     // invalid command
