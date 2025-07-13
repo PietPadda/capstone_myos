@@ -7,7 +7,7 @@
 # --- Variables ---
 BUILD_DIR := build
 QEMU_CMD := qemu-system-i386
-QEMU_OPTS := -fda $(BUILD_DIR)/os_image.bin -debugcon stdio
+QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---
 BOOT_SRC := boot/bootloader.asm
@@ -91,4 +91,4 @@ clean:
 # Rule to start debugger
 debug: all
 	@echo "--- Starting QEMU, waiting for GDB on localhost:1234 ---"
-	qemu-system-i386 -fda build/os_image.bin -debugcon stdio -S -gdb tcp::1234
+	qemu-system-i386 -hda build/os_image.bin -debugcon stdio -S -gdb tcp::1234
