@@ -1,8 +1,7 @@
-# myos/Makefile
 # A robust and scalable Makefile for myos
 
 # Tell Make that these are not real files
-.PHONY: all clean run
+.PHONY: all clean run debug
 
 # --- Variables ---
 BUILD_DIR := build
@@ -10,14 +9,16 @@ QEMU_CMD := qemu-system-i386
 QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---
-BOOT_SRC := boot/bootloader.asm
+STAGE1_SRC := boot/stage1.asm
+STAGE2_SRC := boot/stage2.asm
 # Separate kernel_entry.asm so we can control its link order
 KERNEL_ENTRY_SRC := kernel/kernel_entry.asm
 KERNEL_ASM_SRC := $(filter-out $(KERNEL_ENTRY_SRC), $(wildcard kernel/*.asm))
 KERNEL_C_SRC := $(wildcard kernel/*.c)
 
 # --- Object Files ---
-BOOT_OBJ := $(BUILD_DIR)/bootloader.bin
+STAGE1_OBJ := $(BUILD_DIR)/stage1.bin
+STAGE2_OBJ := $(BUILD_DIR)/stage2.bin
 KERNEL_ENTRY_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ENTRY_SRC))
 KERNEL_ASM_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ASM_SRC))
 KERNEL_C_OBJ := $(patsubst kernel/%.c, $(BUILD_DIR)/%.o, $(KERNEL_C_SRC))
@@ -44,7 +45,7 @@ OBJCOPY_FLAGS := -O binary
 all: $(DISK_IMAGE)
 
 # Rule to create the final disk image
-$(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
+$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
 
@@ -54,11 +55,14 @@ $(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
 	@echo "--> Copying test files to disk image..."
 	mcopy -i $@ -s test_files/* ::/
 
-	@echo "--> Installing custom bootloader..."
-	dd if=$(BOOT_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
+	@echo "--> Installing Stage 1 bootloader..."
+	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
 	
+	@echo "--> Installing Stage 2 bootloader..."
+	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
+
 	@echo "--> Installing kernel..."
-	dd if=$(KERNEL_BIN) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
+	dd if=$(KERNEL_BIN) of=$@ seek=5 conv=notrunc >/dev/null 2>&1
 
 # Rule to link all kernel objects into a single ELF file
 # KERNEL_ENTRY_OBJ is listed first to ensure correct linking.
@@ -73,8 +77,13 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	@echo -n "Kernel size: "
 	@stat -c %s $@
 
-# Rule to build the bootloader (special case, not an ELF object)
-$(BOOT_OBJ): $(BOOT_SRC)
+# Rule to build stage 1
+$(STAGE1_OBJ): $(STAGE1_SRC)
+	@mkdir -p $(BUILD_DIR)
+	$(ASM) $< -f bin -o $@
+
+# Rule to build stage 2
+$(STAGE2_OBJ): $(STAGE2_SRC)
 	@mkdir -p $(BUILD_DIR)
 	$(ASM) $< -f bin -o $@
 
