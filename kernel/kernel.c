@@ -45,6 +45,11 @@ void kmain() {
     init_memory(); 
     outb(0xE9, 'M');
 
+    // Initialize the filesystem driver. This must be done after memory
+    // is initialized, as it uses malloc().
+    init_fs();
+    outb(0xE9, 'F'); // Filesystem Initialized
+
     // Initialize the shell
     shell_init();
     outb(0xE9, 's');

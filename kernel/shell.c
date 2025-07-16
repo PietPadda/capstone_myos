@@ -80,7 +80,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -157,6 +157,7 @@ void process_command() {
 
     // ls command
     } else if (strcmp(command, "ls") == 0) {
+        port_byte_out(0xE9, 'E'); // Entered 'ls' command handler
         // These labels are defined in fs.c
         extern uint8_t* root_directory_buffer;
         extern uint32_t root_directory_size;
@@ -177,6 +178,12 @@ void process_command() {
                 continue;
             }
 
+            // Skip Long Filename entries which have a special attribute
+            if ((entry->attributes & 0x0F) == 0x0F) {
+                continue;
+            }
+            port_byte_out(0xE9, 'F'); // Found a valid file entry to list
+
             // Print the 8.3 filename
             for (int j = 0; j < 8; j++) print_char(entry->name[j]);
             print_string("  ");
@@ -186,6 +193,16 @@ void process_command() {
             print_string("  0x"); print_hex(entry->attributes);
             print_string("  ");  print_hex(entry->file_size);
             print_string("\n");
+        }
+        port_byte_out(0xE9, 'G'); // Finished 'ls' command handler
+
+    // dump command
+    } else if (strcmp(command, "dump") == 0) {
+        extern uint8_t* root_directory_buffer;
+        print_string("\nRoot Directory Buffer Dump:\n");
+        for (int i = 0; i < 128; i++) { // Print the first 128 bytes
+            print_hex(root_directory_buffer[i]);
+            print_char(' ');
         }
     
     // invalid command

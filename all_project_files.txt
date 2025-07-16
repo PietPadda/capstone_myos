@@ -1,4 +1,176 @@
-; myos/boot/bootloader.asm
+; Stage 1 Bootloader
+; This tiny bootloader is located in the boot sector (LBA 0). Its only job
+; is to load Stage 2 from the disk and jump to it.
+
+org 0x7C00
+bits 16
+
+start:
+    ; The BIOS provides the boot drive in DL. We must save it immediately.
+    mov [boot_drive], dl
+
+    ; Set up segments and stack for a clean 16-bit environment
+    xor ax, ax
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov sp, 0x7C00
+
+    ; --- Load Stage 2 from Disk ---
+    ; We will load 4 sectors starting from LBA 1 into memory at 0x5000.
+    ; Stage 2 will be placed at LBA 1 by our build script.
+    mov si, dap                 ; Point SI to our Disk Address Packet
+    mov word [si + 4], 0x5000   ; Target buffer offset: 0x5000
+    mov word [si + 6], 0x0000   ; Target buffer segment: 0x0000 (ES:BX -> 0x0000:5000 = 0x5000)
+    mov dword [si + 8], 1       ; LBA Start = 1 (sector after this bootloader)
+
+    mov ah, 0x42                ; BIOS Extended Read function
+    mov dl, [boot_drive]        ; Use the saved drive number
+    int 0x13
+    jc disk_error
+
+    ; --- Jump to Stage 2 ---
+    ; Pass the boot drive number in DL for Stage 2 to use
+    mov dl, [boot_drive]
+    jmp 0x0000:0x5000
+
+disk_error:
+    mov si, msg_disk_error
+print_error_loop:
+    lodsb
+    or al, al
+    jz hang
+    mov ah, 0x0E
+    int 0x10
+    jmp print_error_loop
+
+hang:
+    cli
+    hlt
+
+; --- DATA ---
+boot_drive:     db 0
+msg_disk_error: db 'Stage 1 read error!', 0
+
+; Disk Address Packet (DAP) for the extended read call
+dap:
+    db 0x10, 0          ; Size of packet (16 bytes)
+    dw 4                ; Sectors to read = 4
+    dd 0                ; Buffer address (filled at runtime)
+    dq 0                ; LBA start (filled at runtime)
+
+
+times 510 - ($ - $$) db 0
+dw 0xAA55; Stage 2 Bootloader
+; This bootloader is loaded by Stage 1. It uses LBA to load the kernel,
+; enters 32-bit protected mode, and then jumps to the kernel.
+
+org 0x5000  ; We are loaded at 0x5000 by Stage 1
+bits 16
+
+GDT_CODE equ 0x08
+GDT_DATA equ 0x10
+
+start:
+    ; Stage 1 passes the boot drive number in DL. We save it immediately.
+    mov [boot_drive], dl
+
+    ; Set up our own stack.
+    mov sp, 0x5000
+
+    ; --- Load Kernel using modern LBA Extended Read ---
+    ; Kernel is located starting at LBA 5 by our build script.
+    mov si, dap                 ; Point SI to our Disk Address Packet
+    mov word [si + 2], 20       ; Set sectors to read = 20
+    mov word [si + 4], 0x0000   ; Target buffer offset
+    mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
+    mov dword [si + 8], 5       ; LBA Start = 5 (after stage1 and stage2)
+
+    mov ah, 0x42                ; BIOS Extended Read function
+    mov dl, [boot_drive]        ; Use the saved drive number
+    int 0x13
+    jc disk_error
+
+    ; --- Enter Protected Mode ---
+    cli                         ; 1. Disable interrupts
+    lgdt [gdt_descriptor]       ; 2. Load our GDT
+    
+    mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
+    or eax, 0x01
+    mov cr0, eax
+    
+    jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
+
+disk_error:
+    mov si, msg_disk_error
+print_error_loop:
+    lodsb
+    or al, al
+    jz hang
+    mov ah, 0x0E
+    int 0x10
+    jmp print_error_loop
+
+hang:
+    cli
+    hlt
+
+; =======================================================
+; ### 32-BIT PROTECTED MODE CODE ###
+; =======================================================
+bits 32
+start_32bit:
+    ; Set up 32-bit segment registers
+    mov ax, GDT_DATA
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; Set up the stack in a high memory area
+    mov esp, 0x90000
+
+    ; Jump to the kernel's entry point
+    jmp 0x10000
+
+; =======================================================
+; ### DATA SECTION ###
+; =======================================================
+boot_drive:     db 0
+msg_disk_error: db 'Stage 2 read error!', 0
+
+; Disk Address Packet (DAP) for the extended read call
+dap:
+    db 0x10, 0
+    dw 0        ; Number of sectors (filled at runtime)
+    dd 0        ; Buffer address (filled at runtime)
+    dq 0        ; LBA start (filled at runtime)
+
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1 ; GDT limit
+    dd gdt_start               ; GDT base
+
+gdt_start:
+    ; Null descriptor
+    dq 0x0
+
+    ; Code Segment Descriptor (base=0, limit=4GB, Ring 0)
+    dw 0xFFFF    ; Limit (low)
+    dw 0x0       ; Base (low)
+    db 0x0       ; Base (mid)
+    db 0x9A      ; Access (Present, Ring 0, Code, Exec/Read)
+    db 0xCF      ; Granularity (4K pages, 32-bit)
+    db 0x0       ; Base (high)
+
+    ; Data Segment Descriptor (base=0, limit=4GB, Ring 0)
+    dw 0xFFFF    ; Limit (low)
+    dw 0x0       ; Base (low)
+    db 0x0       ; Base (mid)
+    db 0x92      ; Access (Present, Ring 0, Data, Read/Write)
+    db 0xCF      ; Granularity (4K pages, 32-bit)
+    db 0x0       ; Base (high)
+gdt_end:; myos/boot/lba_relic_bootloader.asm
 ; A modern bootloader that uses LBA to load a kernel, enters 32-bit protected mode,
 ; and then jumps to the kernel.
 
@@ -617,6 +789,13 @@ void kmain() {
     // initiate dynamic mem allocation
     init_memory(); 
     outb(0xE9, 'M');
+
+    // ADDED THIS LAST 20250715_2226
+    // --- THIS IS THE FIX ---
+    // Initialize the filesystem driver. This must be done after memory
+    // is initialized, as it uses malloc().
+    init_fs();
+    outb(0xE9, 'F'); // Filesystem Initialized
 
     // Initialize the shell
     shell_init();
@@ -1374,7 +1553,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -1471,6 +1650,11 @@ void process_command() {
                 continue;
             }
 
+            // Skip Long Filename entries which have a special attribute
+            if ((entry->attributes & 0x0F) == 0x0F) {
+                continue;
+            }
+
             // Print the 8.3 filename
             for (int j = 0; j < 8; j++) print_char(entry->name[j]);
             print_string("  ");
@@ -1480,6 +1664,15 @@ void process_command() {
             print_string("  0x"); print_hex(entry->attributes);
             print_string("  ");  print_hex(entry->file_size);
             print_string("\n");
+        }
+
+    // dump command
+    } else if (strcmp(command, "dump") == 0) {
+        extern uint8_t* root_directory_buffer;
+        print_string("\nRoot Directory Buffer Dump:\n");
+        for (int i = 0; i < 128; i++) { // Print the first 128 bytes
+            print_hex(root_directory_buffer[i]);
+            print_char(' ');
         }
     
     // invalid command
@@ -1528,11 +1721,10 @@ SECTIONS {
         *(.note.GNU-stack)
         *(.eh_frame)
     }
-}# myos/Makefile
-# A robust and scalable Makefile for myos
+}# A robust and scalable Makefile for myos
 
 # Tell Make that these are not real files
-.PHONY: all clean run
+.PHONY: all clean run debug
 
 # --- Variables ---
 BUILD_DIR := build
@@ -1540,14 +1732,16 @@ QEMU_CMD := qemu-system-i386
 QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---
-BOOT_SRC := boot/bootloader.asm
+STAGE1_SRC := boot/stage1.asm
+STAGE2_SRC := boot/stage2.asm
 # Separate kernel_entry.asm so we can control its link order
 KERNEL_ENTRY_SRC := kernel/kernel_entry.asm
 KERNEL_ASM_SRC := $(filter-out $(KERNEL_ENTRY_SRC), $(wildcard kernel/*.asm))
 KERNEL_C_SRC := $(wildcard kernel/*.c)
 
 # --- Object Files ---
-BOOT_OBJ := $(BUILD_DIR)/bootloader.bin
+STAGE1_OBJ := $(BUILD_DIR)/stage1.bin
+STAGE2_OBJ := $(BUILD_DIR)/stage2.bin
 KERNEL_ENTRY_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ENTRY_SRC))
 KERNEL_ASM_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ASM_SRC))
 KERNEL_C_OBJ := $(patsubst kernel/%.c, $(BUILD_DIR)/%.o, $(KERNEL_C_SRC))
@@ -1574,7 +1768,7 @@ OBJCOPY_FLAGS := -O binary
 all: $(DISK_IMAGE)
 
 # Rule to create the final disk image
-$(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
+$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
 
@@ -1584,11 +1778,14 @@ $(DISK_IMAGE): $(BOOT_OBJ) $(KERNEL_BIN)
 	@echo "--> Copying test files to disk image..."
 	mcopy -i $@ -s test_files/* ::/
 
-	@echo "--> Installing custom bootloader..."
-	dd if=$(BOOT_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
+	@echo "--> Installing Stage 1 bootloader..."
+	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
 	
+	@echo "--> Installing Stage 2 bootloader..."
+	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
+
 	@echo "--> Installing kernel..."
-	dd if=$(KERNEL_BIN) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
+	dd if=$(KERNEL_BIN) of=$@ seek=5 conv=notrunc >/dev/null 2>&1
 
 # Rule to link all kernel objects into a single ELF file
 # KERNEL_ENTRY_OBJ is listed first to ensure correct linking.
@@ -1603,8 +1800,13 @@ $(KERNEL_BIN): $(KERNEL_ELF)
 	@echo -n "Kernel size: "
 	@stat -c %s $@
 
-# Rule to build the bootloader (special case, not an ELF object)
-$(BOOT_OBJ): $(BOOT_SRC)
+# Rule to build stage 1
+$(STAGE1_OBJ): $(STAGE1_SRC)
+	@mkdir -p $(BUILD_DIR)
+	$(ASM) $< -f bin -o $@
+
+# Rule to build stage 2
+$(STAGE2_OBJ): $(STAGE2_SRC)
 	@mkdir -p $(BUILD_DIR)
 	$(ASM) $< -f bin -o $@
 
