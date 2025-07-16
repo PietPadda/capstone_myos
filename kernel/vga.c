@@ -53,7 +53,9 @@ void print_char(char c) {
         cursor_col = 0;
     } else {
         // Handle a normal character.
-        VGA_BUFFER[(cursor_row * 80) + cursor_col] = (VGA_BUFFER[(cursor_row * 80) + cursor_col] & 0xFF00) | c;
+        // The new way: Directly write the character 'c' with a white-on-black
+        // attribute (0x0F). This is more stable than the old method.
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = c | (0x0F << 8);
         cursor_col++;
     }
 
