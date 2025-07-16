@@ -80,7 +80,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read sector 0 (Bootloader)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -127,17 +127,17 @@ void process_command() {
 
     // disktest command
     } else if (strcmp(command, "disktest") == 0) {
-        print_string("Reading sector 0 from disk...\n");
+        print_string("Reading LBA 19 (root dir)...\n");
 
         // Allocate a 512-byte buffer for the sector data
         uint8_t* buffer = (uint8_t*)malloc(512);
 
-        // Read sector 0
-        read_disk_sector(0, buffer);
+        // Read sector 19, which should be the start of the root directory
+        read_disk_sector(19, buffer);
 
-        // Print the first 16 bytes to see if it looks like a bootloader
-        print_string("First 16 bytes: ");
-        for (int i = 0; i < 16; i++) {
+        // Print the first 32 bytes (the first directory entry)
+        print_string("First 32 bytes: ");
+        for (int i = 0; i < 32; i++) {
             print_hex(buffer[i]);
             print_char(' ');
         }
@@ -183,6 +183,11 @@ void process_command() {
                 continue;
             }
             port_byte_out(0xE9, 'F'); // Found a valid file entry to list
+
+            // Skip the Volume Label entry
+            if (entry->attributes & 0x08) {
+                continue;
+            }
 
             // Print the 8.3 filename
             for (int j = 0; j < 8; j++) print_char(entry->name[j]);

@@ -52,11 +52,13 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Formatting disk with FAT12..."
 	mkfs.fat -F 12 $@ >/dev/null 2>&1
 
-	@echo "--> Copying test files to disk image..."
-	mcopy -i $@ -s test_files/* ::/
-
+	# Install Stage 1 FIRST. This puts our BPB on the disk.
 	@echo "--> Installing Stage 1 bootloader..."
 	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
+
+	# Now, run mcopy. It will use the BPB we just installed.
+	@echo "--> Copying test files to disk image..."
+	mcopy -i $@ -s test_files ::
 	
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1

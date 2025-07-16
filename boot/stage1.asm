@@ -11,7 +11,7 @@ nop
 bpb_oem_name:           db 'MYOS    ' ; 8-byte OEM name
 bpb_bytes_per_sector:   dw 512
 bpb_sectors_per_cluster:db 1
-bpb_reserved_sectors:   dw 1
+bpb_reserved_sectors:   dw 33
 bpb_num_fats:           db 2
 bpb_root_dir_entries:   dw 224
 bpb_total_sectors:      dw 2880  ; 2880 * 512 = 1.44MB
@@ -21,7 +21,7 @@ bpb_sectors_per_track:  dw 18
 bpb_num_heads:          dw 2
 bpb_hidden_sectors:     dd 0
 bpb_total_sectors_large:dd 0
-drive_number:           db 0
+drive_number:           db 0x80
 _reserved:              db 1
 ext_boot_signature:     db 0x29
 volume_serial:          dd 0xdeadbeef
