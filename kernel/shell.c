@@ -80,7 +80,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Check if filename can be found\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -109,20 +109,18 @@ void process_command() {
         print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
 
     // cat command
-    } else if (strcmp(cmd_buffer, "cat") == 0) {
-        // For now, let's just prove we received the argument correctly.
+    } else if (strcmp(command, "cat") == 0) {
         if (argument) {
-            print_string("Argument received: '");
-            print_string(argument);
-            print_string("'");
-        } else {
-            // For now, if no argument, do what it did before
-            print_string("Displaying embedded file:\n");
-            extern char file_start[]; // Get the labels from data.asm
-            extern char file_end[];
-            for (char* p = file_start; p < file_end; p++) {
-                print_char(*p);
+            fat_dir_entry_t* file_entry = fs_find_file(argument);
+            if (file_entry) {
+                print_string("File found! Size: ");
+                print_hex(file_entry->file_size);
+            } else {
+                print_string("File not found: ");
+                print_string(argument);
             }
+        } else {
+            print_string("Usage: cat <filename>");
         }
 
     // disktest command

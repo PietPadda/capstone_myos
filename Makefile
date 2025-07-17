@@ -56,9 +56,9 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Installing Stage 1 bootloader..."
 	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
 
-	# Now, run mcopy. It will use the BPB we just installed.
-	@echo "--> Copying test files to disk image..."
-	mcopy -i $@ -s test_files ::
+	# Now, copy the specific test file directly into the root directory.
+	@echo "--> Copying test file to disk image..."
+	mcopy -i $@ test_files/test.txt ::
 	
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1

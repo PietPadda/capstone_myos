@@ -4,6 +4,7 @@
         "types.h": "c",
         "idt.h": "c",
         "io.h": "c",
-        "shell.h": "c"
+        "shell.h": "c",
+        "string.h": "c"
     }
 }

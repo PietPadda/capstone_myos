@@ -45,4 +45,7 @@ typedef struct {
 // The main function to initialize the filesystem driver.
 void init_fs();
 
+// Finds a file in the root directory by its name.
+fat_dir_entry_t* fs_find_file(const char* filename);
+
 #endif // FS_H

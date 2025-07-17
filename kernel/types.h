@@ -15,4 +15,10 @@ typedef signed short       int16_t;
 typedef signed int         int32_t;
 typedef signed long long   int64_t;
 
+// Standard size type, essential for memory operations
+typedef uint32_t size_t;
+
+// Definition for a null pointer constant
+#define NULL ((void*)0)
+
 #endif
