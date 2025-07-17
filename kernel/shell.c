@@ -113,8 +113,13 @@ void process_command() {
         if (argument) {
             fat_dir_entry_t* file_entry = fs_find_file(argument);
             if (file_entry) {
-                print_string("File found! Size: ");
-                print_hex(file_entry->file_size);
+                uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
+                if (buffer) {
+                    for (uint32_t i = 0; i < file_entry->file_size; i++) {
+                        print_char(buffer[i]);
+                    }
+                    // NOTE: We don't free(buffer) yet since we haven't written free()
+                }
             } else {
                 print_string("File not found: ");
                 print_string(argument);

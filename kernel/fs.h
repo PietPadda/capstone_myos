@@ -48,4 +48,7 @@ void init_fs();
 // Finds a file in the root directory by its name.
 fat_dir_entry_t* fs_find_file(const char* filename);
 
+// Reads the contents of a file given its directory entry.
+void* fs_read_file(fat_dir_entry_t* entry);
+
 #endif // FS_H
