@@ -80,7 +80,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Check if filename can be found\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -100,13 +100,21 @@ void process_command() {
 
     // memtest command
     } else if (strcmp(cmd_buffer, "memtest") == 0) {
-        // Allocate a few blocks and print their addresses
-        void* addr1 = malloc(1);
-        void* addr2 = malloc(1);
-        void* addr3 = malloc(1024);
-        print_string("Block 1: "); print_hex((uint32_t)addr1);
-        print_string("\nBlock 2: "); print_hex((uint32_t)addr2);
-        print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
+        print_string("Allocating block A (16 bytes)...");
+        void* block_a = malloc(16);
+        print_string("\n  A is at: "); print_hex((uint32_t)block_a);
+
+        print_string("\nAllocating block B (1024 bytes)...");
+        void* block_b = malloc(1024);
+        print_string("\n  B is at: "); print_hex((uint32_t)block_b);
+
+        print_string("\nFreeing block A...");
+        free(block_a);
+
+        print_string("\nAllocating block C (8 bytes)...");
+        void* block_c = malloc(8);
+        print_string("\n  C is at: "); print_hex((uint32_t)block_c);
+        print_string("\n(Note: C should have the same address as A)");
 
     // cat command
     } else if (strcmp(command, "cat") == 0) {
