@@ -19,8 +19,8 @@ struct gdt_ptr_struct {
     uint32_t base;
 } __attribute__((packed));
 
-// Our GDT with 3 entries: Null, Kernel Code, Kernel Data
-static struct gdt_entry_struct gdt_entries[3];
+// Our GDT with 5
+static struct gdt_entry_struct gdt_entries[5];
 static struct gdt_ptr_struct   gdt_ptr;
 
 // Assembly function to load the GDT (defined in gdt_load.asm)
@@ -39,12 +39,17 @@ static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t acc
 
 // Main function to install the GDT
 void gdt_install() {
-    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 3) - 1;
+    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 5) - 1;
     gdt_ptr.base  = (uint32_t)&gdt_entries;
-
+    
+    // Kernel Segments (Ring 0)
     gdt_set_gate(0, 0, 0, 0, 0);                // Null segment
     gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF); // Code segment (Ring 0)
     gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment (Ring 0)
+
+    // User Segments (Ring 3)
+    gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF); // User Code
+    gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF); // User Data
 
     // Load our new GDT
     gdt_flush((uint32_t)&gdt_ptr);
