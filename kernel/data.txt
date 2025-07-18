@@ -1,4 +1,0 @@
-"myos/kernel/data.text"
-
-This is a test file embedded in the kernel!
-It proves we can handle basic file data.

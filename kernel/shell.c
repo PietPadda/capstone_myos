@@ -1,13 +1,13 @@
 // myos/kernel/shell.c
 
-#include "shell.h"
-#include "vga.h" // We need this for print_char
-#include "string.h" // Needed for strcmp
-#include "timer.h" // for tick getter
-#include "io.h" // for port_byte_out
-#include "memory.h" // for dynamic heap memory
-#include "disk.h" // for disk sector read
-#include "fs.h" // for FAT12 entries
+#include <kernel/shell.h>
+#include <kernel/vga.h> // We need this for print_char
+#include <kernel/string.h> // Needed for strcmp
+#include <kernel/timer.h> // for tick getter
+#include <kernel/io.h> // for port_byte_out
+#include <kernel/memory.h> // for dynamic heap memory
+#include <kernel/disk.h> // for disk sector read
+#include <kernel/fs.h> // for FAT12 entries
 
 // These labels are defined in data.asm
 extern char file_start[];

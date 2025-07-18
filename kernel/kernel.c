@@ -1,15 +1,15 @@
 // myos/kernel/kernel.c
 
 // headers
-#include "idt.h" // interrupt tables
-#include "vga.h" // writing to screen
-#include "io.h" // hardware comms
-#include "keyboard.h" // Include our new keyboard driver header
-#include "timer.h" // Include our new timer driver header
-#include "shell.h" // shell for CLI
-#include "memory.h" // heap memory allocation
-#include "gdt.h" // kernel permanent GDT
-#include "fs.h" // Filesystem driver for init_fs()
+#include <kernel/idt.h> // interrupt tables
+#include <kernel/vga.h> // writing to screen
+#include <kernel/io.h> // hardware comms
+#include <kernel/keyboard.h> // Include our new keyboard driver header
+#include <kernel/timer.h> // Include our new timer driver header
+#include <kernel/shell.h> // shell for CLI
+#include <kernel/memory.h> // heap memory allocation
+#include <kernel/gdt.h> // kernel permanent GDT
+#include <kernel/fs.h> // Filesystem driver for init_fs()
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
