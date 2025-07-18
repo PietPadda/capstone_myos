@@ -11,7 +11,7 @@ nop
 bpb_oem_name:           db 'MYOS    ' ; 8-byte OEM name
 bpb_bytes_per_sector:   dw 512
 bpb_sectors_per_cluster:db 1
-bpb_reserved_sectors:   dw 33
+bpb_reserved_sectors:   dw 150
 bpb_num_fats:           db 2
 bpb_root_dir_entries:   dw 224
 bpb_total_sectors:      dw 2880  ; 2880 * 512 = 1.44MB
@@ -106,7 +106,7 @@ start:
     ; --- Load Kernel using modern LBA Extended Read ---
     ; Kernel is located starting at LBA 5 by our build script.
     mov si, dap                 ; Point SI to our Disk Address Packet
-    mov word [si + 2], 20       ; Set sectors to read = 20
+    mov word [si + 2], 64       ; Increase sectors to read to 64 (32KB)
     mov word [si + 4], 0x0000   ; Target buffer offset
     mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
     mov dword [si + 8], 5       ; LBA Start = 5 (after stage1 and stage2)
@@ -420,9 +420,15 @@ void shell_handle_input(char c);
 #ifndef STRING_H
 #define STRING_H
 
+#include "types.h"
+
 // Compares two strings. Returns 0 if they are equal.
 int strcmp(const char* str1, const char* str2);
 int atoi(const char* str);
+void* memset(void* buf, int c, size_t n);
+int memcmp(const void* s1, const void* s2, size_t n);
+int toupper(int c);
+size_t strlen(const char* str);
 
 #endif// myos/kernel/keyboard.c
 
@@ -643,6 +649,12 @@ typedef struct {
 // The main function to initialize the filesystem driver.
 void init_fs();
 
+// Finds a file in the root directory by its name.
+fat_dir_entry_t* fs_find_file(const char* filename);
+
+// Reads the contents of a file given its directory entry.
+void* fs_read_file(fat_dir_entry_t* entry);
+
 #endif // FS_H; myos/kernel/data.asm
 
 bits 32
@@ -779,6 +791,7 @@ void idt_install() {
 #include "shell.h" // shell for CLI
 #include "memory.h" // heap memory allocation
 #include "gdt.h" // kernel permanent GDT
+#include "fs.h" // Filesystem driver for init_fs()
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -786,34 +799,34 @@ static inline void outb(unsigned short port, unsigned char data) {
 }
 
 void kmain() {
-    outb(0xE9, 'S');
+    outb(0xE9, 'S'); // Start of kmain
 
      // Install the kernel's GDT first.
     gdt_install();
-    outb(0xE9, 'G');
+    outb(0xE9, 'G'); // GDT installed
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
-    outb(0xE9, 'P');
+    outb(0xE9, 'P'); // PIC remapped
 
     // Now, install our Interrupt Service Routines and load the IDT.
     idt_install();
-    outb(0xE9, 'I');
+    outb(0xE9, 'I'); // IDT installed
 
     // Install the keyboard driver.
     keyboard_install();
-    outb(0xE9, 'K');
+    outb(0xE9, 'K'); // Keyboard installed
 
     // Install the timer driver.
     timer_install(); // Install our new timer driver
-    outb(0xE9, 'T');
+    outb(0xE9, 'T'); // Timer installed
 
     // clear the bios text
     clear_screen();
 
     // initiate dynamic mem allocation
     init_memory(); 
-    outb(0xE9, 'M');
+    outb(0xE9, 'M'); // Memory initialized
 
     // Initialize the filesystem driver. This must be done after memory
     // is initialized, as it uses malloc().
@@ -822,10 +835,11 @@ void kmain() {
 
     // Initialize the shell
     shell_init();
-    outb(0xE9, 's');
+    outb(0xE9, 's'); // Shell initialized
 
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
+    outb(0xE9, '!'); // Interrupts enabled
 
     // Hang the CPU. The keyboard handler will run when keys are pressed.
     // Use hlt to efficiently idle the CPU until an interrupt occurs.
@@ -1004,17 +1018,26 @@ irq_common_stub:
     ; Restore general purpose registers
     popa
     add esp, 8 ; Clean up the error code and interrupt number
-    sti
-    iret       ; Safely return from the interrupt
+    iret       ; Atomically restores EFLAGS (which re-enables interrupts) and returns.
 // myos/kernel/memory.c
 
 #include "memory.h"
+#include "io.h"     // port_byte_out
 
 // This symbol is defined by the linker script
 extern uint32_t kernel_end;
 
+// Define the header for each memory block
+typedef struct block_header {
+    size_t size;                // Size of the block
+    struct block_header* next;  // Pointer to the next free block
+} block_header_t;
+
 // This pointer will be "bumped" forward as we allocate memory
 static uint32_t heap_top;
+
+// Head of our new free list
+static block_header_t* free_list_head = NULL;
 
 void init_memory() {
     // The heap starts right where the kernel binary ends
@@ -1022,22 +1045,90 @@ void init_memory() {
 }
 
 void* malloc(uint32_t size) {
-        // Check if the current heap top is aligned to a 4-byte boundary.
+    void* return_ptr; // A variable to hold our final return value
+
+    // Manually save callee-saved registers to protect against a potential
+    // compiler bug that fails to preserve them.
+    __asm__ __volatile__ (
+        "push %ebx\n\t"
+        "push %esi\n\t"
+        "push %edi"
+    );
+
+    port_byte_out(0xE9, 'a'); // Entered malloc
+
+    if (size == 0) {
+        port_byte_out(0xE9, '0'); // Malloc size 0
+        return_ptr = NULL;
+        goto malloc_exit; // Jump to the cleanup code
+    }
+
+    // This new implementation uses a pointer-to-a-pointer to make
+    // list manipulation cleaner and to avoid the compiler bug.
+    block_header_t** link = &free_list_head;
+    while (*link) {
+        block_header_t* current = *link;
+        if (current->size >= size) {
+            // Found a block. Unlink it from the list.
+            *link = current->next;
+            return_ptr = (void*)(current + 1);
+            goto malloc_exit; // Jump to the cleanup code
+        }
+        // Move to the 'next' pointer of the current block
+        link = &current->next;
+    }
+
+    // Align the heap_top to a 4-byte boundary before allocating
     if (heap_top % 4 != 0) {
-        // If not, align it by "bumping" it up to the next multiple of 4.
-        // This is a common bit-twiddling trick for alignment.
         heap_top = (heap_top + 3) & ~3;
     }
-    
-    // Save the current top of the heap, this is the address we will return
-    uint32_t old_top = heap_top;
 
-    // "Bump" the pointer forward by the requested size
-    heap_top += size;
+    // No suitable block found, allocate a new one from the top of the heap
+    size_t total_size = sizeof(block_header_t) + size;
+    block_header_t* new_block = (block_header_t*)heap_top;
+    heap_top += total_size;
 
-    // Return the start of the newly allocated block
-    return (void*)old_top;
-}// myos/kernel/io.h
+    new_block->size = size;
+    new_block->next = NULL; // Not on the free list
+
+    port_byte_out(0xE9, 'd'); // Exiting malloc
+    return_ptr = (void*)(new_block + 1); // Return pointer to the user area
+
+    malloc_exit:
+        // Restore the registers in reverse order before returning to the caller.
+        __asm__ __volatile__ (
+            "pop %edi\n\t"
+            "pop %esi\n\t"
+            "pop %ebx"
+        );
+
+        return return_ptr;
+}
+
+void free(void* ptr) {
+    // It's good practice to protect free() as well if we suspect the
+    // compiler is having issues with this file.
+    __asm__ __volatile__ (
+        "push %ebx\n\t"
+        "push %esi\n\t"
+        "push %edi"
+    );
+
+    if (ptr) {
+        // Get the header of the block being freed
+        block_header_t* header = (block_header_t*)ptr - 1;
+        // Add it to the front of the free list
+        header->next = free_list_head;
+        free_list_head = header;
+    }
+
+    __asm__ __volatile__ (
+        "pop %edi\n\t"
+        "pop %esi\n\t"
+        "pop %ebx"
+    );
+}
+// myos/kernel/io.h
 
 #ifndef IO_H
 #define IO_H
@@ -1050,13 +1141,26 @@ unsigned short port_word_in(unsigned short port);
 #endif; myos/kernel/kernel_entry.asm
 bits 32
 
-; Tell the assembler that 'kmain' is in another file
-extern kmain
+; Tell the assembler that these symbols are defined in another file (the linker script)
+extern kmain, bss_start, bss_end
 
 ; Make '_start' visible to the linker
 global _start
 
 _start:
+    ; --- Clear the .bss section ---
+    ; This is critical for C code to work correctly, as it ensures
+    ; all static/global variables are initialized to zero.
+    mov edi, bss_start      ; Put the starting address of .bss into EDI
+    mov ecx, bss_end        ; Put the ending address of .bss into ECX
+    sub ecx, edi            ; ECX now holds the size of .bss in bytes
+    add ecx, 3              ; Add 3 to handle sizes that aren't a multiple of 4
+    shr ecx, 2              ; Divide by 4 to get the number of 4-byte chunks (dwords)
+
+    xor eax, eax            ; Set EAX to 0, the value we want to write
+    cld                     ; Clear the direction flag, so `stosd` increments EDI
+    rep stosd               ; Write EAX to [EDI] and repeat ECX times
+
     ; The bootloader has already set up the segments and stack.
     ; We can now safely call our main C function.
     call kmain
@@ -1150,6 +1254,7 @@ void irq_handler(registers_t *r);
 #endif// myos/kernel/string.c
 
 #include "string.h"
+#include "types.h"
 
 int strcmp(const char* str1, const char* str2) {
     while (*str1 && (*str1 == *str2)) {
@@ -1165,6 +1270,42 @@ int atoi(const char* str) {
         res = res * 10 + str[i] - '0';
     }
     return res;
+}
+
+void* memset(void* buf, int c, size_t n) {
+    unsigned char* p = buf;
+    while (n--) {
+        *p++ = (unsigned char)c;
+    }
+    return buf;
+}
+
+int memcmp(const void* s1, const void* s2, size_t n) {
+    const unsigned char* p1 = s1;
+    const unsigned char* p2 = s2;
+    while (n--) {
+        if (*p1 != *p2) {
+            return *p1 - *p2;
+        }
+        p1++;
+        p2++;
+    }
+    return 0;
+}
+
+int toupper(int c) {
+    if (c >= 'a' && c <= 'z') {
+        return c - 'a' + 'A';
+    }
+    return c;
+}
+
+size_t strlen(const char* str) {
+    size_t len = 0;
+    while (str[len]) {
+        len++;
+    }
+    return len;
 }// myos/kernel/idt.h
 #ifndef IDT_H
 #define IDT_H
@@ -1211,6 +1352,7 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer);
 
 void init_memory();
 void* malloc(uint32_t size);
+void free(void* ptr);
 
 #endif// myos/kernel/vga.c
 
@@ -1345,8 +1487,11 @@ gdt_flush:
 #include "vga.h"
 #include "memory.h"
 #include "io.h"
+#include "string.h" // For our new string functions
 
 static fat12_bpb_t* bpb; // keep private to fs/c
+static uint8_t* fat_buffer;
+static uint32_t data_area_start_sector;
 uint8_t* root_directory_buffer; // global ie no static
 uint32_t root_directory_size; // global ie no static
 
@@ -1357,14 +1502,24 @@ void init_fs() {
     bpb = (fat12_bpb_t*)buffer;
     port_byte_out(0xE9, '1'); // BPB should be read now
 
+    // Read the FAT into memory
+    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
+    fat_buffer = (uint8_t*)malloc(fat_size_bytes);
+    for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
+        read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
+    }
+
     // Calculate the location and size of the root directory
     uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
     root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
     uint32_t root_dir_size_sectors = root_directory_size / bpb->bytes_per_sector;
     if (root_directory_size % bpb->bytes_per_sector > 0) {
-        root_dir_size_sectors++; // Handle non-even division
+        root_dir_size_sectors++;
     }
     port_byte_out(0xE9, '2'); // Root directory parameters calculated
+
+    // calc starting sector of data area
+    data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
 
     // Read the entire root directory into a new buffer
     root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
@@ -1374,6 +1529,74 @@ void init_fs() {
         port_byte_out(0xE9, '.'); // Print a dot for each sector read
     }
     port_byte_out(0xE9, '4'); // FINISHED filesystem init */
+}
+
+static uint16_t fs_get_fat_entry(uint16_t cluster) {
+    uint32_t fat_offset = cluster + (cluster / 2);
+    uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
+    
+    if (cluster % 2 == 0) {
+        return *fat16 & 0x0FFF; // Even cluster
+    } else {
+        return *fat16 >> 4;     // Odd cluster
+    }
+}
+
+static void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
+    uint32_t lba = data_area_start_sector + (cluster - 2);
+    read_disk_sector(lba, buffer);
+}
+
+fat_dir_entry_t* fs_find_file(const char* filename) {
+    char fat_name[12];
+    memset(fat_name, ' ', 11);
+    fat_name[11] = '\0'; // Not strictly necessary, but good practice
+
+    // Convert filename to FAT 8.3 format
+    int i = 0, j = 0;
+    while (filename[i] && filename[i] != '.' && j < 8) {
+        fat_name[j++] = toupper(filename[i++]);
+    }
+    if (filename[i] == '.') i++;
+    j = 8;
+    while (filename[i] && j < 11) {
+        fat_name[j++] = toupper(filename[i++]);
+    }
+
+    // Search the directory
+    for (uint32_t offset = 0; offset < root_directory_size; offset += sizeof(fat_dir_entry_t)) {
+        fat_dir_entry_t* entry = (fat_dir_entry_t*)(root_directory_buffer + offset);
+
+        if (entry->name[0] == 0x00) break;
+        if ((uint8_t)entry->name[0] == 0xE5) continue;
+        if ((entry->attributes & 0x0F) == 0x0F) continue; // LFN
+        if (entry->attributes & 0x08) continue;           // Volume Label
+
+        // Instead of one 11-byte comparison, do two separate ones.
+        if (memcmp(fat_name, entry->name, 8) == 0 && memcmp(fat_name + 8, entry->extension, 3) == 0) {
+            return entry; // We found it!
+        }
+    }
+
+    return NULL; // File not found
+}
+
+void* fs_read_file(fat_dir_entry_t* entry) {
+    uint8_t* file_buffer = (uint8_t*)malloc(entry->file_size);
+    if (!file_buffer) {
+        return NULL;
+    }
+
+    uint8_t* current_pos = file_buffer;
+    uint16_t current_cluster = entry->first_cluster_low;
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+
+    while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
+        fs_read_cluster(current_cluster, current_pos);
+        current_pos += bytes_per_cluster;
+        current_cluster = fs_get_fat_entry(current_cluster);
+    }
+    return file_buffer;
 }// myos/kernel/timer.c
 
 #include "timer.h"
@@ -1445,6 +1668,12 @@ typedef signed char        int8_t;
 typedef signed short       int16_t;
 typedef signed int         int32_t;
 typedef signed long long   int64_t;
+
+// Standard size type, essential for memory operations
+typedef uint32_t size_t;
+
+// Definition for a null pointer constant
+#define NULL ((void*)0)
 
 #endif// myos/kernel/timer.h
 
@@ -1618,7 +1847,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Inspect file content in kernel memory\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Check if filename can be found\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -1647,20 +1876,23 @@ void process_command() {
         print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
 
     // cat command
-    } else if (strcmp(cmd_buffer, "cat") == 0) {
-        // For now, let's just prove we received the argument correctly.
+    } else if (strcmp(command, "cat") == 0) {
         if (argument) {
-            print_string("Argument received: '");
-            print_string(argument);
-            print_string("'");
-        } else {
-            // For now, if no argument, do what it did before
-            print_string("Displaying embedded file:\n");
-            extern char file_start[]; // Get the labels from data.asm
-            extern char file_end[];
-            for (char* p = file_start; p < file_end; p++) {
-                print_char(*p);
+            fat_dir_entry_t* file_entry = fs_find_file(argument);
+            if (file_entry) {
+                uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
+                if (buffer) {
+                    for (uint32_t i = 0; i < file_entry->file_size; i++) {
+                        print_char(buffer[i]);
+                    }
+                    // NOTE: We don't free(buffer) yet since we haven't written free()
+                }
+            } else {
+                print_string("File not found: ");
+                print_string(argument);
             }
+        } else {
+            print_string("Usage: cat <filename>");
         }
 
     // disktest command
@@ -1852,9 +2084,9 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Installing Stage 1 bootloader..."
 	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
 
-	# Now, run mcopy. It will use the BPB we just installed.
-	@echo "--> Copying test files to disk image..."
-	mcopy -i $@ -s test_files ::
+	# Now, copy the specific test file directly into the root directory.
+	@echo "--> Copying test file to disk image..."
+	mcopy -i $@ test_files/test.txt ::
 	
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1

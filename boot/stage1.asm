@@ -11,7 +11,7 @@ nop
 bpb_oem_name:           db 'MYOS    ' ; 8-byte OEM name
 bpb_bytes_per_sector:   dw 512
 bpb_sectors_per_cluster:db 1
-bpb_reserved_sectors:   dw 33
+bpb_reserved_sectors:   dw 150
 bpb_num_fats:           db 2
 bpb_root_dir_entries:   dw 224
 bpb_total_sectors:      dw 2880  ; 2880 * 512 = 1.44MB

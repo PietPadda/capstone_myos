@@ -170,5 +170,4 @@ irq_common_stub:
     ; Restore general purpose registers
     popa
     add esp, 8 ; Clean up the error code and interrupt number
-    sti
-    iret       ; Safely return from the interrupt
+    iret       ; Atomically restores EFLAGS (which re-enables interrupts) and returns.

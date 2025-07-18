@@ -7,5 +7,6 @@
 
 void init_memory();
 void* malloc(uint32_t size);
+void free(void* ptr);
 
 #endif
