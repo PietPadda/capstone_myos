@@ -81,6 +81,14 @@ IRQ 13, 45  ; FPU
 IRQ 14, 46  ; Primary ATA Hard Disk
 IRQ 15, 47  ; Secondary ATA Hard Disk
 
+; --- Define our System Call Handler ---
+global isr128
+isr128:
+    cli
+    push dword 0    ; Push a dummy error code for stack consistency
+    push dword 128  ; Push the interrupt number
+    jmp syscall_common_stub
+
 ; --- Common Assembly Stub ---
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
@@ -171,3 +179,47 @@ irq_common_stub:
     popa
     add esp, 8 ; Clean up the error code and interrupt number
     iret       ; Atomically restores EFLAGS (which re-enables interrupts) and returns.
+
+
+; --- Common Syscall Stub ---
+extern syscall_handler ;our new C-level syscall handler
+syscall_common_stub:
+    ; Save general purpose registers
+    pusha
+
+    ; Save segment registers
+    mov eax, ds
+    push eax
+    mov eax, es
+    push eax
+    mov eax, fs
+    push eax
+    mov eax, gs
+    push eax
+
+    ; Load the kernel's data segment for C code
+    mov ax, 0x10  ; 0x10 is our GDT data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; Push a pointer to the registers and call the C handler
+    push esp
+    call syscall_handler
+    add esp, 4 ; Clean up the pushed pointer
+
+    ; Restore original segment registers
+    pop eax
+    mov gs, eax
+    pop eax
+    mov fs, eax
+    pop eax
+    mov es, eax
+    pop eax
+    mov ds, eax
+
+    ; Restore general purpose registers
+    popa
+    add esp, 8 ; Clean up the error code and interrupt number
+    iret       ; Atomically restores EFLAGS and returns.

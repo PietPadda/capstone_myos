@@ -11,6 +11,7 @@
 #include <kernel/gdt.h> // kernel permanent GDT
 #include <kernel/fs.h> // Filesystem driver for init_fs()
 #include <kernel/cpu/tss.h> // Task-State Segment
+#include <kernel/syscall.h> // User Mode Syscalls
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -27,6 +28,10 @@ void kmain() {
     // Install the TSS right after the GDT
     tss_install(); 
     outb(0xE9, 't'); // TSS installed
+
+    // Syscall install after TSS
+    syscall_install();
+    outb(0xE9, 's'); // Syscall installed
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28

@@ -4,5 +4,9 @@ bits 32
 global user_program_start
 
 user_program_start:
-    ; This is user mode! We'll just loop forever for now.
+    ; Make our first system call!
+    mov eax, 1      ; Syscall number 1 (our print function)
+    int 0x80        ; Trigger the syscall interrupt
+
+    ; Loop forever after the syscall
     jmp $

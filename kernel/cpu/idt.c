@@ -11,6 +11,7 @@ extern void isr16(); extern void isr17(); extern void isr18(); extern void isr19
 extern void isr20(); extern void isr21(); extern void isr22(); extern void isr23(); 
 extern void isr24(); extern void isr25(); extern void isr26(); extern void isr27(); 
 extern void isr28(); extern void isr29(); extern void isr30(); extern void isr31();
+extern void isr128(); // Our new syscall handler
 
 // Forward-declarations for our 16 IRQ stubs in isr.asm
 extern void irq0(); extern void irq1(); extern void irq2(); extern void irq3();
@@ -43,9 +44,7 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags) 
     idt_entries[num].flags       = flags /* | 0x60 */;
 }
 
-/**
- * Initializes the IDT and loads it.
- */
+// Initializes the IDT and loads it.
 void idt_install() {
     // Set the IDT pointer struct's values
     idt_ptr.limit = (sizeof(struct idt_entry_struct) * 256) - 1;
@@ -108,6 +107,10 @@ void idt_install() {
     idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
+
+    // Set the gate for our system call interrupt 0x80
+    // The flags 0xEE mean: Present, Ring 3, 32-bit Trap Gate
+    idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
 
     // Load the IDT using our new inline assembly function
     idt_load_inline(&idt_ptr);
