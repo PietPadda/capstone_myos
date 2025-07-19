@@ -1,4 +1,4 @@
-// myos/kernel/disk.h
+// myos/include/kernel/disk.h
 
 #ifndef DISK_H
 #define DISK_H

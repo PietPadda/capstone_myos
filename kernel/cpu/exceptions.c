@@ -1,4 +1,4 @@
-// myos/kernel/exceptions.c
+// myos/kernel/cpu/exceptions.c
 
 #include <kernel/exceptions.h>
 #include <kernel/vga.h>

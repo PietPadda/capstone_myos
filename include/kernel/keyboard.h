@@ -1,4 +1,4 @@
-// myos/kernel/keyboard.h
+// myos/include/kernel/keyboard.h
 
 #ifndef KEYBOARD_H
 #define KEYBOARD_H

@@ -1,4 +1,4 @@
-// myos/kernel/io.c
+// myos/kernel/drivers/io.c
 
 #include <kernel/io.h>
 

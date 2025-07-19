@@ -1,4 +1,4 @@
-// myos/kernel/vga.h
+// myos/include/kernel/vga.h
 
 #ifndef VGA_H
 #define VGA_H

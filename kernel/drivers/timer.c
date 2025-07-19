@@ -1,4 +1,4 @@
-// myos/kernel/timer.c
+// myos/kernel/drivers/timer.c
 
 #include <kernel/timer.h>
 #include <kernel/irq.h>

@@ -1,4 +1,4 @@
-// myos/kernel/shell.h
+// myos/include/kernel/shell.h
 
 #ifndef SHELL_H
 #define SHELL_H

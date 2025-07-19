@@ -1,4 +1,4 @@
-// myos/kernel/memory.c
+// myos/kernel/mm/memory.c
 
 #include <kernel/memory.h>
 #include <kernel/io.h>     // port_byte_out

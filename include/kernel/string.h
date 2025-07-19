@@ -1,4 +1,4 @@
-// myos/kernel/string.h
+// myos/include/kernel/string.h
 
 #ifndef STRING_H
 #define STRING_H

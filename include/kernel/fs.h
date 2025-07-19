@@ -1,4 +1,4 @@
-// myos/kernel/fs.h
+// myos/include/kernel/fs.h
 
 #ifndef FS_H
 #define FS_H

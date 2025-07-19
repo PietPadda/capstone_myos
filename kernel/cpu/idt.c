@@ -1,4 +1,4 @@
-// myos/kernel/idt.c
+// myos/kernel/cpu/idt.c
 
 #include <kernel/idt.h>
 

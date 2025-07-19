@@ -1,4 +1,4 @@
-// myos/kernel/exceptions.h
+// myos/include/kernel/exceptions.h
 
 #ifndef EXCEPTIONS_H
 #define EXCEPTIONS_H

@@ -1,4 +1,4 @@
-; myos/kernel/isr.asm
+; myos/kernel/cpu/isr.asm
 bits 32
 
 %macro ISR_NOERRCODE 1

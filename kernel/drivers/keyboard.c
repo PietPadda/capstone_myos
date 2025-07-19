@@ -1,4 +1,4 @@
-// myos/kernel/keyboard.c
+// myos/kernel/drivers/keyboard.c
 
 #include <kernel/keyboard.h>
 #include <kernel/irq.h>

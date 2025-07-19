@@ -1,4 +1,4 @@
-// myos/kernel/disk.c
+// myos/kernel/drivers/disk.c
 
 #include <kernel/disk.h>
 #include <kernel/io.h> // for port_word_in

@@ -1,4 +1,4 @@
-// myos/kernel/irq.c
+// myos/kernel/cpu/irq.c
 
 #include <kernel/irq.h>
 #include <kernel/io.h>

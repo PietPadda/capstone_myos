@@ -1,4 +1,4 @@
-// myos/kernel/gdt.c
+// myos/kernel/cpu/gdt.c
 
 #include <kernel/gdt.h>
 #include <kernel/types.h>
@@ -19,15 +19,15 @@ struct gdt_ptr_struct {
     uint32_t base;
 } __attribute__((packed));
 
-// Our GDT with 5
-static struct gdt_entry_struct gdt_entries[5];
+// Our GDT will now have 6 entries
+static struct gdt_entry_struct gdt_entries[6];
 static struct gdt_ptr_struct   gdt_ptr;
 
 // Assembly function to load the GDT (defined in gdt_load.asm)
 extern void gdt_flush(uint32_t);
 
 // Helper function to create a GDT entry
-static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
     gdt_entries[num].base_low    = (base & 0xFFFF);
     gdt_entries[num].base_middle = (base >> 16) & 0xFF;
     gdt_entries[num].base_high   = (base >> 24) & 0xFF;
@@ -37,9 +37,9 @@ static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t acc
     gdt_entries[num].access      = access;
 }
 
-// Main function to install the GDT
+// Main function to install the GDT with 6 Entries
 void gdt_install() {
-    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 5) - 1;
+    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 6) - 1;
     gdt_ptr.base  = (uint32_t)&gdt_entries;
     
     // Kernel Segments (Ring 0)
@@ -50,6 +50,8 @@ void gdt_install() {
     // User Segments (Ring 3)
     gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF); // User Code
     gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF); // User Data
+
+    // The TSS entry will be set up by tss_install()
 
     // Load our new GDT
     gdt_flush((uint32_t)&gdt_ptr);

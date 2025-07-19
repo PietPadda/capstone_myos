@@ -1,4 +1,4 @@
-// myos/kernel/vga.c
+// myos/kernel/drivers/vga.c
 
 #include <kernel/vga.h>
 #include <kernel/io.h>

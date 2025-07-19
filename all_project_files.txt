@@ -195,131 +195,12 @@ gdt_start:
     db 0x92      ; Access (Present, Ring 0, Data, Read/Write)
     db 0xCF      ; Granularity (4K pages, 32-bit)
     db 0x0       ; Base (high)
-gdt_end:; myos/boot/lba_relic_bootloader.asm
-; A modern bootloader that uses LBA to load a kernel, enters 32-bit protected mode,
-; and then jumps to the kernel.
-
-org 0x7C00
-bits 16
-
-GDT_CODE equ 0x08
-GDT_DATA equ 0x10
-
-start:
-    ; The BIOS provides the boot drive in DL. We must save it immediately.
-    mov [boot_drive], dl
-
-    ; Set up segments and stack for a clean 16-bit environment
-    xor ax, ax
-    mov ds, ax
-    mov es, ax
-    mov ss, ax
-    mov sp, 0x7C00
-
-    ; --- Load Kernel using modern LBA Extended Read ---
-    ; This is more reliable than the old CHS method.
-    mov si, dap                 ; Point SI to our Disk Address Packet
-    mov word [si + 2], 20       ; Set sectors to read = 20
-    mov word [si + 4], 0x0000   ; Target buffer offset
-    mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
-    mov dword [si + 8], 1       ; LBA Start = 1 (sector after bootloader)
-
-    mov ah, 0x42                ; BIOS Extended Read function
-    mov dl, [boot_drive]        ; Use the saved drive number
-    int 0x13
-    jc disk_error
-
-    ; --- Enter Protected Mode ---
-    cli                         ; 1. Disable interrupts
-    lgdt [gdt_descriptor]       ; 2. Load our GDT
-    
-    mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
-    or eax, 0x01
-    mov cr0, eax
-    
-    jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
-
-disk_error:
-    mov si, msg_disk_error
-print_error_loop:
-    lodsb
-    or al, al
-    jz hang
-    mov ah, 0x0E
-    int 0x10
-    jmp print_error_loop
-
-hang:
-    cli
-    hlt
-
-; =======================================================
-; ### 32-BIT PROTECTED MODE CODE ###
-; =======================================================
-bits 32
-start_32bit:
-    ; Set up 32-bit segment registers
-    mov ax, GDT_DATA    ; 0x10
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-
-    ; Set up the stack in a high memory area
-    mov esp, 0x90000
-
-    ; Jump to the kernel's entry point
-    jmp 0x10000
-
-; =======================================================
-; ### DATA SECTION ###
-; =======================================================
-boot_drive:     db 0
-msg_disk_error: db 'Disk read error!', 0
-
-; Disk Address Packet (DAP) for the extended read call
-dap:
-    db 0x10, 0  ; Size of packet (16 bytes), reserved
-    dw 0        ; Number of sectors (filled at runtime)
-    dd 0        ; Buffer address (filled at runtime)
-    dq 0        ; LBA start (filled at runtime)
-
-gdt_descriptor:
-    dw gdt_end - gdt_start - 1 ; GDT limit
-    dd gdt_start               ; GDT base
-
-gdt_start:
-    ; Null descriptor
-    dq 0x0
-
-    ; Code Segment Descriptor (base=0, limit=4GB, Ring 0)
-    dw 0xFFFF    ; Limit (low)
-    dw 0x0       ; Base (low)
-    db 0x0       ; Base (mid)
-    db 0x9A      ; Access (Present, Ring 0, Code, Exec/Read)
-    db 0xCF      ; Granularity (4K pages, 32-bit)
-    db 0x0       ; Base (high)
-
-    ; Data Segment Descriptor (base=0, limit=4GB, Ring 0)
-    dw 0xFFFF    ; Limit (low)
-    dw 0x0       ; Base (low)
-    db 0x0       ; Base (mid)
-    db 0x92      ; Access (Present, Ring 0, Data, Read/Write)
-    db 0xCF      ; Granularity (4K pages, 32-bit)
-    db 0x0       ; Base (high)
-gdt_end:
-
-; =======================================================
-; ### BOOT SIGNATURE ###
-; =======================================================
-times 510 - ($ - $$) db 0
-dw 0xAA55// myos/kernel/exceptions.h
+gdt_end:// myos/kernel/include/exceptions.h
 
 #ifndef EXCEPTIONS_H
 #define EXCEPTIONS_H
 
-#include "types.h"
+#include <kernel/types.h>
 
 // A struct which defines the registers we pushed onto the stack in isr.asm.
 // This order MUST match the order of the push instructions in isr.asm.
@@ -340,63 +221,7 @@ typedef struct {
 void isr_install();
 void fault_handler(registers_t *r);
 
-#endif// myos/kernel/io.c
-
-#include "io.h"
-
-#define PIC1_CMD  0x20
-#define PIC1_DATA 0x21
-#define PIC2_CMD  0xA0
-#define PIC2_DATA 0xA1
-
-// Writes a byte to the specified I/O port.
-void port_byte_out(unsigned short port, unsigned char data) {
-    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
-}
-
-// Reads a byte from the specified I/O port.
-unsigned char port_byte_in(unsigned short port) {
-    unsigned char result;
-    __asm__ __volatile__("inb %1, %0" : "=a"(result) : "Nd"(port));
-    return result;
-}
-
-unsigned short port_word_in(unsigned short port) {
-    unsigned short result;
-    __asm__("inw %1, %0" : "=a" (result) : "Nd" (port));
-    return result;
-}
-
-/**
- * Remaps the PIC to use non-conflicting interrupt vectors.
- * @param offset1 Vector offset for master PIC (e.g., 0x20)
- * @param offset2 Vector offset for slave PIC (e.g., 0x28)
- */
-void pic_remap(int offset1, int offset2) {
-    // Save current masks
-    unsigned char a1 = port_byte_in(PIC1_DATA);
-    unsigned char a2 = port_byte_in(PIC2_DATA);
-
-    // ICW1: Start the initialization sequence
-    port_byte_out(PIC1_CMD, 0x11);
-    port_byte_out(PIC2_CMD, 0x11);
-
-    // ICW2: Set the vector offsets
-    port_byte_out(PIC1_DATA, offset1);
-    port_byte_out(PIC2_DATA, offset2);
-
-    // ICW3: Configure chaining between master and slave
-    port_byte_out(PIC1_DATA, 4);  // Tell Master PIC there is a slave at IRQ2
-    port_byte_out(PIC2_DATA, 2);  // Tell Slave PIC its cascade identity
-
-    // ICW4: Set 8086 mode
-    port_byte_out(PIC1_DATA, 0x01);
-    port_byte_out(PIC2_DATA, 0x01);
-
-    // Restore saved masks
-    port_byte_out(PIC1_DATA, a1);
-    port_byte_out(PIC2_DATA, a2);
-}// myos/kernel/gdt.h
+#endif// myos/kernel/include/gdt.h
 
 #ifndef GDT_H
 #define GDT_H
@@ -404,7 +229,7 @@ void pic_remap(int offset1, int offset2) {
 // This function initializes the kernel's GDT.
 void gdt_install();
 
-#endif// myos/kernel/shell.h
+#endif// myos/kernel/include/shell.h
 
 #ifndef SHELL_H
 #define SHELL_H
@@ -415,12 +240,12 @@ void shell_init();
 // Handles a single character of input.
 void shell_handle_input(char c);
 
-#endif// myos/kernel/string.h
+#endif// myos/kernel/include/string.h
 
 #ifndef STRING_H
 #define STRING_H
 
-#include "types.h"
+#include <kernel/types.h>
 
 // Compares two strings. Returns 0 if they are equal.
 int strcmp(const char* str1, const char* str2);
@@ -430,87 +255,7 @@ int memcmp(const void* s1, const void* s2, size_t n);
 int toupper(int c);
 size_t strlen(const char* str);
 
-#endif// myos/kernel/keyboard.c
-
-#include "keyboard.h"
-#include "irq.h"
-#include "io.h"
-#include "shell.h" // Changed from vga.h
-#include "vga.h"
-
-// --- State and Character Maps ---
-static volatile int shift_pressed = 0;
-
-// Scancode set 1 for a US QWERTY keyboard layout - Normal
-unsigned char kbd_us[128] = {
-    0,  27, '1', '2', '3', '4', '5', '6', '7', '8',     // 0-9
-    '9', '0', '-', '=', '\b', '\t', 'q', 'w', 'e', 'r', // 10-19
-    't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,   // 20-29
-    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',  // 30-39 (0x1E='a')
-    '\'', '`', 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n',  // 40-49
-    'm', ',', '.', '/', 0, '*', 0, ' ', 0, 0,           // 50-59
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
-    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
-};
-
-// Scancode set 1 for a US QWERTY keyboard layout - Shifted
-unsigned char kbd_us_shift[128] = {
-    0,  27, '!', '@', '#', '$', '%', '^', '&', '*',     // 0-9
-    '(', ')', '_', '+', '\b', '\t', 'Q', 'W', 'E', 'R', // 10-19
-    'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,   // 20-29
-    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':',  // 30-39 (0x1E='A')
-    '"', '~', 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N',    // 40-49
-    'M', '<', '>', '?', 0, '*', 0, ' ', 0, 0,           // 50-59
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
-    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
-};
-
-// The main keyboard handler function, called by our IRQ dispatcher.
-static void keyboard_handler(registers_t *r) {
-    unsigned char scancode = port_byte_in(0x60);
-
-    // Handle a key release first
-    if (scancode & 0x80) {
-        // If a shift key was released, update the flag.
-        if ((scancode & 0x7F) == 0x2A || (scancode & 0x7F) == 0x36) {
-            shift_pressed = 0;
-        }
-        return; // Nothing more to do on key release.
-    }
-
-    // Handle a key press
-    // If it's a shift key, update the flag and exit.
-    if (scancode == 0x2A || scancode == 0x36) {
-        shift_pressed = 1;
-        return;
-    }
-
-    // If we're still here, it must be a normal character key.
-    if (scancode < 128) {
-        char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
-        
-        if (character) {
-            shell_handle_input(character);
-        }
-    }
-}
-
-// The installation function that hooks the handler into the IRQ system.
-void keyboard_install() {
-    
-    // Register `keyboard_handler` to be called when IRQ 1 is triggered.
-    irq_install_handler(1, keyboard_handler);
-}// myos/kernel/keyboard.h
+#endif// myos/kernel/include/keyboard.h
 
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
@@ -518,96 +263,12 @@ void keyboard_install() {
 // Initializes the keyboard driver and registers its IRQ handler.
 void keyboard_install();
 
-#endif// myos/kernel/irq.c
-
-#include "irq.h"
-#include "io.h"
-#include "vga.h"
-
-// Array of function pointers for handling custom IRQ handlers
-static void *irq_routines[16] = {0};
-
-// Install a custom handler for a given IRQ
-void irq_install_handler(int irq, void (*handler)(registers_t *r)) {
-    irq_routines[irq] = handler;
-}
-
-// Clear a handler for a given IRQ
-void irq_uninstall_handler(int irq) {
-    irq_routines[irq] = 0;
-}
-
-// The main IRQ handler, called from our assembly stub
-void irq_handler(registers_t *r) {
-    void (*handler)(registers_t *r);
-
-    // Find the handler for this IRQ number
-    handler = irq_routines[r->int_no - 32];
-    if (handler) {
-        handler(r);
-    }
-
-    // Send the EOI (End of Interrupt) signal to the PICs
-    if (r->int_no >= 40) {
-        port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
-    }
-    port_byte_out(0x20, 0x20); // Send EOI to master PIC
-}// myos/kernel/gdt.c
-
-#include "gdt.h"
-#include "types.h"
-
-// GDT entry structure
-struct gdt_entry_struct {
-    uint16_t limit_low;
-    uint16_t base_low;
-    uint8_t  base_middle;
-    uint8_t  access;
-    uint8_t  granularity;
-    uint8_t  base_high;
-} __attribute__((packed));
-
-// GDT pointer structure
-struct gdt_ptr_struct {
-    uint16_t limit;
-    uint32_t base;
-} __attribute__((packed));
-
-// Our GDT with 3 entries: Null, Kernel Code, Kernel Data
-static struct gdt_entry_struct gdt_entries[3];
-static struct gdt_ptr_struct   gdt_ptr;
-
-// Assembly function to load the GDT (defined in gdt_load.asm)
-extern void gdt_flush(uint32_t);
-
-// Helper function to create a GDT entry
-static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
-    gdt_entries[num].base_low    = (base & 0xFFFF);
-    gdt_entries[num].base_middle = (base >> 16) & 0xFF;
-    gdt_entries[num].base_high   = (base >> 24) & 0xFF;
-
-    gdt_entries[num].limit_low   = (limit & 0xFFFF);
-    gdt_entries[num].granularity = ((limit >> 16) & 0x0F) | (gran & 0xF0);
-    gdt_entries[num].access      = access;
-}
-
-// Main function to install the GDT
-void gdt_install() {
-    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 3) - 1;
-    gdt_ptr.base  = (uint32_t)&gdt_entries;
-
-    gdt_set_gate(0, 0, 0, 0, 0);                // Null segment
-    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF); // Code segment (Ring 0)
-    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment (Ring 0)
-
-    // Load our new GDT
-    gdt_flush((uint32_t)&gdt_ptr);
-}// myos/kernel/fs.h
+#endif// myos/kernel/include/fs.h
 
 #ifndef FS_H
 #define FS_H
 
-#include "types.h"
+#include <kernel/types.h>
 
 // This struct maps to the FAT12 BIOS Parameter Block (BPB) in the boot sector.
 // It contains all the essential metadata about the filesystem.
@@ -655,21 +316,561 @@ fat_dir_entry_t* fs_find_file(const char* filename);
 // Reads the contents of a file given its directory entry.
 void* fs_read_file(fat_dir_entry_t* entry);
 
-#endif // FS_H; myos/kernel/data.asm
+#endif // FS_H// myos/kernel/include/io.h
 
+#ifndef IO_H
+#define IO_H
+
+void port_byte_out(unsigned short port, unsigned char data);
+unsigned char port_byte_in(unsigned short port);
+void pic_remap(int offset1, int offset2); // remapping interrupt vectors func
+unsigned short port_word_in(unsigned short port);
+
+#endif// myos/kernel/include/vga.h
+
+#ifndef VGA_H
+#define VGA_H
+
+#include <kernel/types.h> // to include uint32_t
+
+void clear_screen();
+void update_cursor(int row, int col);
+void print_string(const char* str);
+void print_hex(uint32_t n);
+void print_char(char c);
+void print_hex(uint32_t n);
+
+#endif// myos/kernel/include/irq.h
+
+#ifndef IRQ_H
+#define IRQ_H
+
+#include <kernel/types.h>
+#include <kernel/exceptions.h> // For registers_t struct
+
+void irq_install_handler(int irq, void (*handler)(registers_t *r));
+void irq_uninstall_handler(int irq);
+void irq_install();
+void irq_handler(registers_t *r);
+
+#endif// myos/kernel/include/idt.h
+#ifndef IDT_H
+#define IDT_H
+
+#include <kernel/types.h>
+
+// Defines a single entry in the Interrupt Descriptor Table (a "gate")
+struct idt_entry_struct {
+   uint16_t base_low;    // The lower 16 bits of the handler function's address
+   uint16_t selector;    // The GDT code segment selector to use
+   uint8_t  always0;     // This must always be zero
+   uint8_t  flags;       // The gate type and attributes
+   uint16_t base_high;   // The upper 16 bits of the handler function's address
+} __attribute__((packed));
+
+
+// Defines the structure for the IDT pointer, which is loaded using the 'lidt' instruction
+struct idt_ptr_struct {
+   uint16_t limit;       // The size of the IDT in bytes minus 1
+   uint32_t base;        // The linear address where the IDT starts
+} __attribute__((packed));
+
+void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags);
+void idt_install();
+
+#endif// myos/kernel/include/disk.h
+
+#ifndef DISK_H
+#define DISK_H
+
+#include <kernel/types.h>
+
+// Reads a 512-byte sector from the disk.
+// lba: The linear block address of the sector.
+// buffer: A pointer to a 512-byte buffer to store the data.
+void read_disk_sector(uint32_t lba, uint8_t* buffer);
+
+#endif// myos/kernel/include/memory.h
+
+#ifndef MEMORY_H
+#define MEMORY_H
+
+#include <kernel/types.h>
+
+void init_memory();
+void* malloc(uint32_t size);
+void free(void* ptr);
+
+#endif// myos/kernel/include/types.h
+#ifndef TYPES_H
+#define TYPES_H
+
+// Define fixed-width integer types for cross-platform compatibility
+// Unsigned integer types
+typedef unsigned char   uint8_t;
+typedef unsigned short  uint16_t;
+typedef unsigned int    uint32_t;
+typedef unsigned long long uint64_t;
+
+// Signed integer types
+typedef signed char        int8_t;
+typedef signed short       int16_t;
+typedef signed int         int32_t;
+typedef signed long long   int64_t;
+
+// Standard size type, essential for memory operations
+typedef uint32_t size_t;
+
+// Definition for a null pointer constant
+#define NULL ((void*)0)
+
+#endif// myos/kernel/include/timer.h
+
+#ifndef TIMER_H
+#define TIMER_H
+
+#include <kernel/types.h>
+
+// Initializes the PIT and registers its IRQ handler.
+void timer_install();
+uint32_t timer_get_ticks(); // getter func
+void sleep(uint32_t ms);
+
+#endif// myos/kernel/fs/fs.c
+
+#include <kernel/fs.h>
+#include <kernel/disk.h>
+#include <kernel/vga.h>
+#include <kernel/memory.h>
+#include <kernel/io.h>
+#include <kernel/string.h> // For our new string functions
+
+static fat12_bpb_t* bpb; // keep private to fs/c
+static uint8_t* fat_buffer;
+static uint32_t data_area_start_sector;
+uint8_t* root_directory_buffer; // global ie no static
+uint32_t root_directory_size; // global ie no static
+
+void init_fs() {
+    // Read the BIOS Parameter Block (Sector 0)
+    uint8_t* buffer = (uint8_t*)malloc(512);
+    read_disk_sector(0, buffer);
+    bpb = (fat12_bpb_t*)buffer;
+    port_byte_out(0xE9, '1'); // BPB should be read now
+
+    // Read the FAT into memory
+    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
+    fat_buffer = (uint8_t*)malloc(fat_size_bytes);
+    for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
+        read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
+    }
+
+    // Calculate the location and size of the root directory
+    uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
+    root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
+    uint32_t root_dir_size_sectors = root_directory_size / bpb->bytes_per_sector;
+    if (root_directory_size % bpb->bytes_per_sector > 0) {
+        root_dir_size_sectors++;
+    }
+    port_byte_out(0xE9, '2'); // Root directory parameters calculated
+
+    // calc starting sector of data area
+    data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
+
+    // Read the entire root directory into a new buffer
+    root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
+    port_byte_out(0xE9, '3'); // About to start reading root dir sectors
+    for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
+        read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
+        port_byte_out(0xE9, '.'); // Print a dot for each sector read
+    }
+    port_byte_out(0xE9, '4'); // FINISHED filesystem init */
+}
+
+static uint16_t fs_get_fat_entry(uint16_t cluster) {
+    uint32_t fat_offset = cluster + (cluster / 2);
+    uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
+    
+    if (cluster % 2 == 0) {
+        return *fat16 & 0x0FFF; // Even cluster
+    } else {
+        return *fat16 >> 4;     // Odd cluster
+    }
+}
+
+static void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
+    uint32_t lba = data_area_start_sector + (cluster - 2);
+    read_disk_sector(lba, buffer);
+}
+
+fat_dir_entry_t* fs_find_file(const char* filename) {
+    char fat_name[12];
+    memset(fat_name, ' ', 11);
+    fat_name[11] = '\0'; // Not strictly necessary, but good practice
+
+    // Convert filename to FAT 8.3 format
+    int i = 0, j = 0;
+    while (filename[i] && filename[i] != '.' && j < 8) {
+        fat_name[j++] = toupper(filename[i++]);
+    }
+    if (filename[i] == '.') i++;
+    j = 8;
+    while (filename[i] && j < 11) {
+        fat_name[j++] = toupper(filename[i++]);
+    }
+
+    // Search the directory
+    for (uint32_t offset = 0; offset < root_directory_size; offset += sizeof(fat_dir_entry_t)) {
+        fat_dir_entry_t* entry = (fat_dir_entry_t*)(root_directory_buffer + offset);
+
+        if (entry->name[0] == 0x00) break;
+        if ((uint8_t)entry->name[0] == 0xE5) continue;
+        if ((entry->attributes & 0x0F) == 0x0F) continue; // LFN
+        if (entry->attributes & 0x08) continue;           // Volume Label
+
+        // Instead of one 11-byte comparison, do two separate ones.
+        if (memcmp(fat_name, entry->name, 8) == 0 && memcmp(fat_name + 8, entry->extension, 3) == 0) {
+            return entry; // We found it!
+        }
+    }
+
+    return NULL; // File not found
+}
+
+void* fs_read_file(fat_dir_entry_t* entry) {
+    uint8_t* file_buffer = (uint8_t*)malloc(entry->file_size);
+    if (!file_buffer) {
+        return NULL;
+    }
+
+    uint8_t* current_pos = file_buffer;
+    uint16_t current_cluster = entry->first_cluster_low;
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+
+    while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
+        fs_read_cluster(current_cluster, current_pos);
+        current_pos += bytes_per_cluster;
+        current_cluster = fs_get_fat_entry(current_cluster);
+    }
+    return file_buffer;
+}// myos/kernel/kernel.c
+
+// headers
+#include <kernel/idt.h> // interrupt tables
+#include <kernel/vga.h> // writing to screen
+#include <kernel/io.h> // hardware comms
+#include <kernel/keyboard.h> // Include our new keyboard driver header
+#include <kernel/timer.h> // Include our new timer driver header
+#include <kernel/shell.h> // shell for CLI
+#include <kernel/memory.h> // heap memory allocation
+#include <kernel/gdt.h> // kernel permanent GDT
+#include <kernel/fs.h> // Filesystem driver for init_fs()
+
+// Helper for debug prints
+static inline void outb(unsigned short port, unsigned char data) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
+}
+
+void kmain() {
+    outb(0xE9, 'S'); // Start of kmain
+
+     // Install the kernel's GDT first.
+    gdt_install();
+    outb(0xE9, 'G'); // GDT installed
+
+    // Remap the PIC first to get the hardware into a stable state.
+    pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
+    outb(0xE9, 'P'); // PIC remapped
+
+    // Now, install our Interrupt Service Routines and load the IDT.
+    idt_install();
+    outb(0xE9, 'I'); // IDT installed
+
+    // Install the keyboard driver.
+    keyboard_install();
+    outb(0xE9, 'K'); // Keyboard installed
+
+    // Install the timer driver.
+    timer_install(); // Install our new timer driver
+    outb(0xE9, 'T'); // Timer installed
+
+    // clear the bios text
+    clear_screen();
+
+    // initiate dynamic mem allocation
+    init_memory(); 
+    outb(0xE9, 'M'); // Memory initialized
+
+    // Initialize the filesystem driver. This must be done after memory
+    // is initialized, as it uses malloc().
+    init_fs();
+    outb(0xE9, 'F'); // Filesystem Initialized
+
+    // Initialize the shell
+    shell_init();
+    outb(0xE9, 's'); // Shell initialized
+
+    // Enable interrupts! From this point on, the CPU will respond to hardware.
+    __asm__ __volatile__ ("sti");
+    outb(0xE9, '!'); // Interrupts enabled
+
+    // Hang the CPU. The keyboard handler will run when keys are pressed.
+    // Use hlt to efficiently idle the CPU until an interrupt occurs.
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
+}; myos/kernel/kernel_entry.asm
 bits 32
 
-global file_start
-global file_end
+; Tell the assembler that these symbols are defined in another file (the linker script)
+extern kmain, bss_start, bss_end
 
-section .rodata
+; Make '_start' visible to the linker
+global _start
 
-file_start:
-    ; Include the raw binary contents of data.txt
-    incbin "kernel/data.txt"
-file_end:// myos/kernel/idt.c
+_start:
+    ; --- Clear the .bss section ---
+    ; This is critical for C code to work correctly, as it ensures
+    ; all static/global variables are initialized to zero.
+    mov edi, bss_start      ; Put the starting address of .bss into EDI
+    mov ecx, bss_end        ; Put the ending address of .bss into ECX
+    sub ecx, edi            ; ECX now holds the size of .bss in bytes
+    add ecx, 3              ; Add 3 to handle sizes that aren't a multiple of 4
+    shr ecx, 2              ; Divide by 4 to get the number of 4-byte chunks (dwords)
 
-#include "idt.h"
+    xor eax, eax            ; Set EAX to 0, the value we want to write
+    cld                     ; Clear the direction flag, so `stosd` increments EDI
+    rep stosd               ; Write EAX to [EDI] and repeat ECX times
+
+    ; The bootloader has already set up the segments and stack.
+    ; We can now safely call our main C function.
+    call kmain
+
+    ; If kmain returns (which it shouldn't), hang the system.
+    cli
+hang:
+    hlt
+    jmp hang// myos/kernel/mm/memory.c
+
+#include <kernel/memory.h>
+#include <kernel/io.h>     // port_byte_out
+
+// This symbol is defined by the linker script
+extern uint32_t kernel_end;
+
+// Define the header for each memory block
+typedef struct block_header {
+    size_t size;                // Size of the block
+    struct block_header* next;  // Pointer to the next free block
+} block_header_t;
+
+// This pointer will be "bumped" forward as we allocate memory
+static uint32_t heap_top;
+
+// Head of our new free list
+static block_header_t* free_list_head = NULL;
+
+void init_memory() {
+    // The heap starts right where the kernel binary ends
+    heap_top = (uint32_t)&kernel_end;
+    // free_list_head is now correctly zeroed by the .bss clearing code
+}
+
+void* malloc(uint32_t size) {
+    if (size == 0) {
+        return NULL;
+    }
+
+    // This new implementation uses a pointer-to-a-pointer to make
+    // list manipulation cleaner and to avoid the compiler bug.
+    block_header_t** link = &free_list_head;
+    while (*link) {
+        block_header_t* current = *link;
+        if (current->size >= size) {
+            // Found a block. Unlink it from the list.
+            *link = current->next;
+            return (void*)(current + 1);
+        }
+        // Move to the 'next' pointer of the current block
+        link = &current->next;
+    }
+
+    // Align the heap_top to a 4-byte boundary before allocating
+    if (heap_top % 4 != 0) {
+        heap_top = (heap_top + 3) & ~3;
+    }
+
+    // No suitable block found, allocate a new one from the top of the heap
+    size_t total_size = sizeof(block_header_t) + size;
+    block_header_t* new_block = (block_header_t*)heap_top;
+    heap_top += total_size;
+
+    new_block->size = size;
+    new_block->next = NULL; // Not on the free list
+
+    return (void*)(new_block + 1); // Return pointer to the user area
+
+}
+
+void free(void* ptr) {
+    if (!ptr) {
+        return; // Do nothing if a null pointer is freed
+    }
+
+    // Get the header of the block being freed
+    block_header_t* header = (block_header_t*)ptr - 1;
+
+    // Add it to the front of the free list
+    header->next = free_list_head;
+    free_list_head = header;
+}
+// myos/kernel/lib/string.c
+
+#include <kernel/string.h>
+#include <kernel/types.h>
+
+int strcmp(const char* str1, const char* str2) {
+    while (*str1 && (*str1 == *str2)) {
+        str1++;
+        str2++;
+    }
+    return *(const unsigned char*)str1 - *(const unsigned char*)str2;
+}
+
+int atoi(const char* str) {
+    int res = 0;
+    for (int i = 0; str[i] != '\0'; ++i) {
+        res = res * 10 + str[i] - '0';
+    }
+    return res;
+}
+
+void* memset(void* buf, int c, size_t n) {
+    unsigned char* p = buf;
+    while (n--) {
+        *p++ = (unsigned char)c;
+    }
+    return buf;
+}
+
+int memcmp(const void* s1, const void* s2, size_t n) {
+    const unsigned char* p1 = s1;
+    const unsigned char* p2 = s2;
+    while (n--) {
+        if (*p1 != *p2) {
+            return *p1 - *p2;
+        }
+        p1++;
+        p2++;
+    }
+    return 0;
+}
+
+int toupper(int c) {
+    if (c >= 'a' && c <= 'z') {
+        return c - 'a' + 'A';
+    }
+    return c;
+}
+
+size_t strlen(const char* str) {
+    size_t len = 0;
+    while (str[len]) {
+        len++;
+    }
+    return len;
+}// myos/kernel/cpu/irq.c
+
+#include <kernel/irq.h>
+#include <kernel/io.h>
+#include <kernel/vga.h>
+
+// Array of function pointers for handling custom IRQ handlers
+static void *irq_routines[16] = {0};
+
+// Install a custom handler for a given IRQ
+void irq_install_handler(int irq, void (*handler)(registers_t *r)) {
+    irq_routines[irq] = handler;
+}
+
+// Clear a handler for a given IRQ
+void irq_uninstall_handler(int irq) {
+    irq_routines[irq] = 0;
+}
+
+// The main IRQ handler, called from our assembly stub
+void irq_handler(registers_t *r) {
+    void (*handler)(registers_t *r);
+
+    // Find the handler for this IRQ number
+    handler = irq_routines[r->int_no - 32];
+    if (handler) {
+        handler(r);
+    }
+
+    // Send the EOI (End of Interrupt) signal to the PICs
+    if (r->int_no >= 40) {
+        port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
+    }
+    port_byte_out(0x20, 0x20); // Send EOI to master PIC
+}// myos/kernel/cpu/gdt.c
+
+#include <kernel/gdt.h>
+#include <kernel/types.h>
+
+// GDT entry structure
+struct gdt_entry_struct {
+    uint16_t limit_low;
+    uint16_t base_low;
+    uint8_t  base_middle;
+    uint8_t  access;
+    uint8_t  granularity;
+    uint8_t  base_high;
+} __attribute__((packed));
+
+// GDT pointer structure
+struct gdt_ptr_struct {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed));
+
+// Our GDT with 5
+static struct gdt_entry_struct gdt_entries[5];
+static struct gdt_ptr_struct   gdt_ptr;
+
+// Assembly function to load the GDT (defined in gdt_load.asm)
+extern void gdt_flush(uint32_t);
+
+// Helper function to create a GDT entry
+static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+    gdt_entries[num].base_low    = (base & 0xFFFF);
+    gdt_entries[num].base_middle = (base >> 16) & 0xFF;
+    gdt_entries[num].base_high   = (base >> 24) & 0xFF;
+
+    gdt_entries[num].limit_low   = (limit & 0xFFFF);
+    gdt_entries[num].granularity = ((limit >> 16) & 0x0F) | (gran & 0xF0);
+    gdt_entries[num].access      = access;
+}
+
+// Main function to install the GDT
+void gdt_install() {
+    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 5) - 1;
+    gdt_ptr.base  = (uint32_t)&gdt_entries;
+    
+    // Kernel Segments (Ring 0)
+    gdt_set_gate(0, 0, 0, 0, 0);                // Null segment
+    gdt_set_gate(1, 0, 0xFFFFFFFF, 0x9A, 0xCF); // Code segment (Ring 0)
+    gdt_set_gate(2, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment (Ring 0)
+
+    // User Segments (Ring 3)
+    gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF); // User Code
+    gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF); // User Data
+
+    // Load our new GDT
+    gdt_flush((uint32_t)&gdt_ptr);
+}// myos/kernel/cpu/idt.c
+
+#include <kernel/idt.h>
 
 // Forward-declarations for our 32 ISR stubs in isr.asm
 extern void isr0(); extern void isr1(); extern void isr2(); extern void isr3(); 
@@ -780,73 +981,7 @@ void idt_install() {
 
     // Load the IDT using our new inline assembly function
     idt_load_inline(&idt_ptr);
-}// myos/kernel/kernel.c
-
-// headers
-#include "idt.h" // interrupt tables
-#include "vga.h" // writing to screen
-#include "io.h" // hardware comms
-#include "keyboard.h" // Include our new keyboard driver header
-#include "timer.h" // Include our new timer driver header
-#include "shell.h" // shell for CLI
-#include "memory.h" // heap memory allocation
-#include "gdt.h" // kernel permanent GDT
-#include "fs.h" // Filesystem driver for init_fs()
-
-// Helper for debug prints
-static inline void outb(unsigned short port, unsigned char data) {
-    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
-}
-
-void kmain() {
-    outb(0xE9, 'S'); // Start of kmain
-
-     // Install the kernel's GDT first.
-    gdt_install();
-    outb(0xE9, 'G'); // GDT installed
-
-    // Remap the PIC first to get the hardware into a stable state.
-    pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
-    outb(0xE9, 'P'); // PIC remapped
-
-    // Now, install our Interrupt Service Routines and load the IDT.
-    idt_install();
-    outb(0xE9, 'I'); // IDT installed
-
-    // Install the keyboard driver.
-    keyboard_install();
-    outb(0xE9, 'K'); // Keyboard installed
-
-    // Install the timer driver.
-    timer_install(); // Install our new timer driver
-    outb(0xE9, 'T'); // Timer installed
-
-    // clear the bios text
-    clear_screen();
-
-    // initiate dynamic mem allocation
-    init_memory(); 
-    outb(0xE9, 'M'); // Memory initialized
-
-    // Initialize the filesystem driver. This must be done after memory
-    // is initialized, as it uses malloc().
-    init_fs();
-    outb(0xE9, 'F'); // Filesystem Initialized
-
-    // Initialize the shell
-    shell_init();
-    outb(0xE9, 's'); // Shell initialized
-
-    // Enable interrupts! From this point on, the CPU will respond to hardware.
-    __asm__ __volatile__ ("sti");
-    outb(0xE9, '!'); // Interrupts enabled
-
-    // Hang the CPU. The keyboard handler will run when keys are pressed.
-    // Use hlt to efficiently idle the CPU until an interrupt occurs.
-    while (1) {
-        __asm__ __volatile__("hlt");
-    }
-}; myos/kernel/isr.asm
+}; myos/kernel/cpu/isr.asm
 bits 32
 
 %macro ISR_NOERRCODE 1
@@ -1019,160 +1154,10 @@ irq_common_stub:
     popa
     add esp, 8 ; Clean up the error code and interrupt number
     iret       ; Atomically restores EFLAGS (which re-enables interrupts) and returns.
-// myos/kernel/memory.c
+// myos/kernel/cpu/exceptions.c
 
-#include "memory.h"
-#include "io.h"     // port_byte_out
-
-// This symbol is defined by the linker script
-extern uint32_t kernel_end;
-
-// Define the header for each memory block
-typedef struct block_header {
-    size_t size;                // Size of the block
-    struct block_header* next;  // Pointer to the next free block
-} block_header_t;
-
-// This pointer will be "bumped" forward as we allocate memory
-static uint32_t heap_top;
-
-// Head of our new free list
-static block_header_t* free_list_head = NULL;
-
-void init_memory() {
-    // The heap starts right where the kernel binary ends
-    heap_top = (uint32_t)&kernel_end;
-}
-
-void* malloc(uint32_t size) {
-    void* return_ptr; // A variable to hold our final return value
-
-    // Manually save callee-saved registers to protect against a potential
-    // compiler bug that fails to preserve them.
-    __asm__ __volatile__ (
-        "push %ebx\n\t"
-        "push %esi\n\t"
-        "push %edi"
-    );
-
-    port_byte_out(0xE9, 'a'); // Entered malloc
-
-    if (size == 0) {
-        port_byte_out(0xE9, '0'); // Malloc size 0
-        return_ptr = NULL;
-        goto malloc_exit; // Jump to the cleanup code
-    }
-
-    // This new implementation uses a pointer-to-a-pointer to make
-    // list manipulation cleaner and to avoid the compiler bug.
-    block_header_t** link = &free_list_head;
-    while (*link) {
-        block_header_t* current = *link;
-        if (current->size >= size) {
-            // Found a block. Unlink it from the list.
-            *link = current->next;
-            return_ptr = (void*)(current + 1);
-            goto malloc_exit; // Jump to the cleanup code
-        }
-        // Move to the 'next' pointer of the current block
-        link = &current->next;
-    }
-
-    // Align the heap_top to a 4-byte boundary before allocating
-    if (heap_top % 4 != 0) {
-        heap_top = (heap_top + 3) & ~3;
-    }
-
-    // No suitable block found, allocate a new one from the top of the heap
-    size_t total_size = sizeof(block_header_t) + size;
-    block_header_t* new_block = (block_header_t*)heap_top;
-    heap_top += total_size;
-
-    new_block->size = size;
-    new_block->next = NULL; // Not on the free list
-
-    port_byte_out(0xE9, 'd'); // Exiting malloc
-    return_ptr = (void*)(new_block + 1); // Return pointer to the user area
-
-    malloc_exit:
-        // Restore the registers in reverse order before returning to the caller.
-        __asm__ __volatile__ (
-            "pop %edi\n\t"
-            "pop %esi\n\t"
-            "pop %ebx"
-        );
-
-        return return_ptr;
-}
-
-void free(void* ptr) {
-    // It's good practice to protect free() as well if we suspect the
-    // compiler is having issues with this file.
-    __asm__ __volatile__ (
-        "push %ebx\n\t"
-        "push %esi\n\t"
-        "push %edi"
-    );
-
-    if (ptr) {
-        // Get the header of the block being freed
-        block_header_t* header = (block_header_t*)ptr - 1;
-        // Add it to the front of the free list
-        header->next = free_list_head;
-        free_list_head = header;
-    }
-
-    __asm__ __volatile__ (
-        "pop %edi\n\t"
-        "pop %esi\n\t"
-        "pop %ebx"
-    );
-}
-// myos/kernel/io.h
-
-#ifndef IO_H
-#define IO_H
-
-void port_byte_out(unsigned short port, unsigned char data);
-unsigned char port_byte_in(unsigned short port);
-void pic_remap(int offset1, int offset2); // remapping interrupt vectors func
-unsigned short port_word_in(unsigned short port);
-
-#endif; myos/kernel/kernel_entry.asm
-bits 32
-
-; Tell the assembler that these symbols are defined in another file (the linker script)
-extern kmain, bss_start, bss_end
-
-; Make '_start' visible to the linker
-global _start
-
-_start:
-    ; --- Clear the .bss section ---
-    ; This is critical for C code to work correctly, as it ensures
-    ; all static/global variables are initialized to zero.
-    mov edi, bss_start      ; Put the starting address of .bss into EDI
-    mov ecx, bss_end        ; Put the ending address of .bss into ECX
-    sub ecx, edi            ; ECX now holds the size of .bss in bytes
-    add ecx, 3              ; Add 3 to handle sizes that aren't a multiple of 4
-    shr ecx, 2              ; Divide by 4 to get the number of 4-byte chunks (dwords)
-
-    xor eax, eax            ; Set EAX to 0, the value we want to write
-    cld                     ; Clear the direction flag, so `stosd` increments EDI
-    rep stosd               ; Write EAX to [EDI] and repeat ECX times
-
-    ; The bootloader has already set up the segments and stack.
-    ; We can now safely call our main C function.
-    call kmain
-
-    ; If kmain returns (which it shouldn't), hang the system.
-    cli
-hang:
-    hlt
-    jmp hang// myos/kernel/exceptions.c
-
-#include "exceptions.h"
-#include "vga.h"
+#include <kernel/exceptions.h>
+#include <kernel/vga.h>
 
 // Helper function to print the names of the set EFLAGS bits
 static void print_eflags(uint32_t eflags) {
@@ -1224,141 +1209,169 @@ void fault_handler(registers_t *r) {
     dump_stack((uint32_t *)r->useresp);
 
     for (;;);
-}// myos/kernel/vga.h
+}; myos/kernel/cpu/gdt_load.asm
 
-#ifndef VGA_H
-#define VGA_H
+bits 32
 
-#include "types.h" // to include uint32_t
+global gdt_flush ; Makes this function visible to C code
 
-void clear_screen();
-void update_cursor(int row, int col);
-void print_string(const char* str);
-void print_hex(uint32_t n);
-void print_char(char c);
-void print_hex(uint32_t n);
+gdt_flush:
+    ; Get the pointer to the GDT structure from the stack
+    mov eax, [esp + 4]
+    ; Load the new GDT into the CPU's GDTR register
+    lgdt [eax]
 
-#endif// myos/kernel/irq.h
+    ; Do a far jump to our new code segment to flush the CPU pipeline
+    ; and reload the segment registers.
+    mov ax, 0x10  ; 0x10 is the offset of our new data segment
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    jmp 0x08:.flush ; 0x08 is the offset of our new code segment
+.flush:
+    ret// myos/kernel/drivers/io.c
 
-#ifndef IRQ_H
-#define IRQ_H
+#include <kernel/io.h>
 
-#include "types.h"
-#include "exceptions.h" // For registers_t struct
+#define PIC1_CMD  0x20
+#define PIC1_DATA 0x21
+#define PIC2_CMD  0xA0
+#define PIC2_DATA 0xA1
 
-void irq_install_handler(int irq, void (*handler)(registers_t *r));
-void irq_uninstall_handler(int irq);
-void irq_install();
-void irq_handler(registers_t *r);
-
-#endif// myos/kernel/string.c
-
-#include "string.h"
-#include "types.h"
-
-int strcmp(const char* str1, const char* str2) {
-    while (*str1 && (*str1 == *str2)) {
-        str1++;
-        str2++;
-    }
-    return *(const unsigned char*)str1 - *(const unsigned char*)str2;
+// Writes a byte to the specified I/O port.
+void port_byte_out(unsigned short port, unsigned char data) {
+    __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
 }
 
-int atoi(const char* str) {
-    int res = 0;
-    for (int i = 0; str[i] != '\0'; ++i) {
-        res = res * 10 + str[i] - '0';
-    }
-    return res;
+// Reads a byte from the specified I/O port.
+unsigned char port_byte_in(unsigned short port) {
+    unsigned char result;
+    __asm__ __volatile__("inb %1, %0" : "=a"(result) : "Nd"(port));
+    return result;
 }
 
-void* memset(void* buf, int c, size_t n) {
-    unsigned char* p = buf;
-    while (n--) {
-        *p++ = (unsigned char)c;
-    }
-    return buf;
+unsigned short port_word_in(unsigned short port) {
+    unsigned short result;
+    __asm__("inw %1, %0" : "=a" (result) : "Nd" (port));
+    return result;
 }
 
-int memcmp(const void* s1, const void* s2, size_t n) {
-    const unsigned char* p1 = s1;
-    const unsigned char* p2 = s2;
-    while (n--) {
-        if (*p1 != *p2) {
-            return *p1 - *p2;
+/**
+ * Remaps the PIC to use non-conflicting interrupt vectors.
+ * @param offset1 Vector offset for master PIC (e.g., 0x20)
+ * @param offset2 Vector offset for slave PIC (e.g., 0x28)
+ */
+void pic_remap(int offset1, int offset2) {
+    // Save current masks
+    unsigned char a1 = port_byte_in(PIC1_DATA);
+    unsigned char a2 = port_byte_in(PIC2_DATA);
+
+    // ICW1: Start the initialization sequence
+    port_byte_out(PIC1_CMD, 0x11);
+    port_byte_out(PIC2_CMD, 0x11);
+
+    // ICW2: Set the vector offsets
+    port_byte_out(PIC1_DATA, offset1);
+    port_byte_out(PIC2_DATA, offset2);
+
+    // ICW3: Configure chaining between master and slave
+    port_byte_out(PIC1_DATA, 4);  // Tell Master PIC there is a slave at IRQ2
+    port_byte_out(PIC2_DATA, 2);  // Tell Slave PIC its cascade identity
+
+    // ICW4: Set 8086 mode
+    port_byte_out(PIC1_DATA, 0x01);
+    port_byte_out(PIC2_DATA, 0x01);
+
+    // Restore saved masks
+    port_byte_out(PIC1_DATA, a1);
+    port_byte_out(PIC2_DATA, a2);
+}// myos/kernel/drivers/keyboard.c
+
+#include <kernel/keyboard.h>
+#include <kernel/irq.h>
+#include <kernel/io.h>
+#include <kernel/shell.h> // Changed from vga.h
+#include <kernel/vga.h>
+
+// --- State and Character Maps ---
+static volatile int shift_pressed = 0;
+
+// Scancode set 1 for a US QWERTY keyboard layout - Normal
+unsigned char kbd_us[128] = {
+    0,  27, '1', '2', '3', '4', '5', '6', '7', '8',     // 0-9
+    '9', '0', '-', '=', '\b', '\t', 'q', 'w', 'e', 'r', // 10-19
+    't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n', 0,   // 20-29
+    'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';',  // 30-39 (0x1E='a')
+    '\'', '`', 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n',  // 40-49
+    'm', ',', '.', '/', 0, '*', 0, ' ', 0, 0,           // 50-59
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
+    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
+};
+
+// Scancode set 1 for a US QWERTY keyboard layout - Shifted
+unsigned char kbd_us_shift[128] = {
+    0,  27, '!', '@', '#', '$', '%', '^', '&', '*',     // 0-9
+    '(', ')', '_', '+', '\b', '\t', 'Q', 'W', 'E', 'R', // 10-19
+    'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', '\n', 0,   // 20-29
+    'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':',  // 30-39 (0x1E='A')
+    '"', '~', 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N',    // 40-49
+    'M', '<', '>', '?', 0, '*', 0, ' ', 0, 0,           // 50-59
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 60-69
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 70-79
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 80-89
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 90-99
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 100-109
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,                       // 110-119
+    0, 0, 0, 0, 0, 0, 0, 0                              // 120-127
+};
+
+// The main keyboard handler function, called by our IRQ dispatcher.
+static void keyboard_handler(registers_t *r) {
+    unsigned char scancode = port_byte_in(0x60);
+
+    // Handle a key release first
+    if (scancode & 0x80) {
+        // If a shift key was released, update the flag.
+        if ((scancode & 0x7F) == 0x2A || (scancode & 0x7F) == 0x36) {
+            shift_pressed = 0;
         }
-        p1++;
-        p2++;
+        return; // Nothing more to do on key release.
     }
-    return 0;
+
+    // Handle a key press
+    // If it's a shift key, update the flag and exit.
+    if (scancode == 0x2A || scancode == 0x36) {
+        shift_pressed = 1;
+        return;
+    }
+
+    // If we're still here, it must be a normal character key.
+    if (scancode < 128) {
+        char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
+        
+        if (character) {
+            shell_handle_input(character);
+        }
+    }
 }
 
-int toupper(int c) {
-    if (c >= 'a' && c <= 'z') {
-        return c - 'a' + 'A';
-    }
-    return c;
-}
+// The installation function that hooks the handler into the IRQ system.
+void keyboard_install() {
+    
+    // Register `keyboard_handler` to be called when IRQ 1 is triggered.
+    irq_install_handler(1, keyboard_handler);
+}// myos/kernel/drivers/vga.c
 
-size_t strlen(const char* str) {
-    size_t len = 0;
-    while (str[len]) {
-        len++;
-    }
-    return len;
-}// myos/kernel/idt.h
-#ifndef IDT_H
-#define IDT_H
-
-#include "types.h"
-
-// Defines a single entry in the Interrupt Descriptor Table (a "gate")
-struct idt_entry_struct {
-   uint16_t base_low;    // The lower 16 bits of the handler function's address
-   uint16_t selector;    // The GDT code segment selector to use
-   uint8_t  always0;     // This must always be zero
-   uint8_t  flags;       // The gate type and attributes
-   uint16_t base_high;   // The upper 16 bits of the handler function's address
-} __attribute__((packed));
-
-
-// Defines the structure for the IDT pointer, which is loaded using the 'lidt' instruction
-struct idt_ptr_struct {
-   uint16_t limit;       // The size of the IDT in bytes minus 1
-   uint32_t base;        // The linear address where the IDT starts
-} __attribute__((packed));
-
-void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags);
-void idt_install();
-
-#endif// myos/kernel/disk.h
-
-#ifndef DISK_H
-#define DISK_H
-
-#include "types.h"
-
-// Reads a 512-byte sector from the disk.
-// lba: The linear block address of the sector.
-// buffer: A pointer to a 512-byte buffer to store the data.
-void read_disk_sector(uint32_t lba, uint8_t* buffer);
-
-#endif// myos/kernel/memory.h
-
-#ifndef MEMORY_H
-#define MEMORY_H
-
-#include "types.h"
-
-void init_memory();
-void* malloc(uint32_t size);
-void free(void* ptr);
-
-#endif// myos/kernel/vga.c
-
-#include "vga.h"
-#include "io.h"
-#include "types.h"
+#include <kernel/vga.h>
+#include <kernel/io.h>
+#include <kernel/types.h>
 
 // Define a static cursor position
 static int cursor_row = 0;
@@ -1458,151 +1471,12 @@ void print_hex(uint32_t n) {
         char c = (nibble > 9) ? (nibble - 10 + 'A') : (nibble + '0');
         print_char(c);
     }
-}; myos/kernel/gdt_load.asm
+}// myos/kernel/drivers/timer.c
 
-bits 32
-
-global gdt_flush ; Makes this function visible to C code
-
-gdt_flush:
-    ; Get the pointer to the GDT structure from the stack
-    mov eax, [esp + 4]
-    ; Load the new GDT into the CPU's GDTR register
-    lgdt [eax]
-
-    ; Do a far jump to our new code segment to flush the CPU pipeline
-    ; and reload the segment registers.
-    mov ax, 0x10  ; 0x10 is the offset of our new data segment
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    jmp 0x08:.flush ; 0x08 is the offset of our new code segment
-.flush:
-    ret// myos/kernel/fs.c
-
-#include "fs.h"
-#include "disk.h"
-#include "vga.h"
-#include "memory.h"
-#include "io.h"
-#include "string.h" // For our new string functions
-
-static fat12_bpb_t* bpb; // keep private to fs/c
-static uint8_t* fat_buffer;
-static uint32_t data_area_start_sector;
-uint8_t* root_directory_buffer; // global ie no static
-uint32_t root_directory_size; // global ie no static
-
-void init_fs() {
-    // Read the BIOS Parameter Block (Sector 0)
-    uint8_t* buffer = (uint8_t*)malloc(512);
-    read_disk_sector(0, buffer);
-    bpb = (fat12_bpb_t*)buffer;
-    port_byte_out(0xE9, '1'); // BPB should be read now
-
-    // Read the FAT into memory
-    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
-    fat_buffer = (uint8_t*)malloc(fat_size_bytes);
-    for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
-        read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
-    }
-
-    // Calculate the location and size of the root directory
-    uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
-    root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
-    uint32_t root_dir_size_sectors = root_directory_size / bpb->bytes_per_sector;
-    if (root_directory_size % bpb->bytes_per_sector > 0) {
-        root_dir_size_sectors++;
-    }
-    port_byte_out(0xE9, '2'); // Root directory parameters calculated
-
-    // calc starting sector of data area
-    data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
-
-    // Read the entire root directory into a new buffer
-    root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
-    port_byte_out(0xE9, '3'); // About to start reading root dir sectors
-    for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
-        read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
-        port_byte_out(0xE9, '.'); // Print a dot for each sector read
-    }
-    port_byte_out(0xE9, '4'); // FINISHED filesystem init */
-}
-
-static uint16_t fs_get_fat_entry(uint16_t cluster) {
-    uint32_t fat_offset = cluster + (cluster / 2);
-    uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
-    
-    if (cluster % 2 == 0) {
-        return *fat16 & 0x0FFF; // Even cluster
-    } else {
-        return *fat16 >> 4;     // Odd cluster
-    }
-}
-
-static void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
-    uint32_t lba = data_area_start_sector + (cluster - 2);
-    read_disk_sector(lba, buffer);
-}
-
-fat_dir_entry_t* fs_find_file(const char* filename) {
-    char fat_name[12];
-    memset(fat_name, ' ', 11);
-    fat_name[11] = '\0'; // Not strictly necessary, but good practice
-
-    // Convert filename to FAT 8.3 format
-    int i = 0, j = 0;
-    while (filename[i] && filename[i] != '.' && j < 8) {
-        fat_name[j++] = toupper(filename[i++]);
-    }
-    if (filename[i] == '.') i++;
-    j = 8;
-    while (filename[i] && j < 11) {
-        fat_name[j++] = toupper(filename[i++]);
-    }
-
-    // Search the directory
-    for (uint32_t offset = 0; offset < root_directory_size; offset += sizeof(fat_dir_entry_t)) {
-        fat_dir_entry_t* entry = (fat_dir_entry_t*)(root_directory_buffer + offset);
-
-        if (entry->name[0] == 0x00) break;
-        if ((uint8_t)entry->name[0] == 0xE5) continue;
-        if ((entry->attributes & 0x0F) == 0x0F) continue; // LFN
-        if (entry->attributes & 0x08) continue;           // Volume Label
-
-        // Instead of one 11-byte comparison, do two separate ones.
-        if (memcmp(fat_name, entry->name, 8) == 0 && memcmp(fat_name + 8, entry->extension, 3) == 0) {
-            return entry; // We found it!
-        }
-    }
-
-    return NULL; // File not found
-}
-
-void* fs_read_file(fat_dir_entry_t* entry) {
-    uint8_t* file_buffer = (uint8_t*)malloc(entry->file_size);
-    if (!file_buffer) {
-        return NULL;
-    }
-
-    uint8_t* current_pos = file_buffer;
-    uint16_t current_cluster = entry->first_cluster_low;
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
-
-    while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
-        fs_read_cluster(current_cluster, current_pos);
-        current_pos += bytes_per_cluster;
-        current_cluster = fs_get_fat_entry(current_cluster);
-    }
-    return file_buffer;
-}// myos/kernel/timer.c
-
-#include "timer.h"
-#include "irq.h"
-#include "io.h"
-#include "vga.h" // For printing output
+#include <kernel/timer.h>
+#include <kernel/irq.h>
+#include <kernel/io.h>
+#include <kernel/vga.h> // For printing output
 
 static volatile uint32_t tick = 0;
 
@@ -1652,45 +1526,10 @@ void sleep(uint32_t milliseconds) {
         // The CPU will wait here until the next timer interrupt arrives.
         __asm__ __volatile__("sti\n\thlt");
     }
-}// myos/kernel/types.h
-#ifndef TYPES_H
-#define TYPES_H
+}// myos/kernel/drivers/disk.c
 
-// Define fixed-width integer types for cross-platform compatibility
-// Unsigned integer types
-typedef unsigned char   uint8_t;
-typedef unsigned short  uint16_t;
-typedef unsigned int    uint32_t;
-typedef unsigned long long uint64_t;
-
-// Signed integer types
-typedef signed char        int8_t;
-typedef signed short       int16_t;
-typedef signed int         int32_t;
-typedef signed long long   int64_t;
-
-// Standard size type, essential for memory operations
-typedef uint32_t size_t;
-
-// Definition for a null pointer constant
-#define NULL ((void*)0)
-
-#endif// myos/kernel/timer.h
-
-#ifndef TIMER_H
-#define TIMER_H
-
-#include "types.h"
-
-// Initializes the PIT and registers its IRQ handler.
-void timer_install();
-uint32_t timer_get_ticks(); // getter func
-void sleep(uint32_t ms);
-
-#endif// myos/kernel/disk.c
-
-#include "disk.h"
-#include "io.h" // for port_word_in
+#include <kernel/disk.h>
+#include <kernel/io.h> // for port_word_in
 
 // A more robust helper function to wait for the disk to be ready.
 static void wait_disk_ready() {
@@ -1767,14 +1606,14 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
     port_byte_out(0xE9, 'E'); // debug
 }// myos/kernel/shell.c
 
-#include "shell.h"
-#include "vga.h" // We need this for print_char
-#include "string.h" // Needed for strcmp
-#include "timer.h" // for tick getter
-#include "io.h" // for port_byte_out
-#include "memory.h" // for dynamic heap memory
-#include "disk.h" // for disk sector read
-#include "fs.h" // for FAT12 entries
+#include <kernel/shell.h>
+#include <kernel/vga.h> // We need this for print_char
+#include <kernel/string.h> // Needed for strcmp
+#include <kernel/timer.h> // for tick getter
+#include <kernel/io.h> // for port_byte_out
+#include <kernel/memory.h> // for dynamic heap memory
+#include <kernel/disk.h> // for disk sector read
+#include <kernel/fs.h> // for FAT12 entries
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -1847,7 +1686,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Print 3 dynamic heap addresses\n  cat  - Check if filename can be found\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -1867,13 +1706,21 @@ void process_command() {
 
     // memtest command
     } else if (strcmp(cmd_buffer, "memtest") == 0) {
-        // Allocate a few blocks and print their addresses
-        void* addr1 = malloc(1);
-        void* addr2 = malloc(1);
-        void* addr3 = malloc(1024);
-        print_string("Block 1: "); print_hex((uint32_t)addr1);
-        print_string("\nBlock 2: "); print_hex((uint32_t)addr2);
-        print_string("\nBlock 3: "); print_hex((uint32_t)addr3);
+        print_string("Allocating block A (16 bytes)...");
+        void* block_a = malloc(16);
+        print_string("\n  A is at: "); print_hex((uint32_t)block_a);
+
+        print_string("\nAllocating block B (1024 bytes)...");
+        void* block_b = malloc(1024);
+        print_string("\n  B is at: "); print_hex((uint32_t)block_b);
+
+        print_string("\nFreeing block A...");
+        free(block_a);
+
+        print_string("\nAllocating block C (8 bytes)...");
+        void* block_c = malloc(8);
+        print_string("\n  C is at: "); print_hex((uint32_t)block_c);
+        print_string("\n(Note: C should have the same address as A)");
 
     // cat command
     } else if (strcmp(command, "cat") == 0) {
@@ -2026,10 +1873,7 @@ SECTIONS {
         *(.note.GNU-stack)
         *(.eh_frame)
     }
-}# A robust and scalable Makefile for myos
-
-# Tell Make that these are not real files
-.PHONY: all clean run debug
+}# myos/Makefile
 
 # --- Variables ---
 BUILD_DIR := build
@@ -2037,20 +1881,21 @@ QEMU_CMD := qemu-system-i386
 QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 
 # --- Source Files ---
+# Find all .c and .asm files within the kernel directory and its subdirectories
+KERNEL_SRC_DIRS := $(shell find kernel -type d)
+KERNEL_C_SRC    := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
+KERNEL_ASM_SRC  := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.asm))
+# Manually specify bootloader sources
 STAGE1_SRC := boot/stage1.asm
 STAGE2_SRC := boot/stage2.asm
-# Separate kernel_entry.asm so we can control its link order
-KERNEL_ENTRY_SRC := kernel/kernel_entry.asm
-KERNEL_ASM_SRC := $(filter-out $(KERNEL_ENTRY_SRC), $(wildcard kernel/*.asm))
-KERNEL_C_SRC := $(wildcard kernel/*.c)
 
 # --- Object Files ---
-STAGE1_OBJ := $(BUILD_DIR)/stage1.bin
-STAGE2_OBJ := $(BUILD_DIR)/stage2.bin
-KERNEL_ENTRY_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ENTRY_SRC))
-KERNEL_ASM_OBJ := $(patsubst kernel/%.asm, $(BUILD_DIR)/%.o, $(KERNEL_ASM_SRC))
-KERNEL_C_OBJ := $(patsubst kernel/%.c, $(BUILD_DIR)/%.o, $(KERNEL_C_SRC))
-ALL_KERNEL_OBJS := $(KERNEL_ASM_OBJ) $(KERNEL_C_OBJ)
+# Map source files to object files in the build directory, preserving paths
+STAGE1_OBJ := $(BUILD_DIR)/boot/stage1.bin
+STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
+KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
+KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
+ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(KERNEL_ASM_OBJ)
 
 # --- Final Binaries ---
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
@@ -2061,13 +1906,13 @@ DISK_IMAGE := $(BUILD_DIR)/os_image.bin
 ASM := nasm
 ASM_FLAGS := -f elf32 -F dwarf
 CC := gcc
-CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c
+CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c -Iinclude
 LD := ld
-LDFLAGS := -m elf_i386 -T kernel/linker.ld
+LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 OBJCOPY := objcopy
-OBJCOPY_FLAGS := -O binary
 
 # --- Build Targets ---
+.PHONY: all clean run debug
 
 # Default target: build everything
 all: $(DISK_IMAGE)
@@ -2076,68 +1921,60 @@ all: $(DISK_IMAGE)
 $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
-
 	@echo "--> Formatting disk with FAT12..."
 	mkfs.fat -F 12 $@ >/dev/null 2>&1
-
-	# Install Stage 1 FIRST. This puts our BPB on the disk.
 	@echo "--> Installing Stage 1 bootloader..."
 	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
-
-	# Now, copy the specific test file directly into the root directory.
 	@echo "--> Copying test file to disk image..."
 	mcopy -i $@ test_files/test.txt ::
-	
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
-
 	@echo "--> Installing kernel..."
 	dd if=$(KERNEL_BIN) of=$@ seek=5 conv=notrunc >/dev/null 2>&1
 
 # Rule to link all kernel objects into a single ELF file
-# KERNEL_ENTRY_OBJ is listed first to ensure correct linking.
-$(KERNEL_ELF): $(KERNEL_ENTRY_OBJ) $(ALL_KERNEL_OBJS)
+# Note: We must ensure kernel_entry.o is first in the link order.
+KERNEL_ENTRY_OBJ := $(BUILD_DIR)/kernel/kernel_entry.o
+OTHER_KERNEL_OBJS := $(filter-out $(KERNEL_ENTRY_OBJ), $(ALL_KERNEL_OBJS))
+$(KERNEL_ELF): $(KERNEL_ENTRY_OBJ) $(OTHER_KERNEL_OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
 	@echo "Kernel linked: $@"
 
 # Rule to extract the raw binary from the ELF file
 $(KERNEL_BIN): $(KERNEL_ELF)
-	$(OBJCOPY) $(OBJCOPY_FLAGS) $< $@
+	$(OBJCOPY) -O binary $< $@
 	@echo "Kernel extracted to binary: $@"
-	@echo -n "Kernel size: "
-	@stat -c %s $@
+	@echo -n "Kernel size: "; stat -c %s $@
 
-# Rule to build stage 1
-$(STAGE1_OBJ): $(STAGE1_SRC)
-	@mkdir -p $(BUILD_DIR)
-	$(ASM) $< -f bin -o $@
+# --- Generic Build Rules ---
 
-# Rule to build stage 2
-$(STAGE2_OBJ): $(STAGE2_SRC)
-	@mkdir -p $(BUILD_DIR)
-	$(ASM) $< -f bin -o $@
-
-# Generic rule to compile any C source file to an object file
-$(BUILD_DIR)/%.o: kernel/%.c
-	@mkdir -p $(BUILD_DIR)
+# Rule for any C object file
+$(BUILD_DIR)/%.o: %.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
-# Generic rule to assemble any kernel assembly file to an object file
-$(BUILD_DIR)/%.o: kernel/%.asm
-	@mkdir -p $(BUILD_DIR)
+# Rule for any ASM object file
+$(BUILD_DIR)/%.o: %.asm
+	@mkdir -p $(dir $@)
 	$(ASM) $(ASM_FLAGS) $< -o $@
 
-# Rule to run QEMU
-run: $(DISK_IMAGE)
-	@echo "Running OS in QEMU..."
+# Rule for stage 1 bootloader
+$(STAGE1_OBJ): $(STAGE1_SRC)
+	@mkdir -p $(dir $@)
+	$(ASM) -f bin $< -o $@
+
+# Rule for stage 2 bootloader
+$(STAGE2_OBJ): $(STAGE2_SRC)
+	@mkdir -p $(dir $@)
+	$(ASM) -f bin $< -o $@
+
+# --- Utility Targets ---
+run: all
 	$(QEMU_CMD) $(QEMU_OPTS)
 
-# Rule to clean up all build artifacts
+debug: all
+	$(QEMU_CMD) -S -gdb tcp::1234 $(QEMU_OPTS)
+
 clean:
 	@echo "Cleaning build directory..."
 	rm -rf $(BUILD_DIR)
-
-# Rule to start debugger
-debug: all
-	@echo "--- Starting QEMU, waiting for GDB on localhost:1234 ---"
-	qemu-system-i386 -hda build/os_image.bin -debugcon stdio -S -gdb tcp::1234

@@ -1,4 +1,4 @@
-// myos/kernel/irq.h
+// myos/include/kernel/irq.h
 
 #ifndef IRQ_H
 #define IRQ_H

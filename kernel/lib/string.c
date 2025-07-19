@@ -1,4 +1,4 @@
-// myos/kernel/string.c
+// myos/kernel/lib/string.c
 
 #include <kernel/string.h>
 #include <kernel/types.h>

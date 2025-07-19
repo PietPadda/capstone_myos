@@ -1,4 +1,4 @@
-// myos/kernel/fs.c
+// myos/kernel/fs/fs.c
 
 #include <kernel/fs.h>
 #include <kernel/disk.h>

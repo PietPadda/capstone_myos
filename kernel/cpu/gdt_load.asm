@@ -1,4 +1,4 @@
-; myos/kernel/gdt_load.asm
+; myos/kernel/cpu/gdt_load.asm
 
 bits 32
 

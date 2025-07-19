@@ -5,6 +5,11 @@
         "idt.h": "c",
         "io.h": "c",
         "shell.h": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "gdt.h": "c",
+        "vga.h": "c",
+        "disk.h": "c",
+        "keyboard.h": "c",
+        "irq.h": "c"
     }
 }
