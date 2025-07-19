@@ -8,7 +8,9 @@ QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
 # --- Source Files ---
 # Find all .c and .asm files within the kernel directory and its subdirectories
 KERNEL_SRC_DIRS := $(shell find kernel -type d)
+USER_SRC_DIRS   := $(shell find userspace -type d)
 KERNEL_C_SRC    := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.c))
+USER_C_SRC      := $(foreach dir,$(USER_SRC_DIRS),$(wildcard $(dir)/*.c))
 KERNEL_ASM_SRC  := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.asm))
 # Manually specify bootloader sources
 STAGE1_SRC := boot/stage1.asm
@@ -19,8 +21,9 @@ STAGE2_SRC := boot/stage2.asm
 STAGE1_OBJ := $(BUILD_DIR)/boot/stage1.bin
 STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
 KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
+USER_C_OBJ     := $(patsubst %.c,$(BUILD_DIR)/%.o,$(USER_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
-ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(KERNEL_ASM_OBJ)
+ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(USER_C_OBJ) $(KERNEL_ASM_OBJ)
 
 # --- Final Binaries ---
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
@@ -31,7 +34,7 @@ DISK_IMAGE := $(BUILD_DIR)/os_image.bin
 ASM := nasm
 ASM_FLAGS := -f elf32 -F dwarf
 CC := gcc
-CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c -Iinclude
+CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c -Iinclude -Iuserspace/libc/include
 LD := ld
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 OBJCOPY := objcopy

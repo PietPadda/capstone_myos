@@ -2,7 +2,7 @@
 
 #include <syscall.h>
 
-void _start() {
+void user_program_main() {
     syscall_print("Hello from user-mode C!\n");
 
     // Loop forever

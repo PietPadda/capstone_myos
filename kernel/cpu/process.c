@@ -6,7 +6,7 @@
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 // This is the starting address of our user program
-extern void user_program_start();
+extern void user_program_main();
 
 // Kernel stack for our user process
 static char kernel_stack[4096];
@@ -32,7 +32,7 @@ void switch_to_user_mode() {
         "orl $0x200, %eax;" // Set the IF flag (bit 9), enabling interrupts in user mode
         "pushl %eax;"       // Push modified EFLAGS
         "pushl $0x1B;"      // CS (user code segment, index 3, RPL 3)
-        "pushl $user_program_start;" // EIP
+        "pushl $user_program_main;" // EIP C program's entry point
         "iret;"
     );
 }
