@@ -36,6 +36,9 @@ struct tss_entry_struct {
    uint16_t iomap_base; // The I/O map base address
 } __attribute__((packed));
 
+// Add this extern declaration to make the global TSS instance visible
+extern struct tss_entry_struct tss_entry;
+
 void tss_install();
 
 #endif

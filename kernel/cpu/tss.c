@@ -8,7 +8,7 @@
 extern void gdt_set_gate(int32_t, uint32_t, uint32_t, uint8_t, uint8_t);
 
 // Our single, global TSS instance
-static struct tss_entry_struct tss_entry;
+struct tss_entry_struct tss_entry;
 
 // Assembly function to load the TSS selector into the TR register
 extern void tss_flush();

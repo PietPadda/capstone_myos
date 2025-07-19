@@ -8,6 +8,7 @@
 #include <kernel/memory.h> // for dynamic heap memory
 #include <kernel/disk.h> // for disk sector read
 #include <kernel/fs.h> // for FAT12 entries
+#include <kernel/cpu/process.h> // User Mode Switch
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -80,7 +81,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  usertest  - Switch to user mode test\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -220,6 +221,12 @@ void process_command() {
             print_hex(root_directory_buffer[i]);
             print_char(' ');
         }
+
+    // usertest command
+    } else if (strcmp(cmd_buffer, "usertest") == 0) {
+        print_string("Switching to user mode... If the OS freezes, it worked!");
+        switch_to_user_mode();
+        print_string("...Failed to switch. This should not be printed.");
     
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
