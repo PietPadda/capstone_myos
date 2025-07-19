@@ -9,9 +9,11 @@
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
 
-// Our first syscall: a simple test print
+// Our first syscall: takes a pointer to a string in EBX and prints it.
 static void sys_test_print(registers_t *r) {
-    print_string("Syscall 1 called!\n");
+    char* message = (char*)r->ebx;
+    print_string(message);
+    print_char('\n');
 }
 
 void syscall_install() {
