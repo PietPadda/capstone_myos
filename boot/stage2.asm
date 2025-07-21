@@ -13,7 +13,7 @@ start:
     mov [boot_drive], dl
 
     ; Set up our own stack.
-    mov sp, 0x5000
+    mov sp, 0x7C00 ; Set stack pointer to a safe area below the original bootloader
 
     ; --- Load Kernel using modern LBA Extended Read ---
     ; Kernel is located starting at LBA 5 by our build script.
@@ -35,6 +35,14 @@ start:
     mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
     or eax, 0x01
     mov cr0, eax
+
+    ; CRITICAL: Reload all segment registers now that we are in protected mode.
+    ; The far jump will only reload CS, but we need the others to be valid
+    ; for a stable state.
+    mov ax, GDT_DATA
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
     
     jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
 

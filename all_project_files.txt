@@ -101,7 +101,7 @@ start:
     mov [boot_drive], dl
 
     ; Set up our own stack.
-    mov sp, 0x5000
+    mov sp, 0x7C00 ; Set stack pointer to a safe area below the original bootloader
 
     ; --- Load Kernel using modern LBA Extended Read ---
     ; Kernel is located starting at LBA 5 by our build script.
@@ -123,6 +123,14 @@ start:
     mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
     or eax, 0x01
     mov cr0, eax
+
+    ; CRITICAL: Reload all segment registers now that we are in protected mode.
+    ; The far jump will only reload CS, but we need the others to be valid
+    ; for a stable state.
+    mov ax, GDT_DATA
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
     
     jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
 
@@ -195,7 +203,7 @@ gdt_start:
     db 0x92      ; Access (Present, Ring 0, Data, Read/Write)
     db 0xCF      ; Granularity (4K pages, 32-bit)
     db 0x0       ; Base (high)
-gdt_end:// myos/kernel/include/exceptions.h
+gdt_end:// myos/include/kernel/exceptions.h
 
 #ifndef EXCEPTIONS_H
 #define EXCEPTIONS_H
@@ -205,11 +213,11 @@ gdt_end:// myos/kernel/include/exceptions.h
 // A struct which defines the registers we pushed onto the stack in isr.asm.
 // This order MUST match the order of the push instructions in isr.asm.
 typedef struct {
-    // Pushed by us manually
-    uint32_t gs, fs, es, ds;
-    
     // Pushed by the 'pusha' instruction
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
+
+    // Pushed by us manually after pusha
+    uint32_t gs, fs, es, ds;
 
     // Pushed by our ISR stub (int_no first, then error code)
     uint32_t int_no, err_code;
@@ -221,15 +229,20 @@ typedef struct {
 void isr_install();
 void fault_handler(registers_t *r);
 
-#endif// myos/kernel/include/gdt.h
+#endif// myos/include/kernel/gdt.h
 
 #ifndef GDT_H
 #define GDT_H
 
+#include <kernel/types.h>
+
 // This function initializes the kernel's GDT.
 void gdt_install();
 
-#endif// myos/kernel/include/shell.h
+// our public helper function
+void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran);
+
+#endif// myos/include/kernel/shell.h
 
 #ifndef SHELL_H
 #define SHELL_H
@@ -240,7 +253,7 @@ void shell_init();
 // Handles a single character of input.
 void shell_handle_input(char c);
 
-#endif// myos/kernel/include/string.h
+#endif// myos/include/kernel/string.h
 
 #ifndef STRING_H
 #define STRING_H
@@ -255,7 +268,7 @@ int memcmp(const void* s1, const void* s2, size_t n);
 int toupper(int c);
 size_t strlen(const char* str);
 
-#endif// myos/kernel/include/keyboard.h
+#endif// myos/include/kernel/keyboard.h
 
 #ifndef KEYBOARD_H
 #define KEYBOARD_H
@@ -263,7 +276,7 @@ size_t strlen(const char* str);
 // Initializes the keyboard driver and registers its IRQ handler.
 void keyboard_install();
 
-#endif// myos/kernel/include/fs.h
+#endif// myos/include/kernel/fs.h
 
 #ifndef FS_H
 #define FS_H
@@ -316,7 +329,13 @@ fat_dir_entry_t* fs_find_file(const char* filename);
 // Reads the contents of a file given its directory entry.
 void* fs_read_file(fat_dir_entry_t* entry);
 
-#endif // FS_H// myos/kernel/include/io.h
+void fs_read_cluster(uint16_t cluster, uint8_t* buffer);
+uint16_t fs_get_fat_entry(uint16_t cluster);
+
+// Make the global BPB pointer visible to other modules
+extern fat12_bpb_t* bpb;
+
+#endif // FS_H// myos/include/kernel/io.h
 
 #ifndef IO_H
 #define IO_H
@@ -326,7 +345,7 @@ unsigned char port_byte_in(unsigned short port);
 void pic_remap(int offset1, int offset2); // remapping interrupt vectors func
 unsigned short port_word_in(unsigned short port);
 
-#endif// myos/kernel/include/vga.h
+#endif// myos/include/kernel/vga.h
 
 #ifndef VGA_H
 #define VGA_H
@@ -340,7 +359,7 @@ void print_hex(uint32_t n);
 void print_char(char c);
 void print_hex(uint32_t n);
 
-#endif// myos/kernel/include/irq.h
+#endif// myos/include/kernel/irq.h
 
 #ifndef IRQ_H
 #define IRQ_H
@@ -353,7 +372,7 @@ void irq_uninstall_handler(int irq);
 void irq_install();
 void irq_handler(registers_t *r);
 
-#endif// myos/kernel/include/idt.h
+#endif// myos/include/kernel/idt.h
 #ifndef IDT_H
 #define IDT_H
 
@@ -378,7 +397,7 @@ struct idt_ptr_struct {
 void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags);
 void idt_install();
 
-#endif// myos/kernel/include/disk.h
+#endif// myos/include/kernel/disk.h
 
 #ifndef DISK_H
 #define DISK_H
@@ -390,7 +409,7 @@ void idt_install();
 // buffer: A pointer to a 512-byte buffer to store the data.
 void read_disk_sector(uint32_t lba, uint8_t* buffer);
 
-#endif// myos/kernel/include/memory.h
+#endif// myos/include/kernel/memory.h
 
 #ifndef MEMORY_H
 #define MEMORY_H
@@ -401,7 +420,7 @@ void init_memory();
 void* malloc(uint32_t size);
 void free(void* ptr);
 
-#endif// myos/kernel/include/types.h
+#endif// myos/include/kernel/types.h
 #ifndef TYPES_H
 #define TYPES_H
 
@@ -424,7 +443,19 @@ typedef uint32_t size_t;
 // Definition for a null pointer constant
 #define NULL ((void*)0)
 
-#endif// myos/kernel/include/timer.h
+#endif// myos/include/kernel/syscall.h
+
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+#include <kernel/exceptions.h> // Include the header that defines registers_t
+
+// Define a type for our system call handler functions
+typedef void (*syscall_t)(registers_t *r);
+
+void syscall_install();
+
+#endif// myos/include/kernel/timer.h
 
 #ifndef TIMER_H
 #define TIMER_H
@@ -436,7 +467,150 @@ void timer_install();
 uint32_t timer_get_ticks(); // getter func
 void sleep(uint32_t ms);
 
-#endif// myos/kernel/fs/fs.c
+#endif// myos/include/kernel/cpu/process.h
+
+#ifndef PROCESS_H
+#define PROCESS_H
+
+void switch_to_user_mode(void* entry_point, void* stack_ptr); // takes  entry point AND user stack pointer
+void exec_program(const char* filename);
+
+#endif// myos/include/kernel/cpu/tss.h
+
+#ifndef TSS_H
+#define TSS_H
+
+#include <kernel/types.h>
+
+// This struct defines the layout of a Task State Segment.
+struct tss_entry_struct {
+   uint32_t prev_tss;   // The previous TSS - if we used hardware task switching
+   uint32_t esp0;       // The kernel stack pointer to switch to when coming from user mode
+   uint32_t ss0;        // The kernel stack segment to switch to
+   uint32_t esp1;       // Unused...
+   uint32_t ss1;
+   uint32_t esp2;
+   uint32_t ss2;
+   uint32_t cr3;
+   uint32_t eip;
+   uint32_t eflags;
+   uint32_t eax;
+   uint32_t ecx;
+   uint32_t edx;
+   uint32_t ebx;
+   uint32_t esp;
+   uint32_t ebp;
+   uint32_t esi;
+   uint32_t edi;
+   uint32_t es;         // The value to load into ES when switching to this task
+   uint32_t cs;         // The value to load into CS when switching to this task
+   uint32_t ss;         // The value to load into SS when switching to this task
+   uint32_t ds;         // The value to load into DS when switching to this task
+   uint32_t fs;         // The value to load into FS when switching to this task
+   uint32_t gs;         // The value to load into GS when switching to this task
+   uint32_t ldt;        // The LDT segment selector to use with this task
+   uint16_t reserved1;
+   uint16_t iomap_base; // The I/O map base address
+} __attribute__((packed));
+
+// Add this extern declaration to make the global TSS instance visible
+extern struct tss_entry_struct tss_entry;
+
+void tss_install();
+
+#endif// myos/userspace/programs/user_test.c
+
+#include <syscall.h>
+
+void user_program_main() {
+    syscall_print("--- SUCCESSFULLY CALLED SYSCALL ---");
+
+    // Loop forever
+    while(1) {}
+}// myos/userspace/libc/include/syscall.h
+
+#ifndef SYSCALL_H
+#define SYSCALL_H
+
+// A simple C wrapper for our "print" syscall.
+// It uses inline assembly to load the registers and call int 0x80.
+static inline void syscall_print(const char* message) {
+    // EAX=1 for our print syscall
+    // EBX=message pointer
+    __asm__ __volatile__ ("int $0x80" : : "a"(1), "b"(message));
+}
+
+#endif/* myos/userspace/linker.ld */
+
+ENTRY(user_program_main)
+OUTPUT_FORMAT(elf32-i386)
+
+SECTIONS {
+    /* Programs will be loaded at 1MB */
+    . = 0x100000;
+
+    .text : {
+        *(.text)
+    }
+
+    .data : {
+        *(.data)
+    }
+
+    .rodata : {
+        *(.rodata)
+    }
+
+    .bss : {
+        *(.bss)
+    }
+}// myos/kernel/syscall.c
+
+#include <kernel/syscall.h>
+#include <kernel/vga.h>
+#include <kernel/exceptions.h> // For the full registers_t definition
+
+#define MAX_SYSCALLS 32
+
+// The system call dispatch table
+static syscall_t syscall_table[MAX_SYSCALLS];
+
+// Our first syscall: takes a pointer to a string in EBX and prints it.
+static void sys_test_print(registers_t *r) {
+    char* message = (char*)r->ebx;
+
+    // DIAGNOSTIC LINES
+    print_string("Syscall: Received pointer: ");
+    print_hex((uint32_t)message);
+    print_char('\n');
+
+    print_string(message);
+    print_char('\n');
+}
+
+void syscall_install() {
+    // Install the test print syscall at index 1
+    syscall_table[1] = &sys_test_print;
+}
+
+// The main C-level handler for all system calls
+void syscall_handler(registers_t *r) {
+    // Get the syscall number from the EAX register
+    uint32_t syscall_num = r->eax;
+
+    // Check if the number is valid
+    if (syscall_num < MAX_SYSCALLS && syscall_table[syscall_num] != 0) {
+        // If it is, look up the handler in our table
+        syscall_t handler = syscall_table[syscall_num];
+        // And call it
+        handler(r);
+    } else {
+        // Invalid syscall number, print an error
+        print_string("Invalid syscall number: ");
+        print_hex(syscall_num);
+        print_char('\n');
+    }
+}// myos/kernel/fs/fs.c
 
 #include <kernel/fs.h>
 #include <kernel/disk.h>
@@ -445,7 +619,7 @@ void sleep(uint32_t ms);
 #include <kernel/io.h>
 #include <kernel/string.h> // For our new string functions
 
-static fat12_bpb_t* bpb; // keep private to fs/c
+fat12_bpb_t* bpb; // make global
 static uint8_t* fat_buffer;
 static uint32_t data_area_start_sector;
 uint8_t* root_directory_buffer; // global ie no static
@@ -487,7 +661,7 @@ void init_fs() {
     port_byte_out(0xE9, '4'); // FINISHED filesystem init */
 }
 
-static uint16_t fs_get_fat_entry(uint16_t cluster) {
+uint16_t fs_get_fat_entry(uint16_t cluster) {
     uint32_t fat_offset = cluster + (cluster / 2);
     uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
     
@@ -498,7 +672,7 @@ static uint16_t fs_get_fat_entry(uint16_t cluster) {
     }
 }
 
-static void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
+void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
     uint32_t lba = data_area_start_sector + (cluster - 2);
     read_disk_sector(lba, buffer);
 }
@@ -538,15 +712,22 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 }
 
 void* fs_read_file(fat_dir_entry_t* entry) {
-    uint8_t* file_buffer = (uint8_t*)malloc(entry->file_size);
+    uint32_t size = entry->file_size;
+    if (size == 0) return malloc(1); // Handle empty files
+
+    // Allocate enough space for the full clusters to prevent a buffer overflow.
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+    uint32_t num_clusters = (size + bytes_per_cluster - 1) / bytes_per_cluster;
+    uint8_t* file_buffer = (uint8_t*)malloc(num_clusters * bytes_per_cluster);
+
     if (!file_buffer) {
         return NULL;
     }
 
     uint8_t* current_pos = file_buffer;
     uint16_t current_cluster = entry->first_cluster_low;
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
 
+    // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
         fs_read_cluster(current_cluster, current_pos);
         current_pos += bytes_per_cluster;
@@ -565,6 +746,8 @@ void* fs_read_file(fat_dir_entry_t* entry) {
 #include <kernel/memory.h> // heap memory allocation
 #include <kernel/gdt.h> // kernel permanent GDT
 #include <kernel/fs.h> // Filesystem driver for init_fs()
+#include <kernel/cpu/tss.h> // Task-State Segment
+#include <kernel/syscall.h> // User Mode Syscalls
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
@@ -574,9 +757,22 @@ static inline void outb(unsigned short port, unsigned char data) {
 void kmain() {
     outb(0xE9, 'S'); // Start of kmain
 
-     // Install the kernel's GDT first.
+    // initiate dynamic mem allocation
+    // Modules like TSS and FS depend on malloc() being ready
+    init_memory(); 
+    outb(0xE9, 'M'); // Memory initialized
+
+     // Install the kernel's GDT
     gdt_install();
     outb(0xE9, 'G'); // GDT installed
+
+    // Install the TSS right after the GDT
+    tss_install(); 
+    outb(0xE9, 't'); // TSS installed
+
+    // Syscall install after TSS
+    syscall_install();
+    outb(0xE9, 's'); // Syscall installed
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
@@ -596,10 +792,6 @@ void kmain() {
 
     // clear the bios text
     clear_screen();
-
-    // initiate dynamic mem allocation
-    init_memory(); 
-    outb(0xE9, 'M'); // Memory initialized
 
     // Initialize the filesystem driver. This must be done after memory
     // is initialized, as it uses malloc().
@@ -779,7 +971,150 @@ size_t strlen(const char* str) {
         len++;
     }
     return len;
-}// myos/kernel/cpu/irq.c
+}// myos/kernel/cpu/process.c
+
+#include <kernel/cpu/process.h>
+#include <kernel/cpu/tss.h>
+#include <kernel/fs.h>      // For filesystem functions
+#include <kernel/memory.h>  // For malloc/free
+#include <kernel/vga.h>     // For printing error messages
+
+// We need to access our TSS entry defined in tss.c
+extern struct tss_entry_struct tss_entry;
+
+void switch_to_user_mode(void* entry_point, void* stack_ptr) {
+    __asm__ __volatile__ (
+        "cli;"                  // Disable interrupts.
+
+        // Manually move arguments into specific, safe registers immediately.
+        // This prevents the compiler from reusing them for other tasks.
+        "mov %0, %%ecx;"        // Move entry_point into ECX.
+        "mov %1, %%edx;"        // Move stack_ptr into EDX.
+
+        // Set the user-mode data segments using a *different* register (EAX).
+        "mov $0x23, %%ax;"
+        "mov %%ax, %%ds;"
+        "mov %%ax, %%es;"
+        "mov %%ax, %%fs;"
+        "mov %%ax, %%gs;"
+
+        // Prepare the IRET stack frame using our safe registers.
+        "pushl $0x23;"          // SS: The user-mode stack segment.
+        "pushl %%edx;"          // ESP: The user's new stack pointer (from our safe EDX).
+        "pushfl;"               // EFLAGS: Push the kernel's EFLAGS register (32-bit).
+        "popl %%eax;"           // Pop EFLAGS into EAX for modification.
+        "orl $0x200, %%eax;"    // Set the IF flag (bit 9) to enable interrupts.
+        "pushl %%eax;"          // Push the modified EFLAGS.
+        "pushl $0x1B;"          // CS: The user-mode code segment.
+        "pushl %%ecx;"          // EIP: The program's entry point (from our safe ECX).
+        "iret;"                 // Execute the jump to user mode.
+
+        : /* no output operands */
+        // Input operands: Tell GCC to place the C variables into any general-purpose register.
+        : "r"(entry_point), "r"(stack_ptr)
+        // Clobber list: Tell GCC we modified EAX, ECX, and EDX.
+        : "eax", "ecx", "edx"
+    );
+}
+
+#define USER_STACK_SIZE 4096 // 4KB stack for user programs
+
+void exec_program(const char* filename) {
+    fat_dir_entry_t* file_entry = fs_find_file(filename);
+    if (!file_entry) {
+        print_string("run: File not found: ");
+        print_string(filename);
+        return;
+    }
+
+    // This is the target physical address for the program, from the linker script.
+    uint8_t* program_buffer = (uint8_t*)0x100000;
+
+    // Read the file cluster by cluster directly into the target address.
+    uint16_t current_cluster = file_entry->first_cluster_low;
+
+    // Calculate the correct cluster size instead of hardcoding it.
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+
+    // Calculate the exact number of clusters to read
+    uint32_t num_clusters = (file_entry->file_size + bytes_per_cluster - 1) / bytes_per_cluster;
+
+    // Loop exactly that many times
+    for (uint32_t i = 0; i < num_clusters; i++) {
+        // Stop if the chain ends unexpectedly
+        if (current_cluster >= 0xFF8) break; // 0xFF8 is End-of-Chain for FAT12
+
+        fs_read_cluster(current_cluster, program_buffer);
+        program_buffer += bytes_per_cluster;
+        current_cluster = fs_get_fat_entry(current_cluster);
+    }
+
+    // Allocate a stack for the user program
+    void* user_stack = malloc(USER_STACK_SIZE);
+    if (!user_stack) {
+        // No need to free program_buffer, as it's not on the heap.
+        print_string("run: Not enough memory for user stack.\n");
+        return;
+    }
+
+    // The stack grows downwards. The top must be aligned to a 4-byte boundary.
+    void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
+
+    // Jump to the program's entry point, which is now correctly at 0x100000
+    switch_to_user_mode((void*)0x100000, user_stack_top);
+
+    // This part is unreachable, but we'll free the stack just in case.
+    free(user_stack);
+}
+
+// myos/kernel/cpu/tss.c
+
+#include <kernel/cpu/tss.h>
+#include <kernel/gdt.h>      // For the gdt_set_gate function
+#include <kernel/string.h>   // For memset
+#include <kernel/memory.h>   // For malloc
+
+// Our single, global TSS instance
+struct tss_entry_struct tss_entry;
+
+// Assembly function to load the TSS selector into the TR register
+extern void tss_flush();
+
+void tss_install() {
+    uint32_t base = (uint32_t)&tss_entry;
+    uint32_t limit = sizeof(tss_entry);
+
+    // Add the TSS descriptor to the GDT. 0x05 is the 6th entry (index 5).
+    // 0x89 is the access byte for a 32-bit TSS.
+    gdt_set_gate(5, base, limit, 0x89, 0x40);
+
+    memset(&tss_entry, 0, sizeof(tss_entry));
+
+    // explicitly tell the CPU there is no I/O map (x86 requirement)
+    tss_entry.iomap_base = sizeof(tss_entry);
+
+    // allocate the stack on the heap
+    uint32_t stack_size = 4096;
+    void* stack = malloc(stack_size);
+
+    // Set the kernel stack segment and pointer
+    tss_entry.ss0  = 0x10; // Kernel Data Segment selector
+    // The stack grows downwards. The top must be aligned. We enforce 16-byte alignment.
+    tss_entry.esp0 = ((uint32_t)stack + stack_size) & ~0xF; // use the allocated stack
+
+    // Load the TSS selector into the CPU's Task Register (TR)
+    tss_flush();
+}; myos/kernel/cpu/tss_flush.asm
+
+bits 32
+global tss_flush
+
+tss_flush:
+    ; The TSS selector is the 6th entry in the GDT, at offset 0x28 (5 * 8).
+    ; The RPL bits (lowest 2) must be 0.
+    mov ax, 0x28
+    ltr ax
+    ret// myos/kernel/cpu/irq.c
 
 #include <kernel/irq.h>
 #include <kernel/io.h>
@@ -834,15 +1169,26 @@ struct gdt_ptr_struct {
     uint32_t base;
 } __attribute__((packed));
 
-// Our GDT with 5
-static struct gdt_entry_struct gdt_entries[5];
+// Our GDT will now have 6 entries
+static struct gdt_entry_struct gdt_entries[6];
 static struct gdt_ptr_struct   gdt_ptr;
 
-// Assembly function to load the GDT (defined in gdt_load.asm)
-extern void gdt_flush(uint32_t);
+// Assembly inline function to load the GDT
+static inline void gdt_flush_inline(struct gdt_ptr_struct* gdt_ptr) {
+    __asm__ __volatile__(
+        "lgdt (%0)\n\t"
+        "mov $0x10, %%ax\n\t" // 0x10 is our kernel data segment selector
+        "mov %%ax, %%ds\n\t"
+        "mov %%ax, %%es\n\t"
+        "mov %%ax, %%fs\n\t"
+        "mov %%ax, %%gs\n\t"
+        "ljmp $0x08, $.flush\n\t" // 0x08 is the code segment selector
+        ".flush:\n\t"
+        : : "r"(gdt_ptr) : "ax");
+}
 
 // Helper function to create a GDT entry
-static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
+void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
     gdt_entries[num].base_low    = (base & 0xFFFF);
     gdt_entries[num].base_middle = (base >> 16) & 0xFF;
     gdt_entries[num].base_high   = (base >> 24) & 0xFF;
@@ -852,9 +1198,9 @@ static void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t acc
     gdt_entries[num].access      = access;
 }
 
-// Main function to install the GDT
+// Main function to install the GDT with 6 Entries
 void gdt_install() {
-    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 5) - 1;
+    gdt_ptr.limit = (sizeof(struct gdt_entry_struct) * 6) - 1;
     gdt_ptr.base  = (uint32_t)&gdt_entries;
     
     // Kernel Segments (Ring 0)
@@ -866,8 +1212,10 @@ void gdt_install() {
     gdt_set_gate(3, 0, 0xFFFFFFFF, 0xFA, 0xCF); // User Code
     gdt_set_gate(4, 0, 0xFFFFFFFF, 0xF2, 0xCF); // User Data
 
+    // The TSS entry will be set up by tss_install()
+
     // Load our new GDT
-    gdt_flush((uint32_t)&gdt_ptr);
+    gdt_flush_inline(&gdt_ptr);
 }// myos/kernel/cpu/idt.c
 
 #include <kernel/idt.h>
@@ -881,6 +1229,7 @@ extern void isr16(); extern void isr17(); extern void isr18(); extern void isr19
 extern void isr20(); extern void isr21(); extern void isr22(); extern void isr23(); 
 extern void isr24(); extern void isr25(); extern void isr26(); extern void isr27(); 
 extern void isr28(); extern void isr29(); extern void isr30(); extern void isr31();
+extern void isr128(); // Our new syscall handler
 
 // Forward-declarations for our 16 IRQ stubs in isr.asm
 extern void irq0(); extern void irq1(); extern void irq2(); extern void irq3();
@@ -913,9 +1262,7 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags) 
     idt_entries[num].flags       = flags /* | 0x60 */;
 }
 
-/**
- * Initializes the IDT and loads it.
- */
+// Initializes the IDT and loads it.
 void idt_install() {
     // Set the IDT pointer struct's values
     idt_ptr.limit = (sizeof(struct idt_entry_struct) * 256) - 1;
@@ -978,6 +1325,10 @@ void idt_install() {
     idt_set_gate(45, (uint32_t)irq13, 0x08, 0x8E);
     idt_set_gate(46, (uint32_t)irq14, 0x08, 0x8E);
     idt_set_gate(47, (uint32_t)irq15, 0x08, 0x8E);
+
+    // Set the gate for our system call interrupt 0x80
+    // The flags 0xEE mean: Present, Ring 3, 32-bit Trap Gate
+    idt_set_gate(128, (uint32_t)isr128, 0x08, 0xEE);
 
     // Load the IDT using our new inline assembly function
     idt_load_inline(&idt_ptr);
@@ -1064,6 +1415,14 @@ IRQ 13, 45  ; FPU
 IRQ 14, 46  ; Primary ATA Hard Disk
 IRQ 15, 47  ; Secondary ATA Hard Disk
 
+; --- Define our System Call Handler ---
+global isr128
+isr128:
+    cli
+    push dword 0    ; Push a dummy error code for stack consistency
+    push dword 128  ; Push the interrupt number
+    jmp syscall_common_stub
+
 ; --- Common Assembly Stub ---
 ; All ISRs jump here after pushing their number and a (optional) error code
 extern fault_handler ; This is our C-level handler
@@ -1071,14 +1430,21 @@ isr_common_stub:
     ; 1. Save the general purpose registers
     pusha
 
-    ; 2. Save the segment registers
-    mov eax, ds
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
     push eax
-    mov eax, es
+
+    xor eax, eax
+    mov ax, fs
     push eax
-    mov eax, fs
-    push eax
-    mov eax, gs
+
+    xor eax, eax
+    mov ax, gs
     push eax
 
     ; 3. Load kernel segments for the C handler to use
@@ -1097,13 +1463,13 @@ isr_common_stub:
 
     ; 6. Restore the original segment registers
     pop eax
-    mov gs, eax
+    mov gs, ax
     pop eax
-    mov fs, eax
+    mov fs, ax
     pop eax
-    mov es, eax
+    mov es, ax
     pop eax
-    mov ds, eax
+    mov ds, ax
 
     ; 7. Restore general purpose registers
     popa
@@ -1118,14 +1484,21 @@ irq_common_stub:
     ; Save general purpose registers
     pusha
 
-    ; Save segment registers
-    mov eax, ds
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
     push eax
-    mov eax, es
+
+    xor eax, eax
+    mov ax, fs
     push eax
-    mov eax, fs
-    push eax
-    mov eax, gs
+
+    xor eax, eax
+    mov ax, gs
     push eax
 
     ; Load the kernel's data segment for C code
@@ -1142,19 +1515,69 @@ irq_common_stub:
 
     ; Restore original segment registers
     pop eax
-    mov gs, eax
+    mov gs, ax
     pop eax
-    mov fs, eax
+    mov fs, ax
     pop eax
-    mov es, eax
+    mov es, ax
     pop eax
-    mov ds, eax
+    mov ds, ax
 
     ; Restore general purpose registers
     popa
     add esp, 8 ; Clean up the error code and interrupt number
     iret       ; Atomically restores EFLAGS (which re-enables interrupts) and returns.
-// myos/kernel/cpu/exceptions.c
+
+
+; --- Common Syscall Stub ---
+extern syscall_handler ;our new C-level syscall handler
+syscall_common_stub:
+    ; Save general purpose registers
+    pusha
+
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
+    push eax
+
+    xor eax, eax
+    mov ax, fs
+    push eax
+
+    xor eax, eax
+    mov ax, gs
+    push eax
+
+    ; Load the kernel's data segment for C code
+    mov ax, 0x10  ; 0x10 is our GDT data segment selector
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+
+    ; Push a pointer to the registers and call the C handler
+    push esp
+    call syscall_handler
+    add esp, 4 ; Clean up the pushed pointer
+
+    ; Restore original segment registers
+    pop eax
+    mov gs, ax
+    pop eax
+    mov fs, ax
+    pop eax
+    mov es, ax
+    pop eax
+    mov ds, ax
+
+    ; Restore general purpose registers
+    popa
+    add esp, 8 ; Clean up the error code and interrupt number
+    iret       ; Atomically restores EFLAGS and returns.// myos/kernel/cpu/exceptions.c
 
 #include <kernel/exceptions.h>
 #include <kernel/vga.h>
@@ -1209,29 +1632,7 @@ void fault_handler(registers_t *r) {
     dump_stack((uint32_t *)r->useresp);
 
     for (;;);
-}; myos/kernel/cpu/gdt_load.asm
-
-bits 32
-
-global gdt_flush ; Makes this function visible to C code
-
-gdt_flush:
-    ; Get the pointer to the GDT structure from the stack
-    mov eax, [esp + 4]
-    ; Load the new GDT into the CPU's GDTR register
-    lgdt [eax]
-
-    ; Do a far jump to our new code segment to flush the CPU pipeline
-    ; and reload the segment registers.
-    mov ax, 0x10  ; 0x10 is the offset of our new data segment
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    jmp 0x08:.flush ; 0x08 is the offset of our new code segment
-.flush:
-    ret// myos/kernel/drivers/io.c
+}// myos/kernel/drivers/io.c
 
 #include <kernel/io.h>
 
@@ -1614,6 +2015,7 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
 #include <kernel/memory.h> // for dynamic heap memory
 #include <kernel/disk.h> // for disk sector read
 #include <kernel/fs.h> // for FAT12 entries
+#include <kernel/cpu/process.h> // User Mode Switch
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -1686,7 +2088,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -1826,6 +2228,14 @@ void process_command() {
             print_hex(root_directory_buffer[i]);
             print_char(' ');
         }
+
+    // run command
+    } else if (strcmp(command, "run") == 0) {
+        if (argument) {
+            exec_program(argument);
+        } else {
+            print_string("Usage: run <filename>");
+        }
     
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
@@ -1888,6 +2298,8 @@ KERNEL_ASM_SRC  := $(foreach dir,$(KERNEL_SRC_DIRS),$(wildcard $(dir)/*.asm))
 # Manually specify bootloader sources
 STAGE1_SRC := boot/stage1.asm
 STAGE2_SRC := boot/stage2.asm
+# User program sources
+USER_PROGRAM_C_SRC := $(wildcard userspace/programs/*.c)
 
 # --- Object Files ---
 # Map source files to object files in the build directory, preserving paths
@@ -1895,7 +2307,9 @@ STAGE1_OBJ := $(BUILD_DIR)/boot/stage1.bin
 STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
 KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
-ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(KERNEL_ASM_OBJ)
+ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
+# Define user program binaries
+USER_PROGRAM_BINS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%,$(USER_PROGRAM_C_SRC))
 
 # --- Final Binaries ---
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
@@ -1906,7 +2320,7 @@ DISK_IMAGE := $(BUILD_DIR)/os_image.bin
 ASM := nasm
 ASM_FLAGS := -f elf32 -F dwarf
 CC := gcc
-CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c -Iinclude
+CFLAGS := -m32 -ffreestanding -nostdlib -fno-pie -fno-stack-protector -g -c -Iinclude -Iuserspace/libc/include
 LD := ld
 LDFLAGS := -m elf_i386 -T kernel/linker.ld -nostdlib
 OBJCOPY := objcopy
@@ -1917,8 +2331,9 @@ OBJCOPY := objcopy
 # Default target: build everything
 all: $(DISK_IMAGE)
 
+# The disk image now depends on our new user program binary
 # Rule to create the final disk image
-$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
+$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_BINS)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
 	@echo "--> Formatting disk with FAT12..."
@@ -1927,6 +2342,8 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN)
 	dd if=$(STAGE1_OBJ) of=$@ conv=notrunc >/dev/null 2>&1
 	@echo "--> Copying test file to disk image..."
 	mcopy -i $@ test_files/test.txt ::
+	@echo "--> Copying user programs to disk image..."
+	mcopy -i $@ $(USER_PROGRAM_BINS) ::
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
 	@echo "--> Installing kernel..."
@@ -1967,6 +2384,18 @@ $(STAGE1_OBJ): $(STAGE1_SRC)
 $(STAGE2_OBJ): $(STAGE2_SRC)
 	@mkdir -p $(dir $@)
 	$(ASM) -f bin $< -o $@
+
+# Rule for user programs from C source
+$(BUILD_DIR)/userspace/programs/%: userspace/programs/%.c
+	@mkdir -p $(dir $@)
+	# Step 1: Compile
+	$(CC) $(CFLAGS) $< -o $(@).o
+	# Step 2: Link into an ELF file using the user linker script
+	# Add -Map to generate a map file
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -Map=$(@).map -o $(@).elf $(@).o
+	# Step 3: Extract the flat binary
+	$(OBJCOPY) -O binary $(@).elf $@
+	@echo "User program built: $@"
 
 # --- Utility Targets ---
 run: all

@@ -7,7 +7,7 @@
 #include <kernel/io.h>
 #include <kernel/string.h> // For our new string functions
 
-static fat12_bpb_t* bpb; // keep private to fs/c
+fat12_bpb_t* bpb; // make global
 static uint8_t* fat_buffer;
 static uint32_t data_area_start_sector;
 uint8_t* root_directory_buffer; // global ie no static
@@ -49,7 +49,7 @@ void init_fs() {
     port_byte_out(0xE9, '4'); // FINISHED filesystem init */
 }
 
-static uint16_t fs_get_fat_entry(uint16_t cluster) {
+uint16_t fs_get_fat_entry(uint16_t cluster) {
     uint32_t fat_offset = cluster + (cluster / 2);
     uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
     
@@ -60,7 +60,7 @@ static uint16_t fs_get_fat_entry(uint16_t cluster) {
     }
 }
 
-static void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
+void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
     uint32_t lba = data_area_start_sector + (cluster - 2);
     read_disk_sector(lba, buffer);
 }
@@ -100,15 +100,22 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 }
 
 void* fs_read_file(fat_dir_entry_t* entry) {
-    uint8_t* file_buffer = (uint8_t*)malloc(entry->file_size);
+    uint32_t size = entry->file_size;
+    if (size == 0) return malloc(1); // Handle empty files
+
+    // Allocate enough space for the full clusters to prevent a buffer overflow.
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
+    uint32_t num_clusters = (size + bytes_per_cluster - 1) / bytes_per_cluster;
+    uint8_t* file_buffer = (uint8_t*)malloc(num_clusters * bytes_per_cluster);
+
     if (!file_buffer) {
         return NULL;
     }
 
     uint8_t* current_pos = file_buffer;
     uint16_t current_cluster = entry->first_cluster_low;
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
 
+    // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
         fs_read_cluster(current_cluster, current_pos);
         current_pos += bytes_per_cluster;

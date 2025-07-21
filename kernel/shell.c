@@ -81,7 +81,7 @@ void process_command() {
 
     // help command
     if (strcmp(cmd_buffer, "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  usertest  - Switch to user mode test\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
 
     // cls command
     } else if (strcmp(cmd_buffer, "cls") == 0) {
@@ -222,11 +222,13 @@ void process_command() {
             print_char(' ');
         }
 
-    // usertest command
-    } else if (strcmp(cmd_buffer, "usertest") == 0) {
-        print_string("Switching to user mode... If the OS freezes, it worked!");
-        switch_to_user_mode();
-        print_string("...Failed to switch. This should not be printed.");
+    // run command
+    } else if (strcmp(command, "run") == 0) {
+        if (argument) {
+            exec_program(argument);
+        } else {
+            print_string("Usage: run <filename>");
+        }
     
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands

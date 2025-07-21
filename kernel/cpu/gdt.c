@@ -23,8 +23,19 @@ struct gdt_ptr_struct {
 static struct gdt_entry_struct gdt_entries[6];
 static struct gdt_ptr_struct   gdt_ptr;
 
-// Assembly function to load the GDT (defined in gdt_load.asm)
-extern void gdt_flush(uint32_t);
+// Assembly inline function to load the GDT
+static inline void gdt_flush_inline(struct gdt_ptr_struct* gdt_ptr) {
+    __asm__ __volatile__(
+        "lgdt (%0)\n\t"
+        "mov $0x10, %%ax\n\t" // 0x10 is our kernel data segment selector
+        "mov %%ax, %%ds\n\t"
+        "mov %%ax, %%es\n\t"
+        "mov %%ax, %%fs\n\t"
+        "mov %%ax, %%gs\n\t"
+        "ljmp $0x08, $.flush\n\t" // 0x08 is the code segment selector
+        ".flush:\n\t"
+        : : "r"(gdt_ptr) : "ax");
+}
 
 // Helper function to create a GDT entry
 void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
@@ -54,5 +65,5 @@ void gdt_install() {
     // The TSS entry will be set up by tss_install()
 
     // Load our new GDT
-    gdt_flush((uint32_t)&gdt_ptr);
+    gdt_flush_inline(&gdt_ptr);
 }

@@ -21,7 +21,12 @@ static inline void outb(unsigned short port, unsigned char data) {
 void kmain() {
     outb(0xE9, 'S'); // Start of kmain
 
-     // Install the kernel's GDT first.
+    // initiate dynamic mem allocation
+    // Modules like TSS and FS depend on malloc() being ready
+    init_memory(); 
+    outb(0xE9, 'M'); // Memory initialized
+
+     // Install the kernel's GDT
     gdt_install();
     outb(0xE9, 'G'); // GDT installed
 
@@ -51,10 +56,6 @@ void kmain() {
 
     // clear the bios text
     clear_screen();
-
-    // initiate dynamic mem allocation
-    init_memory(); 
-    outb(0xE9, 'M'); // Memory initialized
 
     // Initialize the filesystem driver. This must be done after memory
     // is initialized, as it uses malloc().

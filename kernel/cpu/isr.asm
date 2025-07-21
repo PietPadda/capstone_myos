@@ -96,14 +96,21 @@ isr_common_stub:
     ; 1. Save the general purpose registers
     pusha
 
-    ; 2. Save the segment registers
-    mov eax, ds
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
     push eax
-    mov eax, es
+
+    xor eax, eax
+    mov ax, fs
     push eax
-    mov eax, fs
-    push eax
-    mov eax, gs
+
+    xor eax, eax
+    mov ax, gs
     push eax
 
     ; 3. Load kernel segments for the C handler to use
@@ -122,13 +129,13 @@ isr_common_stub:
 
     ; 6. Restore the original segment registers
     pop eax
-    mov gs, eax
+    mov gs, ax
     pop eax
-    mov fs, eax
+    mov fs, ax
     pop eax
-    mov es, eax
+    mov es, ax
     pop eax
-    mov ds, eax
+    mov ds, ax
 
     ; 7. Restore general purpose registers
     popa
@@ -143,14 +150,21 @@ irq_common_stub:
     ; Save general purpose registers
     pusha
 
-    ; Save segment registers
-    mov eax, ds
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
     push eax
-    mov eax, es
+
+    xor eax, eax
+    mov ax, fs
     push eax
-    mov eax, fs
-    push eax
-    mov eax, gs
+
+    xor eax, eax
+    mov ax, gs
     push eax
 
     ; Load the kernel's data segment for C code
@@ -167,13 +181,13 @@ irq_common_stub:
 
     ; Restore original segment registers
     pop eax
-    mov gs, eax
+    mov gs, ax
     pop eax
-    mov fs, eax
+    mov fs, ax
     pop eax
-    mov es, eax
+    mov es, ax
     pop eax
-    mov ds, eax
+    mov ds, ax
 
     ; Restore general purpose registers
     popa
@@ -187,14 +201,21 @@ syscall_common_stub:
     ; Save general purpose registers
     pusha
 
-    ; Save segment registers
-    mov eax, ds
+    ; Save the segment registers safely
+    xor eax, eax  ; Clear the full EAX register to zero
+    mov ax, ds    ; Move 16-bit DS into the low part (AX)
+    push eax      ; Push the clean, 32-bit EAX
+
+    xor eax, eax
+    mov ax, es
     push eax
-    mov eax, es
+
+    xor eax, eax
+    mov ax, fs
     push eax
-    mov eax, fs
-    push eax
-    mov eax, gs
+
+    xor eax, eax
+    mov ax, gs
     push eax
 
     ; Load the kernel's data segment for C code
@@ -211,13 +232,13 @@ syscall_common_stub:
 
     ; Restore original segment registers
     pop eax
-    mov gs, eax
+    mov gs, ax
     pop eax
-    mov fs, eax
+    mov fs, ax
     pop eax
-    mov es, eax
+    mov es, ax
     pop eax
-    mov ds, eax
+    mov ds, ax
 
     ; Restore general purpose registers
     popa

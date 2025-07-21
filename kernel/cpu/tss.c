@@ -3,9 +3,7 @@
 #include <kernel/cpu/tss.h>
 #include <kernel/gdt.h>      // For the gdt_set_gate function
 #include <kernel/string.h>   // For memset
-
-// The GDT helper function is in gdt.c, so we need to declare it
-extern void gdt_set_gate(int32_t, uint32_t, uint32_t, uint8_t, uint8_t);
+#include <kernel/memory.h>   // For malloc
 
 // Our single, global TSS instance
 struct tss_entry_struct tss_entry;
@@ -23,9 +21,17 @@ void tss_install() {
 
     memset(&tss_entry, 0, sizeof(tss_entry));
 
+    // explicitly tell the CPU there is no I/O map (x86 requirement)
+    tss_entry.iomap_base = sizeof(tss_entry);
+
+    // allocate the stack on the heap
+    uint32_t stack_size = 4096;
+    void* stack = malloc(stack_size);
+
     // Set the kernel stack segment and pointer
     tss_entry.ss0  = 0x10; // Kernel Data Segment selector
-    tss_entry.esp0 = 0x0;  // This will be updated later
+    // The stack grows downwards. The top must be aligned. We enforce 16-byte alignment.
+    tss_entry.esp0 = ((uint32_t)stack + stack_size) & ~0xF; // use the allocated stack
 
     // Load the TSS selector into the CPU's Task Register (TR)
     tss_flush();

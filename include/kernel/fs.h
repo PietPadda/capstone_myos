@@ -51,4 +51,10 @@ fat_dir_entry_t* fs_find_file(const char* filename);
 // Reads the contents of a file given its directory entry.
 void* fs_read_file(fat_dir_entry_t* entry);
 
+void fs_read_cluster(uint16_t cluster, uint8_t* buffer);
+uint16_t fs_get_fat_entry(uint16_t cluster);
+
+// Make the global BPB pointer visible to other modules
+extern fat12_bpb_t* bpb;
+
 #endif // FS_H
