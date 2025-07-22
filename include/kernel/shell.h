@@ -9,4 +9,7 @@ void shell_init();
 // Handles a single character of input.
 void shell_handle_input(char c);
 
+void shell_run();
+void restart_shell();
+
 #endif

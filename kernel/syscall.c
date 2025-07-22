@@ -2,12 +2,20 @@
 
 #include <kernel/syscall.h>
 #include <kernel/vga.h>
-#include <kernel/exceptions.h> // For the full registers_t definition
-#include <kernel/keyboard.h> // keyboard input
-#include <kernel/timer.h>      // For sleep()
-#include <kernel/io.h>         // For port_byte_out()
+#include <kernel/exceptions.h>  // registers_t definition
+#include <kernel/keyboard.h>    // keyboard input
+#include <kernel/timer.h>       // sleep()
+#include <kernel/io.h>          // port_byte_out()
+#include <kernel/shell.h>       // restart_shell()
+#include <kernel/cpu/tss.h>     // tss_entry
 
 #define MAX_SYSCALLS 32
+
+// We need access to the TSS to get the kernel stack pointer.
+extern struct tss_entry_struct tss_entry;
+
+// A temporary global to track the stack we need to free.
+extern void* current_user_stack;
 
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
@@ -26,11 +34,21 @@ static void sys_getchar(registers_t *r) {
     r->eax = c;
 }
 
-// Syscall 3: Exit the current program. For now, we'll just reboot.
+// Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
-    print_string("\nProgram exited. Rebooting system...");
-    sleep(1000); // Wait 1 second for the message to be visible
-    port_byte_out(0x64, 0xFE);
+    // Clean up resources (the user stack).
+    if (current_user_stack) {
+        free(current_user_stack);
+        current_user_stack = NULL;
+    }
+
+    // Prepare to return to the kernel shell instead of the user program.
+    // We do this by modifying the stack frame that the `iret` instruction will use.
+    r->eip = (uint32_t)restart_shell;
+    r->cs = 0x08;      // Kernel Code Segment
+    r->ss = 0x10;      // Kernel Stack Segment
+    r->useresp = tss_entry.esp0;
+    r->eflags = 0x202; // Interrupts enabled (IF = 1), plus a mandatory bit.
 }
 
 void syscall_install() {

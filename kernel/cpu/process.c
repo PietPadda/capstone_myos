@@ -7,6 +7,10 @@
 #include <kernel/vga.h>     // For printing error messages
 #include <kernel/elf.h>     // ELF loader struc
 
+// We'll use a global to track the current user stack.
+// In a multitasking OS, this would be part of a process structure.
+void* current_user_stack = NULL;
+
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 
@@ -110,6 +114,9 @@ void exec_program(const char* filename) {
         free(file_buffer);
         return;
     }
+    // Track the stack so we can free it on exit.
+    current_user_stack = user_stack;
+
     void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
 
     // The program is now in memory, so we can free the temporary file buffer
@@ -118,7 +125,9 @@ void exec_program(const char* filename) {
     // Jump to the program's entry point specified in the ELF header
     switch_to_user_mode((void*)header->entry, user_stack_top);
 
-    // This code is unreachable if the switch is successful, but is good practice
+    // This code is now truly unreachable, but for good practice,
+    // if it were to be reached, we'd clean up.
     free(user_stack);
+    current_user_stack = NULL;
 }
 

@@ -56,6 +56,14 @@ void shell_run() {
     }
 }
 
+// cleanly restart the shell after a program exits.
+void restart_shell() {
+    // We are now the main thread of execution.
+    // Re-initialize the shell and enter its main loop.
+    shell_init(); 
+    shell_run();  
+}
+
 // This function processes the completed command. 
 void process_command() {
 
