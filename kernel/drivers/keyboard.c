@@ -3,8 +3,14 @@
 #include <kernel/keyboard.h>
 #include <kernel/irq.h>
 #include <kernel/io.h>
-#include <kernel/shell.h> // Changed from vga.h
+#include <kernel/shell.h>
 #include <kernel/vga.h>
+
+// New keyboard buffer
+#define KBD_BUFFER_SIZE 256
+static char kbd_buffer[KBD_BUFFER_SIZE];
+static volatile uint32_t kbd_buffer_read_idx = 0;
+static volatile uint32_t kbd_buffer_write_idx = 0;
 
 // --- State and Character Maps ---
 static volatile int shift_pressed = 0;
@@ -68,14 +74,31 @@ static void keyboard_handler(registers_t *r) {
         char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
         
         if (character) {
-            shell_handle_input(character);
+            // Instead of calling the shell, add the character to our buffer
+            if ((kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE != kbd_buffer_read_idx) {
+                kbd_buffer[kbd_buffer_write_idx] = character;
+                kbd_buffer_write_idx = (kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE;
+            }
         }
     }
 }
 
 // The installation function that hooks the handler into the IRQ system.
 void keyboard_install() {
-    
     // Register `keyboard_handler` to be called when IRQ 1 is triggered.
     irq_install_handler(1, keyboard_handler);
+}
+
+// Blocks until a character is available and returns it.
+char keyboard_read_char() {
+    // Wait for a character to be available
+    while (kbd_buffer_read_idx == kbd_buffer_write_idx) {
+        // Halt the CPU until the next interrupt (e.g., a keypress)
+        __asm__ __volatile__("hlt");
+    }
+
+    // Read the character from the buffer
+    char c = kbd_buffer[kbd_buffer_read_idx];
+    kbd_buffer_read_idx = (kbd_buffer_read_idx + 1) % KBD_BUFFER_SIZE;
+    return c;
 }

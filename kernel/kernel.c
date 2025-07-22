@@ -71,8 +71,8 @@ void kmain() {
     outb(0xE9, '!'); // Interrupts enabled
 
     // Hang the CPU. The keyboard handler will run when keys are pressed.
-    // Use hlt to efficiently idle the CPU until an interrupt occurs.
-    while (1) {
-        __asm__ __volatile__("hlt");
-    }
+    // Start the shell's main loop. This will not return.
+    shell_run();
+
+    // The old while(1)/hlt loop is now inside shell_run
 }

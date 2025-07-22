@@ -6,4 +6,7 @@
 // Initializes the keyboard driver and registers its IRQ handler.
 void keyboard_install();
 
+// Reads a single character from the keyboard buffer, blocking if empty.
+char keyboard_read_char();
+
 #endif

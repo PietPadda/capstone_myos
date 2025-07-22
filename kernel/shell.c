@@ -247,3 +247,13 @@ void process_command() {
     //print a new prompt for the next command
     print_string(PROMPT);
 }
+
+// The main loop for the shell.
+void shell_run() {
+    while (1) {
+        // Get a character from the keyboard driver
+        char c = keyboard_read_char();
+        // Pass it to the shell's input handler
+        shell_handle_input(c);
+    }
+}

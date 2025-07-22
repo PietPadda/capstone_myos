@@ -1,6 +1,5 @@
+build/
+backup/
+all_project_files.txt
 .bin
 .o
-build/**/*
-build/
-all_project_files.txt
-backup/*.*
