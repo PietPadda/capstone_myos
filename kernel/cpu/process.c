@@ -10,6 +10,8 @@
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 
+// This is the function that performs the context switch to user mode.
+// It sets up the stack for the IRET instruction and jumps.
 void switch_to_user_mode(void* entry_point, void* stack_ptr) {
     __asm__ __volatile__ (
         "cli;"                  // Disable interrupts.
@@ -47,7 +49,10 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 
 #define USER_STACK_SIZE 4096 // 4KB stack for user programs
 
+// This function finds an ELF executable on disk, loads it into memory,
+// and starts it as a new user-mode process
 void exec_program(const char* filename) {
+    // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
     if (!file_entry) {
         print_string("run: File not found: ");
@@ -55,7 +60,7 @@ void exec_program(const char* filename) {
         return;
     }
 
-    // Read the entire file into a buffer
+    // Read the entire file into a temporary buffer in kernel memory
     uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
     if (!file_buffer) {
         print_string("run: Not enough memory to load program.\n");
@@ -65,18 +70,55 @@ void exec_program(const char* filename) {
     // Cast the beginning of the buffer to an ELF header
     Elf32_Ehdr* header = (Elf32_Ehdr*)file_buffer;
 
-    // Validate the ELF magic number
+    // Parse the ELF header and validate the magic number
     if (header->magic != ELF_MAGIC) {
         print_string("run: Not an ELF executable.\n");
         free(file_buffer);
         return;
     }
 
-    print_string("ELF file validated. Entry point: ");
-    print_hex(header->entry);
-    print_string("\n");
+    // Locate the program header table using the offset from the main heade
+    Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
 
-    // We will stop here for now. Free the buffer.
+    // Iterate through program headers
+    for (int i = 0; i < header->phnum; i++) {
+        Elf32_Phdr* phdr = &phdrs[i];
+
+        // We only care about "loadable" segments.
+        if (phdr->type == PT_LOAD) {
+            // Copy the segment from the file buffer to its final virtual address.
+            uint8_t* dest = (uint8_t*)phdr->vaddr;
+            uint8_t* src = file_buffer + phdr->offset;
+            for (uint32_t j = 0; j < phdr->filesz; j++) {
+                dest[j] = src[j];
+            }
+
+            // Handle the .bss section (uninitialized data)
+            // memsz might be > filesz. The difference is the .bss section.
+            if (phdr->memsz > phdr->filesz) {
+                uint32_t bss_size = phdr->memsz - phdr->filesz;
+                uint8_t* bss_start = dest + phdr->filesz;
+                memset(bss_start, 0, bss_size);
+            }
+        }
+    }
+
+    // Allocate a separate, aligned stack for the user program.
+    void* user_stack = malloc(USER_STACK_SIZE);
+    if (!user_stack) {
+        print_string("run: Not enough memory for user stack.\n");
+        free(file_buffer);
+        return;
+    }
+    void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
+
+    // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
+
+    // Jump to the program's entry point specified in the ELF header
+    switch_to_user_mode((void*)header->entry, user_stack_top);
+
+    // This code is unreachable if the switch is successful, but is good practice
+    free(user_stack);
 }
 
