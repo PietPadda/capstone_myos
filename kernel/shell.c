@@ -9,6 +9,7 @@
 #include <kernel/disk.h> // for disk sector read
 #include <kernel/fs.h> // for FAT12 entries
 #include <kernel/cpu/process.h> // User Mode Switch
+#include <kernel/keyboard.h> // We need this for keyboard_read_char
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -30,33 +31,32 @@ void shell_init() {
     print_string(PROMPT);
 }
 
-// This function is called by the keyboard driver for each keypress.
+// Handles a single character of input.
 void shell_handle_input(char c) {
-    // On Enter, null-terminate the string and process it
     if (c == '\n') {
         print_char(c); // Echo the newline
-
         cmd_buffer[cmd_index] = '\0';
         process_command();
-
-        
-    // On Backspace, delete a character
     } else if (c == '\b') {
         if (cmd_index > 0) {
-            // Go back one character in the buffer and on the screen.
             cmd_index--;
-            print_char(c);
+            print_char(c); // Echo backspace
         }
-
-    // On any other key, add it to the buffer
     } else if (cmd_index < MAX_CMD_LEN - 1) {
-        // Add the character to the buffer and echo it to the screen.
         cmd_buffer[cmd_index++] = c;
-        print_char(c);
+        print_char(c); // Echo the character
     }
 }
 
-// This function processes the completed command
+// The main loop for the shell.
+void shell_run() {
+    while (1) {
+        char c = keyboard_read_char();
+        shell_handle_input(c);
+    }
+}
+
+// This function processes the completed command. 
 void process_command() {
 
     // command arg parsing
@@ -234,9 +234,11 @@ void process_command() {
     } else if (cmd_index > 0) { // Only show error for non-empty commands
         print_string("Unknown command: ");
         print_string(cmd_buffer);
+        print_string("\n");
     }
+    
 
-    // Reset buffer for the next command
+    // For any command that finishes, reset the buffer and print a new prompt.
     cmd_index = 0;
 
     // Only print a newline for spacing if the command wasn't "cls".
@@ -244,16 +246,5 @@ void process_command() {
         print_string("\n");
     }
 
-    //print a new prompt for the next command
     print_string(PROMPT);
-}
-
-// The main loop for the shell.
-void shell_run() {
-    while (1) {
-        // Get a character from the keyboard driver
-        char c = keyboard_read_char();
-        // Pass it to the shell's input handler
-        shell_handle_input(c);
-    }
 }

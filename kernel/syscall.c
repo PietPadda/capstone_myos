@@ -3,6 +3,7 @@
 #include <kernel/syscall.h>
 #include <kernel/vga.h>
 #include <kernel/exceptions.h> // For the full registers_t definition
+#include <kernel/keyboard.h> // keyboard input
 
 #define MAX_SYSCALLS 32
 
@@ -16,9 +17,18 @@ static void sys_test_print(registers_t *r) {
     print_char('\n');
 }
 
+// Syscall 2: Read a character from the keyboard, blocking until a key is pressed.
+static void sys_getchar(registers_t *r) {
+    char c = keyboard_read_char();
+    // The return value of a syscall is placed in the EAX register.
+    r->eax = c;
+}
+
 void syscall_install() {
     // Install the test print syscall at index 1
     syscall_table[1] = &sys_test_print;
+    // Install the new getchar syscall at index 2
+    syscall_table[2] = &sys_getchar;
 }
 
 // The main C-level handler for all system calls

@@ -267,6 +267,53 @@ int memcmp(const void* s1, const void* s2, size_t n);
 int toupper(int c);
 size_t strlen(const char* str);
 
+#endif// myos/include/kernel/elf.h
+
+#ifndef ELF_H
+#define ELF_H
+
+#include <kernel/types.h>
+
+#define ELF_MAGIC 0x464C457F // corresponds to "\x7FELF"
+
+// ELF Header Structure
+typedef struct {
+    uint32_t magic;
+    uint8_t  ident[12];
+    uint16_t type;
+    uint16_t machine;
+    uint32_t version;
+    uint32_t entry;
+    uint32_t phoff;
+    uint32_t shoff;
+    uint32_t flags;
+    uint16_t ehsize;
+    uint16_t phentsize;
+    uint16_t phnum;
+    uint16_t shentsize;
+    uint16_t shnum;
+    uint16_t shstrndx;
+} __attribute__((packed)) Elf32_Ehdr;
+
+// Program Header Structure
+typedef struct {
+    uint32_t type;
+    uint32_t offset;
+    uint32_t vaddr;
+    uint32_t paddr;
+    uint32_t filesz;
+    uint32_t memsz;
+    uint32_t flags;
+    uint32_t align;
+} __attribute__((packed)) Elf32_Phdr;
+
+// Program header types
+#define PT_NULL    0
+#define PT_LOAD    1
+#define PT_DYNAMIC 2
+#define PT_INTERP  3
+#define PT_NOTE    4
+
 #endif// myos/include/kernel/keyboard.h
 
 #ifndef KEYBOARD_H
@@ -274,6 +321,9 @@ size_t strlen(const char* str);
 
 // Initializes the keyboard driver and registers its IRQ handler.
 void keyboard_install();
+
+// Reads a single character from the keyboard buffer, blocking if empty.
+char keyboard_read_char();
 
 #endif// myos/include/kernel/fs.h
 
@@ -519,17 +569,35 @@ void tss_install();
 
 #endif// myos/userspace/programs/user_test.c
 
-void user_program_main() {
-    // By creating the string here, its location is determined at runtime on the stack.
-    // This makes the program self-contained and immune to the objcopy issue.
-    const char* message = "--- SUCCESSFULLY CALLED SYSCALL ---";
+#include <syscall.h>
 
-    // The assembly is placed directly here to avoid any function call or linking issues.
-    __asm__ __volatile__ (
-        "int $0x80"
-        : /* no output */
-        : "a"(1), "b"(message) // Pass syscall number 1 in EAX and the message pointer in EBX
-    );
+void user_program_main() {
+    // The ELF loader now correctly loads the .rodata section,
+    // so we can use a standard string literal.
+    const char* message = "--- PRINT MSG FROM USER PROGRAM VIA SYSCALL LIBRARY  ---";
+
+    // Call the kernel's print function via our syscall wrapper.
+    syscall_print(message);
+
+    // Loop forever
+    while(1) {}
+}// myos/userspace/programs/user_test.c
+
+#include <syscall.h>
+
+void user_program_main() {
+    syscall_print("Press any key to echo it...");
+
+    // Call the kernel to get a character (blocks until keypress)
+    char c = syscall_getchar();
+
+    // We need a small buffer to print the character
+    char buffer[2] = {0};
+    buffer[0] = c;
+
+    // Call the kernel to print the character back
+    syscall_print("You pressed: ");
+    syscall_print(buffer);
 
     // Loop forever
     while(1) {}
@@ -544,6 +612,18 @@ static inline void syscall_print(const char* message) {
     // EAX=1 for our print syscall
     // EBX=message pointer
     __asm__ __volatile__ ("int $0x80" : : "a"(1), "b"(message));
+}
+
+// Wrapper for the "getchar" syscall.
+static inline char syscall_getchar() {
+    char result;
+    // EAX=2 for our getchar syscall. The kernel's return value will be in EAX.
+    __asm__ __volatile__ (
+        "int $0x80"
+        : "=a"(result)  // Output: store the final value of EAX into 'result'.
+        : "a"(2)        // Input: set EAX to 2 before the interrupt.
+    );
+    return result;
 }
 
 #endif/* myos/userspace/linker.ld */
@@ -575,6 +655,7 @@ SECTIONS {
 #include <kernel/syscall.h>
 #include <kernel/vga.h>
 #include <kernel/exceptions.h> // For the full registers_t definition
+#include <kernel/keyboard.h> // keyboard input
 
 #define MAX_SYSCALLS 32
 
@@ -588,9 +669,18 @@ static void sys_test_print(registers_t *r) {
     print_char('\n');
 }
 
+// Syscall 2: Read a character from the keyboard, blocking until a key is pressed.
+static void sys_getchar(registers_t *r) {
+    char c = keyboard_read_char();
+    // The return value of a syscall is placed in the EAX register.
+    r->eax = c;
+}
+
 void syscall_install() {
     // Install the test print syscall at index 1
     syscall_table[1] = &sys_test_print;
+    // Install the new getchar syscall at index 2
+    syscall_table[2] = &sys_getchar;
 }
 
 // The main C-level handler for all system calls
@@ -806,8 +896,13 @@ void kmain() {
     __asm__ __volatile__ ("sti");
     outb(0xE9, '!'); // Interrupts enabled
 
-    // Hang the CPU. The keyboard handler will run when keys are pressed.
-    // Use hlt to efficiently idle the CPU until an interrupt occurs.
+    // Start the shell's main processing loop.
+    // This function will only return if a program is launched.
+    shell_run();
+    outb(0xE9, 'r'); // Shell processing loop
+
+    // If shell_run returns, a program is running.
+    // The kernel should now enter an idle state.
     while (1) {
         __asm__ __volatile__("hlt");
     }
@@ -978,10 +1073,13 @@ size_t strlen(const char* str) {
 #include <kernel/fs.h>      // For filesystem functions
 #include <kernel/memory.h>  // For malloc/free
 #include <kernel/vga.h>     // For printing error messages
+#include <kernel/elf.h>     // ELF loader struc
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 
+// This is the function that performs the context switch to user mode.
+// It sets up the stack for the IRET instruction and jumps.
 void switch_to_user_mode(void* entry_point, void* stack_ptr) {
     __asm__ __volatile__ (
         "cli;"                  // Disable interrupts.
@@ -1019,7 +1117,10 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 
 #define USER_STACK_SIZE 4096 // 4KB stack for user programs
 
+// This function finds an ELF executable on disk, loads it into memory,
+// and starts it as a new user-mode process
 void exec_program(const char* filename) {
+    // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
     if (!file_entry) {
         print_string("run: File not found: ");
@@ -1027,43 +1128,65 @@ void exec_program(const char* filename) {
         return;
     }
 
-    // This is the target physical address for the program, from the linker script.
-    uint8_t* program_buffer = (uint8_t*)0x100000;
-
-    // Read the file cluster by cluster directly into the target address.
-    uint16_t current_cluster = file_entry->first_cluster_low;
-
-    // Calculate the correct cluster size instead of hardcoding it.
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
-
-    // Calculate the exact number of clusters to read
-    uint32_t num_clusters = (file_entry->file_size + bytes_per_cluster - 1) / bytes_per_cluster;
-
-    // Loop exactly that many times
-    for (uint32_t i = 0; i < num_clusters; i++) {
-        // Stop if the chain ends unexpectedly
-        if (current_cluster >= 0xFF8) break; // 0xFF8 is End-of-Chain for FAT12
-
-        fs_read_cluster(current_cluster, program_buffer);
-        program_buffer += bytes_per_cluster;
-        current_cluster = fs_get_fat_entry(current_cluster);
-    }
-
-    // Allocate a stack for the user program
-    void* user_stack = malloc(USER_STACK_SIZE);
-    if (!user_stack) {
-        // No need to free program_buffer, as it's not on the heap.
-        print_string("run: Not enough memory for user stack.\n");
+    // Read the entire file into a temporary buffer in kernel memory
+    uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
+    if (!file_buffer) {
+        print_string("run: Not enough memory to load program.\n");
         return;
     }
 
-    // The stack grows downwards. The top must be aligned to a 4-byte boundary.
+    // Cast the beginning of the buffer to an ELF header
+    Elf32_Ehdr* header = (Elf32_Ehdr*)file_buffer;
+
+    // Parse the ELF header and validate the magic number
+    if (header->magic != ELF_MAGIC) {
+        print_string("run: Not an ELF executable.\n");
+        free(file_buffer);
+        return;
+    }
+
+    // Locate the program header table using the offset from the main heade
+    Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
+
+    // Iterate through program headers
+    for (int i = 0; i < header->phnum; i++) {
+        Elf32_Phdr* phdr = &phdrs[i];
+
+        // We only care about "loadable" segments.
+        if (phdr->type == PT_LOAD) {
+            // Copy the segment from the file buffer to its final virtual address.
+            uint8_t* dest = (uint8_t*)phdr->vaddr;
+            uint8_t* src = file_buffer + phdr->offset;
+            for (uint32_t j = 0; j < phdr->filesz; j++) {
+                dest[j] = src[j];
+            }
+
+            // Handle the .bss section (uninitialized data)
+            // memsz might be > filesz. The difference is the .bss section.
+            if (phdr->memsz > phdr->filesz) {
+                uint32_t bss_size = phdr->memsz - phdr->filesz;
+                uint8_t* bss_start = dest + phdr->filesz;
+                memset(bss_start, 0, bss_size);
+            }
+        }
+    }
+
+    // Allocate a separate, aligned stack for the user program.
+    void* user_stack = malloc(USER_STACK_SIZE);
+    if (!user_stack) {
+        print_string("run: Not enough memory for user stack.\n");
+        free(file_buffer);
+        return;
+    }
     void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
 
-    // Jump to the program's entry point, which is now correctly at 0x100000
-    switch_to_user_mode((void*)0x100000, user_stack_top);
+    // The program is now in memory, so we can free the temporary file buffer
+    free(file_buffer);
 
-    // This part is unreachable, but we'll free the stack just in case.
+    // Jump to the program's entry point specified in the ELF header
+    switch_to_user_mode((void*)header->entry, user_stack_top);
+
+    // This code is unreachable if the switch is successful, but is good practice
     free(user_stack);
 }
 
@@ -1693,8 +1816,14 @@ void pic_remap(int offset1, int offset2) {
 #include <kernel/keyboard.h>
 #include <kernel/irq.h>
 #include <kernel/io.h>
-#include <kernel/shell.h> // Changed from vga.h
+#include <kernel/shell.h>
 #include <kernel/vga.h>
+
+// New keyboard buffer
+#define KBD_BUFFER_SIZE 256
+static char kbd_buffer[KBD_BUFFER_SIZE];
+static volatile uint32_t kbd_buffer_read_idx = 0;
+static volatile uint32_t kbd_buffer_write_idx = 0;
 
 // --- State and Character Maps ---
 static volatile int shift_pressed = 0;
@@ -1758,16 +1887,33 @@ static void keyboard_handler(registers_t *r) {
         char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
         
         if (character) {
-            shell_handle_input(character);
+            // Instead of calling the shell, add the character to our buffer
+            if ((kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE != kbd_buffer_read_idx) {
+                kbd_buffer[kbd_buffer_write_idx] = character;
+                kbd_buffer_write_idx = (kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE;
+            }
         }
     }
 }
 
 // The installation function that hooks the handler into the IRQ system.
 void keyboard_install() {
-    
     // Register `keyboard_handler` to be called when IRQ 1 is triggered.
     irq_install_handler(1, keyboard_handler);
+}
+
+// Blocks until a character is available and returns it.
+char keyboard_read_char() {
+    // Wait for a character to be available
+    while (kbd_buffer_read_idx == kbd_buffer_write_idx) {
+        // Halt the CPU until the next interrupt (e.g., a keypress)
+        __asm__ __volatile__("hlt");
+    }
+
+    // Read the character from the buffer
+    char c = kbd_buffer[kbd_buffer_read_idx];
+    kbd_buffer_read_idx = (kbd_buffer_read_idx + 1) % KBD_BUFFER_SIZE;
+    return c;
 }// myos/kernel/drivers/vga.c
 
 #include <kernel/vga.h>
@@ -1815,7 +1961,7 @@ void print_char(char c) {
             cursor_col = 79; // Move to the end of the previous line.
         }
         // Write a blank space to the current cursor position to 'erase' the char.
-        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | 0x0F00;
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | (0x0F << 8);
 
     // Handle newline
     } else if (c == '\n') {
@@ -1843,7 +1989,7 @@ void print_char(char c) {
 
         // Clear the last line.
         for (int i = 24 * 80; i < 25 * 80; i++) {
-            VGA_BUFFER[i] = ' ' | 0x0F00;
+            VGA_BUFFER[i] = ' ' | (0x0F << 8);
         }
         
         // Set the cursor to the beginning of the last line.
@@ -2016,6 +2162,7 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
 #include <kernel/disk.h> // for disk sector read
 #include <kernel/fs.h> // for FAT12 entries
 #include <kernel/cpu/process.h> // User Mode Switch
+#include <kernel/keyboard.h> // We need this for keyboard_read_char
 
 // These labels are defined in data.asm
 extern char file_start[];
@@ -2037,33 +2184,32 @@ void shell_init() {
     print_string(PROMPT);
 }
 
-// This function is called by the keyboard driver for each keypress.
+// Handles a single character of input.
 void shell_handle_input(char c) {
-    // On Enter, null-terminate the string and process it
     if (c == '\n') {
         print_char(c); // Echo the newline
-
         cmd_buffer[cmd_index] = '\0';
         process_command();
-
-        
-    // On Backspace, delete a character
     } else if (c == '\b') {
         if (cmd_index > 0) {
-            // Go back one character in the buffer and on the screen.
             cmd_index--;
-            print_char(c);
+            print_char(c); // Echo backspace
         }
-
-    // On any other key, add it to the buffer
     } else if (cmd_index < MAX_CMD_LEN - 1) {
-        // Add the character to the buffer and echo it to the screen.
         cmd_buffer[cmd_index++] = c;
-        print_char(c);
+        print_char(c); // Echo the character
     }
 }
 
-// This function processes the completed command
+// The main loop for the shell.
+void shell_run() {
+    while (1) {
+        char c = keyboard_read_char();
+        shell_handle_input(c);
+    }
+}
+
+// This function processes the completed command. 
 void process_command() {
 
     // command arg parsing
@@ -2241,9 +2387,11 @@ void process_command() {
     } else if (cmd_index > 0) { // Only show error for non-empty commands
         print_string("Unknown command: ");
         print_string(cmd_buffer);
+        print_string("\n");
     }
+    
 
-    // Reset buffer for the next command
+    // For any command that finishes, reset the buffer and print a new prompt.
     cmd_index = 0;
 
     // Only print a newline for spacing if the command wasn't "cls".
@@ -2251,9 +2399,9 @@ void process_command() {
         print_string("\n");
     }
 
-    //print a new prompt for the next command
     print_string(PROMPT);
-}/* myos/kernel/linker.ld */
+}
+/* myos/kernel/linker.ld */
 ENTRY(_start)
 
 SECTIONS {
@@ -2308,8 +2456,8 @@ STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
 KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
 ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
-# Define user program binaries
-USER_PROGRAM_BINS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%,$(USER_PROGRAM_C_SRC))
+# The final ELF file for the user program, not a flat binary
+USER_PROGRAM_ELFS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.elf,$(USER_PROGRAM_C_SRC))
 
 # --- Final Binaries ---
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
@@ -2331,9 +2479,9 @@ OBJCOPY := objcopy
 # Default target: build everything
 all: $(DISK_IMAGE)
 
-# The disk image now depends on our new user program binary
+# The disk image now depends on our user program ELF
 # Rule to create the final disk image
-$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_BINS)
+$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_ELFS)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
 	@echo "--> Formatting disk with FAT12..."
@@ -2343,7 +2491,7 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_BINS)
 	@echo "--> Copying test file to disk image..."
 	mcopy -i $@ test_files/test.txt ::
 	@echo "--> Copying user programs to disk image..."
-	mcopy -i $@ $(USER_PROGRAM_BINS) ::
+	mcopy -i $@ $(USER_PROGRAM_ELFS) ::
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
 	@echo "--> Installing kernel..."
@@ -2386,15 +2534,13 @@ $(STAGE2_OBJ): $(STAGE2_SRC)
 	$(ASM) -f bin $< -o $@
 
 # Rule for user programs from C source
-$(BUILD_DIR)/userspace/programs/%: userspace/programs/%.c
+$(BUILD_DIR)/userspace/programs/%.elf: userspace/programs/%.c
 	@mkdir -p $(dir $@)
-	# Step 1: Compile to an object file
-	$(CC) $(CFLAGS) $< -o $(@).o
-	# Step 2: Link into an ELF file
-	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $(@).elf $(@).o
-	# Step 3: Extract the flat binary
-	$(OBJCOPY) -O binary $(@).elf $@
-	@echo "User program built: $@"
+	# Step 1: Compile C source to an object file
+	$(CC) $(CFLAGS) $< -o $(@:.elf=.o)
+	# Step 2: Link the object file into a final ELF executable
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $(@:.elf=.o)
+	@echo "User program ELF built: $@"
 
 # --- Utility Targets ---
 run: all

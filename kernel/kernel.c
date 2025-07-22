@@ -70,9 +70,14 @@ void kmain() {
     __asm__ __volatile__ ("sti");
     outb(0xE9, '!'); // Interrupts enabled
 
-    // Hang the CPU. The keyboard handler will run when keys are pressed.
-    // Start the shell's main loop. This will not return.
+    // Start the shell's main processing loop.
+    // This function will only return if a program is launched.
     shell_run();
+    outb(0xE9, 'r'); // Shell processing loop
 
-    // The old while(1)/hlt loop is now inside shell_run
+    // If shell_run returns, a program is running.
+    // The kernel should now enter an idle state.
+    while (1) {
+        __asm__ __volatile__("hlt");
+    }
 }

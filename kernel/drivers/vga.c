@@ -45,7 +45,7 @@ void print_char(char c) {
             cursor_col = 79; // Move to the end of the previous line.
         }
         // Write a blank space to the current cursor position to 'erase' the char.
-        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | 0x0F00;
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | (0x0F << 8);
 
     // Handle newline
     } else if (c == '\n') {
@@ -73,7 +73,7 @@ void print_char(char c) {
 
         // Clear the last line.
         for (int i = 24 * 80; i < 25 * 80; i++) {
-            VGA_BUFFER[i] = ' ' | 0x0F00;
+            VGA_BUFFER[i] = ' ' | (0x0F << 8);
         }
         
         // Set the cursor to the beginning of the last line.
