@@ -23,4 +23,10 @@ static inline char syscall_getchar() {
     return result;
 }
 
+// Wrapper for the "exit" syscall. It does not return.
+static inline void syscall_exit() {
+    // EAX=3 for our exit syscall
+    __asm__ __volatile__ ("int $0x80" : : "a"(3));
+}
+
 #endif

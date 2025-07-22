@@ -16,6 +16,6 @@ void user_program_main() {
     syscall_print("You pressed: ");
     syscall_print(buffer);
 
-    // Loop forever
-    while(1) {}
+    // Instead of looping forever, exit the program.
+    syscall_exit();
 }
