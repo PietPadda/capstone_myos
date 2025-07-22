@@ -210,23 +210,22 @@ gdt_end:// myos/include/kernel/exceptions.h
 
 #include <kernel/types.h>
 
-// A struct which defines the registers we pushed onto the stack in isr.asm.
-// This order MUST match the order of the push instructions in isr.asm.
+// This struct defines the registers pushed onto the stack.
+// The order MUST EXACTLY MATCH the push order in isr.asm.
 typedef struct {
+    // Pushed by us manually, , so they are at the top of the frame.
+    uint32_t gs, fs, es, ds;
+    
     // Pushed by the 'pusha' instruction
     uint32_t edi, esi, ebp, esp, ebx, edx, ecx, eax;
 
-    // Pushed by us manually after pusha
-    uint32_t gs, fs, es, ds;
-
-    // Pushed by our ISR stub (int_no first, then error code)
+    // Pushed by our ISR stub (interrupt number and error code).
     uint32_t int_no, err_code;
 
-    // Pushed by the processor automatically on interrupt
+    // Pushed by the processor automatically when an interrupt occurs.
     uint32_t eip, cs, eflags, useresp, ss;
 } __attribute__((packed)) registers_t;
 
-void isr_install();
 void fault_handler(registers_t *r);
 
 #endif// myos/include/kernel/gdt.h
@@ -520,10 +519,17 @@ void tss_install();
 
 #endif// myos/userspace/programs/user_test.c
 
-#include <syscall.h>
-
 void user_program_main() {
-    syscall_print("--- SUCCESSFULLY CALLED SYSCALL ---");
+    // By creating the string here, its location is determined at runtime on the stack.
+    // This makes the program self-contained and immune to the objcopy issue.
+    const char* message = "--- SUCCESSFULLY CALLED SYSCALL ---";
+
+    // The assembly is placed directly here to avoid any function call or linking issues.
+    __asm__ __volatile__ (
+        "int $0x80"
+        : /* no output */
+        : "a"(1), "b"(message) // Pass syscall number 1 in EAX and the message pointer in EBX
+    );
 
     // Loop forever
     while(1) {}
@@ -578,12 +584,6 @@ static syscall_t syscall_table[MAX_SYSCALLS];
 // Our first syscall: takes a pointer to a string in EBX and prints it.
 static void sys_test_print(registers_t *r) {
     char* message = (char*)r->ebx;
-
-    // DIAGNOSTIC LINES
-    print_string("Syscall: Received pointer: ");
-    print_hex((uint32_t)message);
-    print_char('\n');
-
     print_string(message);
     print_char('\n');
 }
@@ -2388,11 +2388,10 @@ $(STAGE2_OBJ): $(STAGE2_SRC)
 # Rule for user programs from C source
 $(BUILD_DIR)/userspace/programs/%: userspace/programs/%.c
 	@mkdir -p $(dir $@)
-	# Step 1: Compile
+	# Step 1: Compile to an object file
 	$(CC) $(CFLAGS) $< -o $(@).o
-	# Step 2: Link into an ELF file using the user linker script
-	# Add -Map to generate a map file
-	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -Map=$(@).map -o $(@).elf $(@).o
+	# Step 2: Link into an ELF file
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $(@).elf $(@).o
 	# Step 3: Extract the flat binary
 	$(OBJCOPY) -O binary $(@).elf $@
 	@echo "User program built: $@"

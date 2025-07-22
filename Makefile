@@ -23,8 +23,8 @@ STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
 KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
 ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
-# Define user program binaries
-USER_PROGRAM_BINS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%,$(USER_PROGRAM_C_SRC))
+# The final ELF file for the user program, not a flat binary
+USER_PROGRAM_ELFS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.elf,$(USER_PROGRAM_C_SRC))
 
 # --- Final Binaries ---
 KERNEL_ELF := $(BUILD_DIR)/kernel.elf
@@ -46,9 +46,9 @@ OBJCOPY := objcopy
 # Default target: build everything
 all: $(DISK_IMAGE)
 
-# The disk image now depends on our new user program binary
+# The disk image now depends on our user program ELF
 # Rule to create the final disk image
-$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_BINS)
+$(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_ELFS)
 	@echo "--> Creating blank disk image..."
 	dd if=/dev/zero of=$@ bs=512 count=2880 >/dev/null 2>&1
 	@echo "--> Formatting disk with FAT12..."
@@ -58,7 +58,7 @@ $(DISK_IMAGE): $(STAGE1_OBJ) $(STAGE2_OBJ) $(KERNEL_BIN) $(USER_PROGRAM_BINS)
 	@echo "--> Copying test file to disk image..."
 	mcopy -i $@ test_files/test.txt ::
 	@echo "--> Copying user programs to disk image..."
-	mcopy -i $@ $(USER_PROGRAM_BINS) ::
+	mcopy -i $@ $(USER_PROGRAM_ELFS) ::
 	@echo "--> Installing Stage 2 bootloader..."
 	dd if=$(STAGE2_OBJ) of=$@ seek=1 conv=notrunc >/dev/null 2>&1
 	@echo "--> Installing kernel..."
@@ -101,15 +101,13 @@ $(STAGE2_OBJ): $(STAGE2_SRC)
 	$(ASM) -f bin $< -o $@
 
 # Rule for user programs from C source
-$(BUILD_DIR)/userspace/programs/%: userspace/programs/%.c
+$(BUILD_DIR)/userspace/programs/%.elf: userspace/programs/%.c
 	@mkdir -p $(dir $@)
-	# Step 1: Compile to an object file
-	$(CC) $(CFLAGS) $< -o $(@).o
-	# Step 2: Link into an ELF file
-	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $(@).elf $(@).o
-	# Step 3: Extract the flat binary
-	$(OBJCOPY) -O binary $(@).elf $@
-	@echo "User program built: $@"
+	# Step 1: Compile C source to an object file
+	$(CC) $(CFLAGS) $< -o $(@:.elf=.o)
+	# Step 2: Link the object file into a final ELF executable
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $(@:.elf=.o)
+	@echo "User program ELF built: $@"
 
 # --- Utility Targets ---
 run: all

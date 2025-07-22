@@ -5,6 +5,7 @@
 #include <kernel/fs.h>      // For filesystem functions
 #include <kernel/memory.h>  // For malloc/free
 #include <kernel/vga.h>     // For printing error messages
+#include <kernel/elf.h>     // ELF loader struc
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
@@ -54,43 +55,28 @@ void exec_program(const char* filename) {
         return;
     }
 
-    // This is the target physical address for the program, from the linker script.
-    uint8_t* program_buffer = (uint8_t*)0x100000;
-
-    // Read the file cluster by cluster directly into the target address.
-    uint16_t current_cluster = file_entry->first_cluster_low;
-
-    // Calculate the correct cluster size instead of hardcoding it.
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
-
-    // Calculate the exact number of clusters to read
-    uint32_t num_clusters = (file_entry->file_size + bytes_per_cluster - 1) / bytes_per_cluster;
-
-    // Loop exactly that many times
-    for (uint32_t i = 0; i < num_clusters; i++) {
-        // Stop if the chain ends unexpectedly
-        if (current_cluster >= 0xFF8) break; // 0xFF8 is End-of-Chain for FAT12
-
-        fs_read_cluster(current_cluster, program_buffer);
-        program_buffer += bytes_per_cluster;
-        current_cluster = fs_get_fat_entry(current_cluster);
-    }
-
-    // Allocate a stack for the user program
-    void* user_stack = malloc(USER_STACK_SIZE);
-    if (!user_stack) {
-        // No need to free program_buffer, as it's not on the heap.
-        print_string("run: Not enough memory for user stack.\n");
+    // Read the entire file into a buffer
+    uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
+    if (!file_buffer) {
+        print_string("run: Not enough memory to load program.\n");
         return;
     }
 
-    // The stack grows downwards. The top must be aligned to a 4-byte boundary.
-    void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
+    // Cast the beginning of the buffer to an ELF header
+    Elf32_Ehdr* header = (Elf32_Ehdr*)file_buffer;
 
-    // Jump to the program's entry point, which is now correctly at 0x100000
-    switch_to_user_mode((void*)0x100000, user_stack_top);
+    // Validate the ELF magic number
+    if (header->magic != ELF_MAGIC) {
+        print_string("run: Not an ELF executable.\n");
+        free(file_buffer);
+        return;
+    }
 
-    // This part is unreachable, but we'll free the stack just in case.
-    free(user_stack);
+    print_string("ELF file validated. Entry point: ");
+    print_hex(header->entry);
+    print_string("\n");
+
+    // We will stop here for now. Free the buffer.
+    free(file_buffer);
 }
 
