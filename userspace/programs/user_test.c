@@ -1,16 +1,14 @@
 // myos/userspace/programs/user_test.c
 
-void user_program_main() {
-    // By creating the string here, its location is determined at runtime on the stack.
-    // This makes the program self-contained and immune to the objcopy issue.
-    const char* message = "--- SUCCESSFULLY CALLED SYSCALL ---";
+#include <syscall.h>
 
-    // The assembly is placed directly here to avoid any function call or linking issues.
-    __asm__ __volatile__ (
-        "int $0x80"
-        : /* no output */
-        : "a"(1), "b"(message) // Pass syscall number 1 in EAX and the message pointer in EBX
-    );
+void user_program_main() {
+    // The ELF loader now correctly loads the .rodata section,
+    // so we can use a standard string literal.
+    const char* message = "--- PRINT MSG FROM USER PROGRAM VIA SYSCALL LIBRARY  ---";
+
+    // Call the kernel's print function via our syscall wrapper.
+    syscall_print(message);
 
     // Loop forever
     while(1) {}
