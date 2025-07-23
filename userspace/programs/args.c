@@ -2,7 +2,10 @@
 
 #include <syscall.h>
 
-// function signature for our main entry point
+// Tell the compiler that our assembly stub is defined elsewhere.
+extern void _start_user_program();
+
+// The function is no longer the entry point, but is called by the stub
 void user_program_main(int argc, char* argv[]) {
     syscall_print("Program received arguments:\n");
 

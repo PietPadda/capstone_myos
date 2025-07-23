@@ -1,6 +1,6 @@
 /* myos/userspace/linker.ld */
 
-ENTRY(user_program_main)
+ENTRY(_start_user_program)
 OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS {

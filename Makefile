@@ -15,6 +15,7 @@ STAGE1_SRC := boot/stage1.asm
 STAGE2_SRC := boot/stage2.asm
 # User program sources
 USER_PROGRAM_C_SRC := $(wildcard userspace/programs/*.c)
+USER_PROGRAM_ASM_SRC := $(wildcard userspace/*.asm) # Find the new assembly stub
 
 # --- Object Files ---
 # Map source files to object files in the build directory, preserving paths
@@ -24,6 +25,8 @@ KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
 ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
 # The final ELF file for the user program, not a flat binary
+USER_PROGRAM_C_OBJS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.o,$(USER_PROGRAM_C_SRC))
+USER_PROGRAM_ASM_OBJS := $(patsubst userspace/%.asm,$(BUILD_DIR)/userspace/%.o,$(USER_PROGRAM_ASM_SRC))
 USER_PROGRAM_ELFS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.elf,$(USER_PROGRAM_C_SRC))
 
 # --- Final Binaries ---
@@ -101,13 +104,17 @@ $(STAGE2_OBJ): $(STAGE2_SRC)
 	$(ASM) -f bin $< -o $@
 
 # Rule for user programs from C source
-$(BUILD_DIR)/userspace/programs/%.elf: userspace/programs/%.c
+$(BUILD_DIR)/userspace/programs/%.elf: $(BUILD_DIR)/userspace/programs/%.o $(USER_PROGRAM_ASM_OBJS)
 	@mkdir -p $(dir $@)
-	# Step 1: Compile C source to an object file
-	$(CC) $(CFLAGS) $< -o $(@:.elf=.o)
-	# Step 2: Link the object file into a final ELF executable
-	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $(@:.elf=.o)
+	# Step 1: Compile C source to an object file (already done by generic rule)
+	# Step 2: Link the C object file and the assembly stub into a final ELF executable
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $^
 	@echo "User program ELF built: $@"
+
+# Rule for the user assembly
+$(BUILD_DIR)/userspace/%.o: userspace/%.asm
+	@mkdir -p $(dir $@)
+	$(ASM) $(ASM_FLAGS) $< -o $@
 
 # --- Utility Targets ---
 run: all

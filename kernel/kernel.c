@@ -70,7 +70,7 @@ void kmain() {
 
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
-    qemu_debug_string("interrupt_enable ");
+    qemu_debug_string("interrupt_enable\n");
 
     // Start the shell's main processing loop.
     // This function will only return if a program is launched.
