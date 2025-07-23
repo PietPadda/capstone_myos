@@ -9,8 +9,8 @@
 #include <kernel/string.h> // For memcpy and strlen
 #include <kernel/debug.h>   // debug print
 
-// The process table
-static task_struct_t process_table[MAX_PROCESSES];
+// The process table - now global
+task_struct_t process_table[MAX_PROCESSES];
 
 // Pointer to the currently running process
 task_struct_t* current_task = NULL;

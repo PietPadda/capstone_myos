@@ -13,6 +13,7 @@
 #include <kernel/cpu/tss.h> // Task-State Segment
 #include <kernel/syscall.h> // User Mode Syscalls
 #include <kernel/debug.h> // debug prints
+#include <kernel/cpu/process.h> // process_init()
 
 
 // Helper for debug prints

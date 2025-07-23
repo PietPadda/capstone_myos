@@ -12,6 +12,8 @@
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 #include <kernel/debug.h> // debug printing
 
+// Let the shell know about the process table defined in process.c
+extern task_struct_t process_table[MAX_PROCESSES];
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
@@ -277,10 +279,31 @@ void process_command() {
 
     // ps command
     } else if (strcmp(argv[0], "ps") == 0) {
-        print_string("PID   |   Name\n");
-        print_string("----------------\n");
-        print_string("0     |   shell\n");
-    
+        print_string("PID  | State      | Name\n");
+        print_string("----------------------------------\n");
+        for (int i = 0; i < MAX_PROCESSES; i++) {
+            if (process_table[i].state != TASK_STATE_UNUSED) {
+                print_dec(process_table[i].pid);
+                print_string("    | ");
+                
+                // Print the state as a string
+                switch (process_table[i].state) {
+                    case TASK_STATE_RUNNING:
+                        print_string("Running    | ");
+                        break;
+                    case TASK_STATE_ZOMBIE:
+                        print_string("Zombie     | ");
+                        break;
+                    default:
+                        print_string("Unknown    | ");
+                        break;
+                }
+                
+                print_string(process_table[i].name);
+                print_string("\n");
+            }
+        }
+
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
         print_string("Unknown command: ");

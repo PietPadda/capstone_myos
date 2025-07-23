@@ -11,5 +11,6 @@ void print_string(const char* str);
 void print_hex(uint32_t n);
 void print_char(char c);
 void print_hex(uint32_t n);
+void print_dec(uint32_t n);
 
 #endif

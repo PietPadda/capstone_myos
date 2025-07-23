@@ -103,3 +103,18 @@ void print_hex(uint32_t n) {
         print_char(c);
     }
 }
+
+// Prints a 32-bit unsigned integer in decimal format.
+void print_dec(uint32_t n) {
+    // base case
+    if (n == 0) {
+        print_char('0');
+        return;
+    }
+
+    // recursion
+    if (n >= 10) {
+        print_dec(n / 10);
+    }
+    print_char((n % 10) + '0');
+}
