@@ -235,6 +235,9 @@ void exec_program(int argc, char* argv[]) {
     // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
 
+    // Set the new task as the currently running one BEFORE we make the switch.
+    current_task = new_task;
+
     // Jump to the program's entry point specified in the ELF header
     // Cast the final stack pointer back to void* for the function call
     qemu_debug_string("PROCESS: Final user_stack_top: ");

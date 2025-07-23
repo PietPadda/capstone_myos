@@ -20,6 +20,9 @@ extern struct tss_entry_struct tss_entry;
 // We need access to the current task pointer
 extern task_struct_t* current_task; 
 
+// Make the process table visible to this file
+extern task_struct_t process_table[MAX_PROCESSES];
+
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
 
@@ -55,6 +58,9 @@ static void sys_exit(registers_t *r) {
     if (current_task) {
         current_task->state = TASK_STATE_ZOMBIE;
     }
+
+    // The user program is done. The 'current_task' is now the shell again.
+    current_task = &process_table[0]; // This correctly resets focus to PID 0
 
     qemu_debug_string("SYSCALL: Preparing return to shell...\n");
     // Prepare to return to the kernel shell instead of the user program.

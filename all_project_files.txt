@@ -269,6 +269,7 @@ int memcmp(const void* s1, const void* s2, size_t n);
 void* memcpy(void* dest, const void* src, size_t n);
 int toupper(int c);
 size_t strlen(const char* str);
+char* strncpy(char* dest, const char* src, size_t n);
 
 #endif// myos/include/kernel/elf.h
 
@@ -410,6 +411,7 @@ void print_string(const char* str);
 void print_hex(uint32_t n);
 void print_char(char c);
 void print_hex(uint32_t n);
+void print_dec(uint32_t n);
 
 #endif// myos/include/kernel/irq.h
 
@@ -524,10 +526,31 @@ void sleep(uint32_t ms);
 #ifndef PROCESS_H
 #define PROCESS_H
 
-#define MAX_ARGS 16 // Define the constant here
+#include <kernel/types.h>
+
+#define MAX_ARGS 16 // Maximum number of command arguments
+#define MAX_PROCESSES 16 // Maximum number of processes in the system
+#define PROCESS_NAME_LEN 32 // Max length of a process name
+
+// Enum for process states
+typedef enum {
+    TASK_STATE_UNUSED,    // This entry in the table is free
+    TASK_STATE_RUNNING,   // The process is currently running or ready to run
+    TASK_STATE_ZOMBIE     // The process has finished but is waiting to be cleaned up
+} task_state_t;
+
+// The Process Control Block (PCB)
+typedef struct {
+    int pid;                            // Process ID
+    task_state_t state;                 // The current state of the process
+    char name[PROCESS_NAME_LEN];        // The process name
+    void* user_stack;           // Pointer to the user-mode stack
+    // We will add more fields here later (e.g., registers, memory maps)
+} task_struct_t;
 
 void switch_to_user_mode(void* entry_point, void* stack_ptr); // takes  entry point AND user stack pointer
 void exec_program(int argc, char* argv[]);
+void process_init(); //
 
 #endif// myos/include/kernel/cpu/tss.h
 
@@ -744,14 +767,18 @@ SECTIONS {
 #include <kernel/cpu/tss.h>     // tss_entry
 #include <kernel/memory.h>      // free()
 #include <kernel/debug.h>       // debug print
+#include <kernel/cpu/process.h> 
 
 #define MAX_SYSCALLS 32
 
 // We need access to the TSS to get the kernel stack pointer.
 extern struct tss_entry_struct tss_entry;
 
-// A temporary global to track the stack we need to free.
-extern void* current_user_stack;
+// We need access to the current task pointer
+extern task_struct_t* current_task; 
+
+// Make the process table visible to this file
+extern task_struct_t process_table[MAX_PROCESSES];
 
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
@@ -773,12 +800,24 @@ static void sys_getchar(registers_t *r) {
 // Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
-    // Clean up resources (the user stack).
-    if (current_user_stack) {
-        qemu_debug_string("SYSCALL: Freeing user stack.\n");
-        free(current_user_stack);
-        current_user_stack = NULL;
+
+    // Clean up resources using the PCB
+    if (current_task && current_task->user_stack) {
+        qemu_debug_string("SYSCALL: Freeing user stack for PID ");
+        qemu_debug_hex(current_task->pid);
+        qemu_debug_string(".\n");
+
+        free(current_task->user_stack);
+        current_task->user_stack = NULL;
     }
+
+    // Mark the task as finished
+    if (current_task) {
+        current_task->state = TASK_STATE_ZOMBIE;
+    }
+
+    // The user program is done. The 'current_task' is now the shell again.
+    current_task = &process_table[0];
 
     qemu_debug_string("SYSCALL: Preparing return to shell...\n");
     // Prepare to return to the kernel shell instead of the user program.
@@ -1001,6 +1040,7 @@ void* fs_read_file(fat_dir_entry_t* entry) {
 #include <kernel/cpu/tss.h> // Task-State Segment
 #include <kernel/syscall.h> // User Mode Syscalls
 #include <kernel/debug.h> // debug prints
+#include <kernel/cpu/process.h> // process_init()
 
 
 // Helper for debug prints
@@ -1023,6 +1063,10 @@ void kmain() {
     // Install the TSS right after the GDT
     tss_install(); 
     qemu_debug_string("tss_inst ");
+
+    // Initialize the process table BEFORE syscalls and interrupts
+    process_init();
+    qemu_debug_string("proc_init ");
 
     // Syscall install after TSS
     syscall_install();
@@ -1240,6 +1284,18 @@ void* memcpy(void* dest, const void* src, size_t n) {
     }
     return dest;
 }
+
+// A simple, safe string copy function.
+char* strncpy(char* dest, const char* src, size_t n) {
+    size_t i;
+    for (i = 0; i < n && src[i] != '\0'; i++) {
+        dest[i] = src[i];
+    }
+    for ( ; i < n; i++) {
+        dest[i] = '\0';
+    }
+    return dest;
+}
 // myos/kernel/cpu/process.c
 
 #include <kernel/cpu/process.h>
@@ -1251,9 +1307,11 @@ void* memcpy(void* dest, const void* src, size_t n) {
 #include <kernel/string.h> // For memcpy and strlen
 #include <kernel/debug.h>   // debug print
 
-// We'll use a global to track the current user stack.
-// In a multitasking OS, this would be part of a process structure.
-void* current_user_stack = NULL;
+// The process table - now global
+task_struct_t process_table[MAX_PROCESSES];
+
+// Pointer to the currently running process
+task_struct_t* current_task = NULL;
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
@@ -1402,6 +1460,23 @@ void exec_program(int argc, char* argv[]) {
         }
     }
 
+    // Find a free slot in the process table
+    task_struct_t* new_task = NULL;
+    int new_pid = -1;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (process_table[i].state == TASK_STATE_UNUSED) {
+            new_task = &process_table[i];
+            new_pid = i;
+            break;
+        }
+    }
+
+    if (!new_task) {
+        print_string("run: No free processes left.\n");
+        free(file_buffer);
+        return;
+    }
+
     // Allocate a separate, aligned stack for the user program.
     void* user_stack = malloc(USER_STACK_SIZE);
     if (!user_stack) {
@@ -1409,8 +1484,12 @@ void exec_program(int argc, char* argv[]) {
         free(file_buffer);
         return;
     }
-    // Track the stack so we can free it on exit.
-    current_user_stack = user_stack;
+
+    // Configure the new process's PCB
+    new_task->pid = new_pid;
+    new_task->state = TASK_STATE_RUNNING;
+    strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
+    new_task->user_stack = user_stack; // Store stack in the PCB
 
     // Stack Setup
     // Work from the end of the stack buffer down to place arguments.
@@ -1488,15 +1567,23 @@ void exec_program(int argc, char* argv[]) {
     qemu_debug_string("\n");
 
     switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
-
-    // This code is now truly unreachable, but for good practice,
-    // if it were to be reached, we'd clean up.
-    qemu_debug_string("PROCESS: Returned from user mode unexpectedly.\n");
-    free(user_stack);
-    current_user_stack = NULL;
 }
 
-// myos/kernel/cpu/tss.c
+// Initializes the process table and creates the first kernel task.
+void process_init() {
+    // Clear the entire process table
+    memset(process_table, 0, sizeof(process_table));
+
+    // Initialize the first task (the kernel/shell itself)
+    task_struct_t* shell_task = &process_table[0];
+    shell_task->pid = 0;
+    shell_task->state = TASK_STATE_RUNNING;
+    strncpy(shell_task->name, "shell", PROCESS_NAME_LEN);
+    shell_task->user_stack = NULL; // The shell runs in kernel mode, no user stack
+
+    // Set the first task as the currently running one
+    current_task = shell_task;
+}// myos/kernel/cpu/tss.c
 
 #include <kernel/cpu/tss.h>
 #include <kernel/gdt.h>      // For the gdt_set_gate function
@@ -2325,6 +2412,21 @@ void print_hex(uint32_t n) {
         char c = (nibble > 9) ? (nibble - 10 + 'A') : (nibble + '0');
         print_char(c);
     }
+}
+
+// Prints a 32-bit unsigned integer in decimal format.
+void print_dec(uint32_t n) {
+    // base case
+    if (n == 0) {
+        print_char('0');
+        return;
+    }
+
+    // recursion
+    if (n >= 10) {
+        print_dec(n / 10);
+    }
+    print_char((n % 10) + '0');
 }// myos/kernel/drivers/timer.c
 
 #include <kernel/timer.h>
@@ -2465,6 +2567,8 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 #include <kernel/debug.h> // debug printing
 
+// Let the shell know about the process table defined in process.c
+extern task_struct_t process_table[MAX_PROCESSES];
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
@@ -2578,7 +2682,7 @@ void process_command() {
 
     // help command
     if (strcmp(argv[0], "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n  ps  - Show process list\n  kill - Reap a zombie process by PID\n\n");
 
     // cls command
     } else if (strcmp(argv[0], "cls") == 0) {
@@ -2727,7 +2831,56 @@ void process_command() {
         } else {
             print_string("Usage: run <filename>");
         }
-    
+
+    // ps command
+    } else if (strcmp(argv[0], "ps") == 0) {
+        print_string("PID  | State      | Name\n");
+        print_string("----------------------------------\n");
+        for (int i = 0; i < MAX_PROCESSES; i++) {
+            if (process_table[i].state != TASK_STATE_UNUSED) {
+                print_dec(process_table[i].pid);
+                print_string("    | ");
+                
+                // Print the state as a string
+                switch (process_table[i].state) {
+                    case TASK_STATE_RUNNING:
+                        print_string("Running    | ");
+                        break;
+                    case TASK_STATE_ZOMBIE:
+                        print_string("Zombie     | ");
+                        break;
+                    default:
+                        print_string("Unknown    | ");
+                        break;
+                }
+                
+                print_string(process_table[i].name);
+                print_string("\n");
+            }
+        }
+
+    // kill command
+    } else if (strcmp(argv[0], "kill") == 0) {
+        if (argc < 2) {
+            print_string("Usage: kill <pid>");
+        } else {
+            int pid_to_kill = atoi(argv[1]);
+            if (pid_to_kill > 0 && pid_to_kill < MAX_PROCESSES) {
+                task_struct_t* task = &process_table[pid_to_kill];
+                if (task->state == TASK_STATE_ZOMBIE) {
+                    // "Reap" the zombie: mark its slot as free
+                    task->state = TASK_STATE_UNUSED;
+                    memset(task->name, 0, PROCESS_NAME_LEN);
+                    print_string("Reaped zombie PID ");
+                    print_dec(pid_to_kill);
+                } else {
+                    print_string("Cannot kill non-zombie process.");
+                }
+            } else {
+                print_string("Invalid PID.");
+            }
+        }
+
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands
         print_string("Unknown command: ");
