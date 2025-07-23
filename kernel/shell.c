@@ -125,7 +125,7 @@ void process_command() {
 
     // help command
     if (strcmp(argv[0], "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n  ps  - Show process list\n\n");
 
     // cls command
     } else if (strcmp(argv[0], "cls") == 0) {
@@ -274,6 +274,12 @@ void process_command() {
         } else {
             print_string("Usage: run <filename>");
         }
+
+    // ps command
+    } else if (strcmp(argv[0], "ps") == 0) {
+        print_string("PID   |   Name\n");
+        print_string("----------------\n");
+        print_string("0     |   shell\n");
     
     // invalid command
     } else if (cmd_index > 0) { // Only show error for non-empty commands

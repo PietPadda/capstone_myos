@@ -590,7 +590,10 @@ void qemu_debug_memdump(const void* addr, size_t size);
 
 #include <syscall.h>
 
-// function signature for our main entry point
+// Tell the compiler that our assembly stub is defined elsewhere.
+extern void _start_user_program();
+
+// The function is no longer the entry point, but is called by the stub
 void user_program_main(int argc, char* argv[]) {
     syscall_print("Program received arguments:\n");
 
@@ -644,7 +647,37 @@ void user_program_main() {
 
     // Instead of looping forever, exit the program.
     syscall_exit();
-}// myos/userspace/libc/include/syscall.h
+}; myos/userspace/user_entry.asm
+bits 32
+
+; Tell the linker that the following functions are defined elsewhere
+extern user_program_main
+
+; Make our new entry point visible to the linker
+global _start_user_program
+
+_start_user_program:
+    ; We are in a special state. The kernel placed argc and argv on the stack,
+    ; but it didn't use a 'call' instruction. The stack looks like this:
+    ; [argv pointer]
+    ; [argc]
+    ; This is the reverse order of a standard C function call.
+
+    ; Push the arguments onto the stack in the correct order for the C function.
+    ; We are just re-arranging the data that is already there.
+    mov eax, [esp]      ; Get argc from the top of the stack
+    mov ebx, [esp + 4]  ; Get the argv pointer from the next position
+    
+    push ebx            ; Push the argv pointer (right-to-left)
+    push eax            ; Push argc (right-to-left)
+
+    ; Call our C main function
+    call user_program_main
+
+    ; Our C function has returned. We must now exit the program cleanly
+    ; by performing the syscall directly. The syscall number for exit is 3.
+    mov eax, 3          ; Put the syscall number for 'exit' into EAX
+    int 0x80            ; Trigger the system call interrupt// myos/userspace/libc/include/syscall.h
 
 #ifndef SYSCALL_H
 #define SYSCALL_H
@@ -677,7 +710,7 @@ static inline void syscall_exit() {
 
 #endif/* myos/userspace/linker.ld */
 
-ENTRY(user_program_main)
+ENTRY(_start_user_program)
 OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS {
@@ -1025,7 +1058,7 @@ void kmain() {
 
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
-    qemu_debug_string("interrupt_enable ");
+    qemu_debug_string("interrupt_enable\n");
 
     // Start the shell's main processing loop.
     // This function will only return if a program is launched.
@@ -2760,6 +2793,7 @@ STAGE1_SRC := boot/stage1.asm
 STAGE2_SRC := boot/stage2.asm
 # User program sources
 USER_PROGRAM_C_SRC := $(wildcard userspace/programs/*.c)
+USER_PROGRAM_ASM_SRC := $(wildcard userspace/*.asm) # Find the new assembly stub
 
 # --- Object Files ---
 # Map source files to object files in the build directory, preserving paths
@@ -2769,6 +2803,8 @@ KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
 ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
 # The final ELF file for the user program, not a flat binary
+USER_PROGRAM_C_OBJS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.o,$(USER_PROGRAM_C_SRC))
+USER_PROGRAM_ASM_OBJS := $(patsubst userspace/%.asm,$(BUILD_DIR)/userspace/%.o,$(USER_PROGRAM_ASM_SRC))
 USER_PROGRAM_ELFS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.elf,$(USER_PROGRAM_C_SRC))
 
 # --- Final Binaries ---
@@ -2846,13 +2882,17 @@ $(STAGE2_OBJ): $(STAGE2_SRC)
 	$(ASM) -f bin $< -o $@
 
 # Rule for user programs from C source
-$(BUILD_DIR)/userspace/programs/%.elf: userspace/programs/%.c
+$(BUILD_DIR)/userspace/programs/%.elf: $(BUILD_DIR)/userspace/programs/%.o $(USER_PROGRAM_ASM_OBJS)
 	@mkdir -p $(dir $@)
-	# Step 1: Compile C source to an object file
-	$(CC) $(CFLAGS) $< -o $(@:.elf=.o)
-	# Step 2: Link the object file into a final ELF executable
-	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $(@:.elf=.o)
+	# Step 1: Compile C source to an object file (already done by generic rule)
+	# Step 2: Link the C object file and the assembly stub into a final ELF executable
+	$(LD) -m elf_i386 -T userspace/linker.ld -nostdlib -o $@ $^
 	@echo "User program ELF built: $@"
+
+# Rule for the user assembly
+$(BUILD_DIR)/userspace/%.o: userspace/%.asm
+	@mkdir -p $(dir $@)
+	$(ASM) $(ASM_FLAGS) $< -o $@
 
 # --- Utility Targets ---
 run: all
