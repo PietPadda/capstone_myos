@@ -9,9 +9,11 @@
 #include <kernel/string.h> // For memcpy and strlen
 #include <kernel/debug.h>   // debug print
 
-// We'll use a global to track the current user stack.
-// In a multitasking OS, this would be part of a process structure.
-void* current_user_stack = NULL;
+// The process table
+static task_struct_t process_table[MAX_PROCESSES];
+
+// Pointer to the currently running process
+task_struct_t* current_task = NULL;
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
@@ -160,6 +162,23 @@ void exec_program(int argc, char* argv[]) {
         }
     }
 
+    // Find a free slot in the process table
+    task_struct_t* new_task = NULL;
+    int new_pid = -1;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (process_table[i].state == TASK_STATE_UNUSED) {
+            new_task = &process_table[i];
+            new_pid = i;
+            break;
+        }
+    }
+
+    if (!new_task) {
+        print_string("run: No free processes left.\n");
+        free(file_buffer);
+        return;
+    }
+
     // Allocate a separate, aligned stack for the user program.
     void* user_stack = malloc(USER_STACK_SIZE);
     if (!user_stack) {
@@ -167,8 +186,12 @@ void exec_program(int argc, char* argv[]) {
         free(file_buffer);
         return;
     }
-    // Track the stack so we can free it on exit.
-    current_user_stack = user_stack;
+
+    // Configure the new process's PCB
+    new_task->pid = new_pid;
+    new_task->state = TASK_STATE_RUNNING;
+    strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
+    new_task->user_stack = user_stack; // Store stack in the PCB
 
     // Stack Setup
     // Work from the end of the stack buffer down to place arguments.
@@ -246,11 +269,20 @@ void exec_program(int argc, char* argv[]) {
     qemu_debug_string("\n");
 
     switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
-
-    // This code is now truly unreachable, but for good practice,
-    // if it were to be reached, we'd clean up.
-    qemu_debug_string("PROCESS: Returned from user mode unexpectedly.\n");
-    free(user_stack);
-    current_user_stack = NULL;
 }
 
+// Initializes the process table and creates the first kernel task.
+void process_init() {
+    // Clear the entire process table
+    memset(process_table, 0, sizeof(process_table));
+
+    // Initialize the first task (the kernel/shell itself)
+    task_struct_t* shell_task = &process_table[0];
+    shell_task->pid = 0;
+    shell_task->state = TASK_STATE_RUNNING;
+    strncpy(shell_task->name, "shell", PROCESS_NAME_LEN);
+    shell_task->user_stack = NULL; // The shell runs in kernel mode, no user stack
+
+    // Set the first task as the currently running one
+    current_task = shell_task;
+}

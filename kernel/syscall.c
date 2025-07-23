@@ -10,14 +10,15 @@
 #include <kernel/cpu/tss.h>     // tss_entry
 #include <kernel/memory.h>      // free()
 #include <kernel/debug.h>       // debug print
+#include <kernel/cpu/process.h> 
 
 #define MAX_SYSCALLS 32
 
 // We need access to the TSS to get the kernel stack pointer.
 extern struct tss_entry_struct tss_entry;
 
-// A temporary global to track the stack we need to free.
-extern void* current_user_stack;
+// We need access to the current task pointer
+extern task_struct_t* current_task; 
 
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
@@ -39,11 +40,20 @@ static void sys_getchar(registers_t *r) {
 // Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
-    // Clean up resources (the user stack).
-    if (current_user_stack) {
-        qemu_debug_string("SYSCALL: Freeing user stack.\n");
-        free(current_user_stack);
-        current_user_stack = NULL;
+
+    // Clean up resources using the PCB
+    if (current_task && current_task->user_stack) {
+        qemu_debug_string("SYSCALL: Freeing user stack for PID ");
+        qemu_debug_hex(current_task->pid);
+        qemu_debug_string(".\n");
+
+        free(current_task->user_stack);
+        current_task->user_stack = NULL;
+    }
+
+    // Mark the task as finished
+    if (current_task) {
+        current_task->state = TASK_STATE_ZOMBIE;
     }
 
     qemu_debug_string("SYSCALL: Preparing return to shell...\n");

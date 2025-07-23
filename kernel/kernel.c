@@ -36,6 +36,10 @@ void kmain() {
     tss_install(); 
     qemu_debug_string("tss_inst ");
 
+    // Initialize the process table BEFORE syscalls and interrupts
+    process_init();
+    qemu_debug_string("proc_init ");
+
     // Syscall install after TSS
     syscall_install();
     qemu_debug_string("sysc_inst ");
