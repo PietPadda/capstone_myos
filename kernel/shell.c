@@ -8,7 +8,7 @@
 #include <kernel/memory.h> // for dynamic heap memory
 #include <kernel/disk.h> // for disk sector read
 #include <kernel/fs.h> // for FAT12 entries
-#include <kernel/cpu/process.h> // User Mode Switch
+#include <kernel/cpu/process.h> // User Mode Switch & MAX_ARGS
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 
 

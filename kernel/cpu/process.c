@@ -126,6 +126,7 @@ void exec_program(int argc, char* argv[]) {
     // Track the stack so we can free it on exit.
     current_user_stack = user_stack;
 
+    // Stack Setup
     // Use uint32_t for stack pointer arithmetic
     uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
 
@@ -161,7 +162,7 @@ void exec_program(int argc, char* argv[]) {
 
     // Jump to the program's entry point specified in the ELF header
     // Cast the final stack pointer back to void* for the function call
-    switch_to_user_mode((void*)header->entry, user_stack_top);
+    switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
 
     // This code is now truly unreachable, but for good practice,
     // if it were to be reached, we'd clean up.
