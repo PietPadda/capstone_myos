@@ -62,6 +62,12 @@ void kmain() {
     qemu_debug_string("pit_inst ");
 
     // clear the bios text
+    sleep(1500); // Pause for 2 seconds
+    clear_screen();
+
+    // print the boot screen
+    print_bootscreen();
+    sleep(3000); // Pause for 2 seconds
     clear_screen();
 
     // Initialize the filesystem driver. This must be done after memory

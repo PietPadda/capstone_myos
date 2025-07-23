@@ -34,6 +34,25 @@ void update_cursor(int row, int col) {
     port_byte_out(0x3D5, (unsigned char)(position & 0xFF));
 }
 
+// Prints a single character to the screen with a specific color.
+// NOTE: This does not handle scrolling or special characters like print_char does.
+// It is a simplified version for the boot screen.
+void print_char_color(char c, uint8_t color) {
+    if (c == '\n') {
+        cursor_row++;
+        cursor_col = 0;
+    } else {
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = c | (color << 8);
+        cursor_col++;
+    }
+
+    if (cursor_col >= 80) {
+        cursor_col = 0;
+        cursor_row++;
+    }
+    update_cursor(cursor_row, cursor_col);
+}
+
 void print_char(char c) {
     // Handle backspace
     if (c == '\b') {
@@ -117,4 +136,25 @@ void print_dec(uint32_t n) {
         print_dec(n / 10);
     }
     print_char((n % 10) + '0');
+}
+
+void print_bootscreen() {
+    // Light Blue on Black
+    uint8_t color = 0x09;
+
+    const char* pgos_art =
+        "\n"
+        "    ____  __________  _____\n"
+        "   / __ \/ ____/ __ \/ ___/\n"
+        "  / /_/ / / __/ / / /\__ \ \n"
+        " / ____/ /_/ / /_/ /___/ / \n"
+        "/_/    \____/\____//____/  \n"
+        "                           \n"
+        "  Welcome to Pieters's OS! \n";
+
+    int i = 0;
+    while (pgos_art[i]) {
+        print_char_color(pgos_art[i], color);
+        i++;
+    }
 }
