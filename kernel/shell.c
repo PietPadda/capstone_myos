@@ -11,9 +11,6 @@
 #include <kernel/cpu/process.h> // User Mode Switch
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 
-// These labels are defined in data.asm
-extern char file_start[];
-extern char file_end[];
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
@@ -27,7 +24,7 @@ void process_command();
 
 // Initialize the shell.
 void shell_init() {
-    // first prompt
+    cmd_index = 0; // Reset command index on shell restart
     print_string(PROMPT);
 }
 
@@ -66,49 +63,62 @@ void restart_shell() {
 
 // This function processes the completed command. 
 void process_command() {
+    // Trim leading whitespace
+    char* start = cmd_buffer;
+    while (*start == ' ') start++;
 
-    // command arg parsing
-    char* command = cmd_buffer;
-    char* argument = 0; // Starts as null
+    // Parse the command line into argc and argv
+    int argc = 0;
+    char* argv[MAX_ARGS];
+    char* current = start;
 
-    // Find the first space to separate command from argument
-    int i = 0;
-    while (command[i] != ' ' && command[i] != '\0') {
-        i++;
+    while (*current && argc < MAX_ARGS) {
+        argv[argc++] = current;
+        // Find the next space or the end of the string
+        while (*current && *current != ' ') {
+            current++;
+        }
+        // If we found a space, null-terminate it to end the argument
+        if (*current) {
+            *current++ = '\0';
+            // Skip any other spaces
+            while (*current == ' ') current++;
+        }
     }
 
-    if (command[i] == ' ') {
-        // If we found a space, null-terminate the command part
-        command[i] = '\0';
-        // And the argument starts right after
-        argument = command + i + 1;
+    // Handle empty or only-whitespace commands
+    if (argc == 0) {
+        cmd_index = 0;
+        print_string("\n");
+        print_string(PROMPT);
+        return;
     }
 
     // Command Handling
     print_string("\n");
 
     // help command
-    if (strcmp(cmd_buffer, "help") == 0) {
+    if (strcmp(argv[0], "help") == 0) {
         print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
 
     // cls command
-    } else if (strcmp(cmd_buffer, "cls") == 0) {
+    } else if (strcmp(argv[0], "cls") == 0) {
         clear_screen();
 
     // uptime command
-    } else if (strcmp(cmd_buffer, "uptime") == 0) {
+    } else if (strcmp(argv[0], "uptime") == 0) {
         // Our timer is set to 100Hz, so 100 ticks = 1 second
         print_string("Uptime (seconds): ");
         print_hex(timer_get_ticks() / 100);
 
     // reboot command
-    } else if (strcmp(cmd_buffer, "reboot") == 0) {
+    } else if (strcmp(argv[0], "reboot") == 0) {
         print_string("Rebooting system...");
         // Send the reboot command to the keyboard controller
         port_byte_out(0x64, 0xFE);
 
     // memtest command
-    } else if (strcmp(cmd_buffer, "memtest") == 0) {
+    } else if (strcmp(argv[0], "memtest") == 0) {
         print_string("Allocating block A (16 bytes)...");
         void* block_a = malloc(16);
         print_string("\n  A is at: "); print_hex((uint32_t)block_a);
@@ -126,9 +136,9 @@ void process_command() {
         print_string("\n(Note: C should have the same address as A)");
 
     // cat command
-    } else if (strcmp(command, "cat") == 0) {
-        if (argument) {
-            fat_dir_entry_t* file_entry = fs_find_file(argument);
+    } else if (strcmp(argv[0], "cat") == 0) {
+        if (argc > 1) {
+            fat_dir_entry_t* file_entry = fs_find_file(argv[1]);
             if (file_entry) {
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
                 if (buffer) {
@@ -139,14 +149,14 @@ void process_command() {
                 }
             } else {
                 print_string("File not found: ");
-                print_string(argument);
+                print_string(argv[1]);
             }
         } else {
             print_string("Usage: cat <filename>");
         }
 
     // disktest command
-    } else if (strcmp(command, "disktest") == 0) {
+    } else if (strcmp(argv[0], "disktest") == 0) {
         print_string("Reading LBA 19 (root dir)...\n");
 
         // Allocate a 512-byte buffer for the sector data
@@ -164,11 +174,11 @@ void process_command() {
         // Note: We don't free the buffer because we haven't written free() yet!
 
     // sleep command
-    } else if (strcmp(command, "sleep") == 0) {
-        if (argument) {
-            int ms = atoi(argument);
+    } else if (strcmp(argv[0], "sleep") == 0) {
+        if (argc > 1) {
+            int ms = atoi(argv[1]);
             print_string("Sleeping for ");
-            print_string(argument);
+            print_string(argv[1]);
             print_string("ms...");
             sleep(ms);
         } else {
@@ -176,7 +186,7 @@ void process_command() {
         }
 
     // ls command
-    } else if (strcmp(command, "ls") == 0) {
+    } else if (strcmp(argv[0], "ls") == 0) {
         port_byte_out(0xE9, 'E'); // Entered 'ls' command handler
         // These labels are defined in fs.c
         extern uint8_t* root_directory_buffer;
@@ -222,7 +232,7 @@ void process_command() {
         port_byte_out(0xE9, 'G'); // Finished 'ls' command handler
 
     // dump command
-    } else if (strcmp(command, "dump") == 0) {
+    } else if (strcmp(argv[0], "dump") == 0) {
         extern uint8_t* root_directory_buffer;
         print_string("\nRoot Directory Buffer Dump:\n");
         for (int i = 0; i < 128; i++) { // Print the first 128 bytes
@@ -231,9 +241,9 @@ void process_command() {
         }
 
     // run command
-    } else if (strcmp(command, "run") == 0) {
-        if (argument) {
-            exec_program(argument);
+    } else if (strcmp(argv[0], "run") == 0) {
+        if (argc > 1) {
+            exec_program(argc, argv);
         } else {
             print_string("Usage: run <filename>");
         }
@@ -245,12 +255,12 @@ void process_command() {
         print_string("\n");
     }
     
-
-    // For any command that finishes, reset the buffer and print a new prompt.
+    // Reset for the next command and print a new prompt.
+    // This is only reached for built-in commands that don't launch a program.
     cmd_index = 0;
 
     // Only print a newline for spacing if the command wasn't "cls".
-    if (strcmp(cmd_buffer, "cls") != 0) {
+    if (strcmp(argv[0], "cls") != 0) {
         print_string("\n");
     }
 

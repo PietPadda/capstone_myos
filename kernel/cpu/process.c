@@ -6,6 +6,7 @@
 #include <kernel/memory.h>  // For malloc/free
 #include <kernel/vga.h>     // For printing error messages
 #include <kernel/elf.h>     // ELF loader struc
+#include <kernel/string.h> // For memcpy and strlen
 
 // We'll use a global to track the current user stack.
 // In a multitasking OS, this would be part of a process structure.
@@ -55,7 +56,15 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process
-void exec_program(const char* filename) {
+void exec_program(int argc, char* argv[]) {
+    // The program to run is now passed as the first argument in the list.
+    // e.g., in "run args.elf hello", argv[1] is "args.elf"
+    const char* filename = argv[1]; 
+    if (!filename) {
+        print_string("run: Missing filename.");
+        return;
+    }
+
     // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
     if (!file_entry) {
@@ -117,12 +126,41 @@ void exec_program(const char* filename) {
     // Track the stack so we can free it on exit.
     current_user_stack = user_stack;
 
-    void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
+    // Use uint32_t for stack pointer arithmetic
+    uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
+
+    // Place argc/argv onto the user stack
+    // Copy argument strings to the top of the stack
+    char* argv_strings_user[MAX_ARGS];
+    for (int i = 0; i < argc; i++) {
+        user_stack_top -= (strlen(argv[i]) + 1);
+        argv_strings_user[i] = (char*)user_stack_top;
+        memcpy(argv_strings_user[i], argv[i], strlen(argv[i]) + 1);
+    }
+
+    // Align stack to 4 bytes
+    user_stack_top &= ~0x3;
+
+    // Push the argv array (pointers to the strings)
+    char** argv_user;
+    user_stack_top -= sizeof(char*) * (argc + 1); // +1 for NULL terminator
+    argv_user = (char**)user_stack_top;
+    for (int i = 0; i < argc; i++) {
+        argv_user[i] = argv_strings_user[i];
+    }
+    argv_user[argc] = NULL; // The list is NULL-terminated
+
+    // Push argc and a pointer to argv (the arguments for main)
+    user_stack_top -= sizeof(char**);
+    *((char***)user_stack_top) = argv_user;
+    user_stack_top -= sizeof(int);
+    *((int*)user_stack_top) = argc;
 
     // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
 
     // Jump to the program's entry point specified in the ELF header
+    // Cast the final stack pointer back to void* for the function call
     switch_to_user_mode((void*)header->entry, user_stack_top);
 
     // This code is now truly unreachable, but for good practice,

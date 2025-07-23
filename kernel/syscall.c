@@ -8,6 +8,7 @@
 #include <kernel/io.h>          // port_byte_out()
 #include <kernel/shell.h>       // restart_shell()
 #include <kernel/cpu/tss.h>     // tss_entry
+#include <kernel/memory.h>      // free()
 
 #define MAX_SYSCALLS 32
 

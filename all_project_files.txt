@@ -252,6 +252,9 @@ void shell_init();
 // Handles a single character of input.
 void shell_handle_input(char c);
 
+void shell_run();
+void restart_shell();
+
 #endif// myos/include/kernel/string.h
 
 #ifndef STRING_H
@@ -521,8 +524,10 @@ void sleep(uint32_t ms);
 #ifndef PROCESS_H
 #define PROCESS_H
 
+#define MAX_ARGS 16 // Define the constant here
+
 void switch_to_user_mode(void* entry_point, void* stack_ptr); // takes  entry point AND user stack pointer
-void exec_program(const char* filename);
+void exec_program(int argc, char* argv[]);
 
 #endif// myos/include/kernel/cpu/tss.h
 
@@ -567,7 +572,31 @@ extern struct tss_entry_struct tss_entry;
 
 void tss_install();
 
-#endif// myos/userspace/programs/user_test.c
+#endif// myos/userspace/programs/args.c
+
+#include <syscall.h>
+
+// function signature for our main entry point
+void user_program_main(int argc, char* argv[]) {
+    syscall_print("Program received arguments:\n");
+
+    char buf[2] = {0}; // For printing numbers
+    buf[0] = argc + '0';
+    syscall_print("  argc: ");
+    syscall_print(buf);
+    syscall_print("\n");
+
+    for (int i = 0; i < argc; i++) {
+        syscall_print("  argv[");
+        buf[0] = i + '0';
+        syscall_print(buf);
+        syscall_print("]: ");
+        syscall_print(argv[i]);
+        syscall_print("\n");
+    }
+
+    syscall_exit();
+}// myos/userspace/programs/user_test.c
 
 #include <syscall.h>
 
@@ -660,12 +689,20 @@ SECTIONS {
 
 #include <kernel/syscall.h>
 #include <kernel/vga.h>
-#include <kernel/exceptions.h> // For the full registers_t definition
-#include <kernel/keyboard.h> // keyboard input
-#include <kernel/timer.h>      // For sleep()
-#include <kernel/io.h>         // For port_byte_out()
+#include <kernel/exceptions.h>  // registers_t definition
+#include <kernel/keyboard.h>    // keyboard input
+#include <kernel/timer.h>       // sleep()
+#include <kernel/io.h>          // port_byte_out()
+#include <kernel/shell.h>       // restart_shell()
+#include <kernel/cpu/tss.h>     // tss_entry
 
 #define MAX_SYSCALLS 32
+
+// We need access to the TSS to get the kernel stack pointer.
+extern struct tss_entry_struct tss_entry;
+
+// A temporary global to track the stack we need to free.
+extern void* current_user_stack;
 
 // The system call dispatch table
 static syscall_t syscall_table[MAX_SYSCALLS];
@@ -684,11 +721,21 @@ static void sys_getchar(registers_t *r) {
     r->eax = c;
 }
 
-// Syscall 3: Exit the current program. For now, we'll just reboot.
+// Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
-    print_string("\nProgram exited. Rebooting system...");
-    sleep(1000); // Wait 1 second for the message to be visible
-    port_byte_out(0x64, 0xFE);
+    // Clean up resources (the user stack).
+    if (current_user_stack) {
+        free(current_user_stack);
+        current_user_stack = NULL;
+    }
+
+    // Prepare to return to the kernel shell instead of the user program.
+    // We do this by modifying the stack frame that the `iret` instruction will use.
+    r->eip = (uint32_t)restart_shell;
+    r->cs = 0x08;      // Kernel Code Segment
+    r->ss = 0x10;      // Kernel Stack Segment
+    r->useresp = tss_entry.esp0;
+    r->eflags = 0x202; // Interrupts enabled (IF = 1), plus a mandatory bit.
 }
 
 void syscall_install() {
@@ -1091,6 +1138,11 @@ size_t strlen(const char* str) {
 #include <kernel/memory.h>  // For malloc/free
 #include <kernel/vga.h>     // For printing error messages
 #include <kernel/elf.h>     // ELF loader struc
+#include <kernel/string.h> // For memcpy and strlen
+
+// We'll use a global to track the current user stack.
+// In a multitasking OS, this would be part of a process structure.
+void* current_user_stack = NULL;
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
@@ -1136,7 +1188,15 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process
-void exec_program(const char* filename) {
+void exec_program(int argc, char* argv[]) {
+    // The program to run is now passed as the first argument in the list.
+    // e.g., in "run args.elf hello", argv[1] is "args.elf"
+    const char* filename = argv[1]; 
+    if (!filename) {
+        print_string("run: Missing filename.");
+        return;
+    }
+
     // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
     if (!file_entry) {
@@ -1195,16 +1255,50 @@ void exec_program(const char* filename) {
         free(file_buffer);
         return;
     }
-    void* user_stack_top = (void*)(((uint32_t)user_stack + USER_STACK_SIZE) & ~0x3);
+    // Track the stack so we can free it on exit.
+    current_user_stack = user_stack;
+
+    // Use uint32_t for stack pointer arithmetic
+    uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
+
+    // Place argc/argv onto the user stack
+    // Copy argument strings to the top of the stack
+    char* argv_strings_user[MAX_ARGS];
+    for (int i = 0; i < argc; i++) {
+        user_stack_top -= (strlen(argv[i]) + 1);
+        argv_strings_user[i] = (char*)user_stack_top;
+        memcpy(argv_strings_user[i], argv[i], strlen(argv[i]) + 1);
+    }
+
+    // Align stack to 4 bytes
+    user_stack_top &= ~0x3;
+
+    // Push the argv array (pointers to the strings)
+    char** argv_user;
+    user_stack_top -= sizeof(char*) * (argc + 1); // +1 for NULL terminator
+    argv_user = (char**)user_stack_top;
+    for (int i = 0; i < argc; i++) {
+        argv_user[i] = argv_strings_user[i];
+    }
+    argv_user[argc] = NULL; // The list is NULL-terminated
+
+    // Push argc and a pointer to argv (the arguments for main)
+    user_stack_top -= sizeof(char**);
+    *((char***)user_stack_top) = argv_user;
+    user_stack_top -= sizeof(int);
+    *((int*)user_stack_top) = argc;
 
     // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
 
     // Jump to the program's entry point specified in the ELF header
+    // Cast the final stack pointer back to void* for the function call
     switch_to_user_mode((void*)header->entry, user_stack_top);
 
-    // This code is unreachable if the switch is successful, but is good practice
+    // This code is now truly unreachable, but for good practice,
+    // if it were to be reached, we'd clean up.
     free(user_stack);
+    current_user_stack = NULL;
 }
 
 // myos/kernel/cpu/tss.c
@@ -2182,9 +2276,6 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
 #include <kernel/cpu/process.h> // User Mode Switch
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 
-// These labels are defined in data.asm
-extern char file_start[];
-extern char file_end[];
 
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
@@ -2198,7 +2289,7 @@ void process_command();
 
 // Initialize the shell.
 void shell_init() {
-    // first prompt
+    cmd_index = 0; // Reset command index on shell restart
     print_string(PROMPT);
 }
 
@@ -2227,51 +2318,72 @@ void shell_run() {
     }
 }
 
+// cleanly restart the shell after a program exits.
+void restart_shell() {
+    // We are now the main thread of execution.
+    // Re-initialize the shell and enter its main loop.
+    shell_init(); 
+    shell_run();  
+}
+
 // This function processes the completed command. 
 void process_command() {
+    // Trim leading whitespace
+    char* start = cmd_buffer;
+    while (*start == ' ') start++;
 
-    // command arg parsing
-    char* command = cmd_buffer;
-    char* argument = 0; // Starts as null
+    // Parse the command line into argc and argv
+    int argc = 0;
+    char* argv[MAX_ARGS];
+    char* current = start;
 
-    // Find the first space to separate command from argument
-    int i = 0;
-    while (command[i] != ' ' && command[i] != '\0') {
-        i++;
+    while (*current && argc < MAX_ARGS) {
+        argv[argc++] = current;
+        // Find the next space or the end of the string
+        while (*current && *current != ' ') {
+            current++;
+        }
+        // If we found a space, null-terminate it to end the argument
+        if (*current) {
+            *current++ = '\0';
+            // Skip any other spaces
+            while (*current == ' ') current++;
+        }
     }
 
-    if (command[i] == ' ') {
-        // If we found a space, null-terminate the command part
-        command[i] = '\0';
-        // And the argument starts right after
-        argument = command + i + 1;
+    // Handle empty or only-whitespace commands
+    if (argc == 0) {
+        cmd_index = 0;
+        print_string("\n");
+        print_string(PROMPT);
+        return;
     }
 
     // Command Handling
     print_string("\n");
 
     // help command
-    if (strcmp(cmd_buffer, "help") == 0) {
+    if (strcmp(argv[0], "help") == 0) {
         print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n\n");
 
     // cls command
-    } else if (strcmp(cmd_buffer, "cls") == 0) {
+    } else if (strcmp(argv[0], "cls") == 0) {
         clear_screen();
 
     // uptime command
-    } else if (strcmp(cmd_buffer, "uptime") == 0) {
+    } else if (strcmp(argv[0], "uptime") == 0) {
         // Our timer is set to 100Hz, so 100 ticks = 1 second
         print_string("Uptime (seconds): ");
         print_hex(timer_get_ticks() / 100);
 
     // reboot command
-    } else if (strcmp(cmd_buffer, "reboot") == 0) {
+    } else if (strcmp(argv[0], "reboot") == 0) {
         print_string("Rebooting system...");
         // Send the reboot command to the keyboard controller
         port_byte_out(0x64, 0xFE);
 
     // memtest command
-    } else if (strcmp(cmd_buffer, "memtest") == 0) {
+    } else if (strcmp(argv[0], "memtest") == 0) {
         print_string("Allocating block A (16 bytes)...");
         void* block_a = malloc(16);
         print_string("\n  A is at: "); print_hex((uint32_t)block_a);
@@ -2289,9 +2401,9 @@ void process_command() {
         print_string("\n(Note: C should have the same address as A)");
 
     // cat command
-    } else if (strcmp(command, "cat") == 0) {
-        if (argument) {
-            fat_dir_entry_t* file_entry = fs_find_file(argument);
+    } else if (strcmp(argv[0], "cat") == 0) {
+        if (argc > 1) {
+            fat_dir_entry_t* file_entry = fs_find_file(argv[1]);
             if (file_entry) {
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
                 if (buffer) {
@@ -2302,14 +2414,14 @@ void process_command() {
                 }
             } else {
                 print_string("File not found: ");
-                print_string(argument);
+                print_string(argv[1]);
             }
         } else {
             print_string("Usage: cat <filename>");
         }
 
     // disktest command
-    } else if (strcmp(command, "disktest") == 0) {
+    } else if (strcmp(argv[0], "disktest") == 0) {
         print_string("Reading LBA 19 (root dir)...\n");
 
         // Allocate a 512-byte buffer for the sector data
@@ -2327,11 +2439,11 @@ void process_command() {
         // Note: We don't free the buffer because we haven't written free() yet!
 
     // sleep command
-    } else if (strcmp(command, "sleep") == 0) {
-        if (argument) {
-            int ms = atoi(argument);
+    } else if (strcmp(argv[0], "sleep") == 0) {
+        if (argc > 1) {
+            int ms = atoi(argv[1]);
             print_string("Sleeping for ");
-            print_string(argument);
+            print_string(argv[1]);
             print_string("ms...");
             sleep(ms);
         } else {
@@ -2339,7 +2451,7 @@ void process_command() {
         }
 
     // ls command
-    } else if (strcmp(command, "ls") == 0) {
+    } else if (strcmp(argv[0], "ls") == 0) {
         port_byte_out(0xE9, 'E'); // Entered 'ls' command handler
         // These labels are defined in fs.c
         extern uint8_t* root_directory_buffer;
@@ -2385,7 +2497,7 @@ void process_command() {
         port_byte_out(0xE9, 'G'); // Finished 'ls' command handler
 
     // dump command
-    } else if (strcmp(command, "dump") == 0) {
+    } else if (strcmp(argv[0], "dump") == 0) {
         extern uint8_t* root_directory_buffer;
         print_string("\nRoot Directory Buffer Dump:\n");
         for (int i = 0; i < 128; i++) { // Print the first 128 bytes
@@ -2394,9 +2506,9 @@ void process_command() {
         }
 
     // run command
-    } else if (strcmp(command, "run") == 0) {
-        if (argument) {
-            exec_program(argument);
+    } else if (strcmp(argv[0], "run") == 0) {
+        if (argc > 1) {
+            exec_program(argc, argv);
         } else {
             print_string("Usage: run <filename>");
         }
@@ -2408,12 +2520,12 @@ void process_command() {
         print_string("\n");
     }
     
-
-    // For any command that finishes, reset the buffer and print a new prompt.
+    // Reset for the next command and print a new prompt.
+    // This is only reached for built-in commands that don't launch a program.
     cmd_index = 0;
 
     // Only print a newline for spacing if the command wasn't "cls".
-    if (strcmp(cmd_buffer, "cls") != 0) {
+    if (strcmp(argv[0], "cls") != 0) {
         print_string("\n");
     }
 
