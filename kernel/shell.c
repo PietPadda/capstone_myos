@@ -10,6 +10,7 @@
 #include <kernel/fs.h> // for FAT12 entries
 #include <kernel/cpu/process.h> // User Mode Switch & MAX_ARGS
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
+#include <kernel/debug.h> // debug printing
 
 
 #define PROMPT "PGOS> "
@@ -24,6 +25,7 @@ void process_command();
 
 // Initialize the shell.
 void shell_init() {
+    memset(cmd_buffer, 0, MAX_CMD_LEN); // Clear the command buffer
     cmd_index = 0; // Reset command index on shell restart
     print_string(PROMPT);
 }
@@ -37,6 +39,7 @@ void shell_handle_input(char c) {
     } else if (c == '\b') {
         if (cmd_index > 0) {
             cmd_index--;
+            cmd_buffer[cmd_index] = '\0'; // Erase the character from our buffer
             print_char(c); // Echo backspace
         }
     } else if (cmd_index < MAX_CMD_LEN - 1) {
@@ -63,6 +66,7 @@ void restart_shell() {
 
 // This function processes the completed command. 
 void process_command() {
+    qemu_debug_string("SHELL:\nProcessing command...");
     // Trim leading whitespace
     char* start = cmd_buffer;
     while (*start == ' ') start++;
@@ -70,19 +74,41 @@ void process_command() {
     // Parse the command line into argc and argv
     int argc = 0;
     char* argv[MAX_ARGS];
-    char* current = start;
+    // Zero out the argv array to prevent using garbage pointers+    
+    // for arguments that don't exist.
+    memset(argv, 0, sizeof(char*) * MAX_ARGS);
 
-    while (*current && argc < MAX_ARGS) {
-        argv[argc++] = current;
-        // Find the next space or the end of the string
-        while (*current && *current != ' ') {
-            current++;
+    char* word_start = start;
+    while (*word_start && argc < MAX_ARGS) {
+        // We have the start of a word. Find its end.
+        char* word_end = word_start;
+        while (*word_end && *word_end != ' ') {
+            word_end++;
         }
-        // If we found a space, null-terminate it to end the argument
-        if (*current) {
-            *current++ = '\0';
-            // Skip any other spaces
-            while (*current == ' ') current++;
+
+        // Store the pointer to the start of the word.
+        argv[argc++] = word_start;
+        qemu_debug_string("SHELL: Parsed arg -> ");
+        qemu_debug_string(word_start);
+        qemu_debug_string("\n");
+
+        // Check if we are at the end of the entire command string.
+        if (*word_end == ' ') {
+            // We found a space, so this is not the last word.
+            // Terminate the current word by overwriting the space.
+            *word_end = '\0';
+            
+            // The next word starts after this space.
+            word_start = word_end + 1;
+            
+            // Skip any additional spaces to find the true start.
+            while (*word_start == ' ') {
+                word_start++;
+            }
+        } else {
+            // We hit the end of the line ('\0'), which means we just
+            // processed the last argument. We can stop parsing now.
+            break;
         }
     }
 
@@ -187,7 +213,6 @@ void process_command() {
 
     // ls command
     } else if (strcmp(argv[0], "ls") == 0) {
-        port_byte_out(0xE9, 'E'); // Entered 'ls' command handler
         // These labels are defined in fs.c
         extern uint8_t* root_directory_buffer;
         extern uint32_t root_directory_size;
@@ -212,7 +237,6 @@ void process_command() {
             if ((entry->attributes & 0x0F) == 0x0F) {
                 continue;
             }
-            port_byte_out(0xE9, 'F'); // Found a valid file entry to list
 
             // Skip the Volume Label entry
             if (entry->attributes & 0x08) {
@@ -229,7 +253,6 @@ void process_command() {
             print_string("  ");  print_hex(entry->file_size);
             print_string("\n");
         }
-        port_byte_out(0xE9, 'G'); // Finished 'ls' command handler
 
     // dump command
     } else if (strcmp(argv[0], "dump") == 0) {
@@ -243,7 +266,11 @@ void process_command() {
     // run command
     } else if (strcmp(argv[0], "run") == 0) {
         if (argc > 1) {
-            exec_program(argc, argv);
+            qemu_debug_string("SHELL: 'run' command detected. Calling exec_program...\n");
+            // Pass the adjusted arguments to the new process.
+            // argc-1: Don't count the "run" command itself.
+            // &argv[1]: Start the argument list from the program name.
+            exec_program(argc - 1, &argv[1]);
         } else {
             print_string("Usage: run <filename>");
         }

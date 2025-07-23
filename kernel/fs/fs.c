@@ -18,7 +18,6 @@ void init_fs() {
     uint8_t* buffer = (uint8_t*)malloc(512);
     read_disk_sector(0, buffer);
     bpb = (fat12_bpb_t*)buffer;
-    port_byte_out(0xE9, '1'); // BPB should be read now
 
     // Read the FAT into memory
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
@@ -34,19 +33,15 @@ void init_fs() {
     if (root_directory_size % bpb->bytes_per_sector > 0) {
         root_dir_size_sectors++;
     }
-    port_byte_out(0xE9, '2'); // Root directory parameters calculated
 
     // calc starting sector of data area
     data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
 
     // Read the entire root directory into a new buffer
     root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
-    port_byte_out(0xE9, '3'); // About to start reading root dir sectors
     for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
         read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
-        port_byte_out(0xE9, '.'); // Print a dot for each sector read
     }
-    port_byte_out(0xE9, '4'); // FINISHED filesystem init */
 }
 
 uint16_t fs_get_fat_entry(uint16_t cluster) {

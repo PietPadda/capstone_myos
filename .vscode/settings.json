@@ -10,6 +10,9 @@
         "vga.h": "c",
         "disk.h": "c",
         "keyboard.h": "c",
-        "irq.h": "c"
+        "irq.h": "c",
+        "fs.h": "c",
+        "memory.h": "c",
+        "debug.h": "c"
     }
 }

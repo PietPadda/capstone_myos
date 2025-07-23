@@ -13,7 +13,6 @@ static void wait_disk_ready() {
 }
 
 void read_disk_sector(uint32_t lba, uint8_t* buffer) {
-    port_byte_out(0xE9, 'A'); // START of disk read
     wait_disk_ready();
 
     // Wait for the drive to settle by reading the status port 4 times.
@@ -43,15 +42,12 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
     
     // Send the READ SECTORS command
     port_byte_out(0x1F7, 0x20);
-    port_byte_out(0xE9, 'B'); // Read command sent
-
 
     // A more robust wait loop that also checks for errors.
     while (1) {
         uint8_t status = port_byte_in(0x1F7);
 
         if (status & 0x01) { // Is Bit 0 (ERR) set?
-            port_byte_out(0xE9, 'X'); // Print 'X' for ERROR
             // In a real OS, we'd read the error port and handle it.
             // For now, we just stop.
             return;
@@ -64,16 +60,13 @@ void read_disk_sector(uint32_t lba, uint8_t* buffer) {
             }
         }
     }
-    port_byte_out(0xE9, 'C'); // Disk is ready (DRQ is set)
 
     // Read 256 words (512 bytes) from the data port into the buffer
     for (int i = 0; i < 256; i++) {
         ((uint16_t*)buffer)[i] = port_word_in(0x1F0);
     }
-    port_byte_out(0xE9, 'D'); // FINISHED disk read
 
     // Reading the status port after a read command acknowledges the interrupt,
     // allowing the next command to be processed.
     port_byte_in(0x1F7);
-    port_byte_out(0xE9, 'E'); // debug
 }

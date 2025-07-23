@@ -7,6 +7,7 @@
 #include <kernel/vga.h>     // For printing error messages
 #include <kernel/elf.h>     // ELF loader struc
 #include <kernel/string.h> // For memcpy and strlen
+#include <kernel/debug.h>   // debug print
 
 // We'll use a global to track the current user stack.
 // In a multitasking OS, this would be part of a process structure.
@@ -18,6 +19,44 @@ extern struct tss_entry_struct tss_entry;
 // This is the function that performs the context switch to user mode.
 // It sets up the stack for the IRET instruction and jumps.
 void switch_to_user_mode(void* entry_point, void* stack_ptr) {
+    uint32_t current_cs, current_ds, current_ss, current_eflags;
+    
+    // Use inline assembly to get the current state of the CPU.
+    __asm__ __volatile__ (
+        "mov %%cs, %0;"
+        "mov %%ds, %1;"
+        "mov %%ss, %2;"
+        "pushfl;"
+        "popl %3;"
+        : "=r"(current_cs), "=r"(current_ds), "=r"(current_ss), "=r"(current_eflags)
+        :
+        : "memory"
+    );
+
+    // Now we can print the *actual* values to the debug terminal.
+    qemu_debug_string("IRET_DEBUG: C variables are: EIP=");
+    qemu_debug_hex((uint32_t)entry_point);
+    qemu_debug_string(", ESP=");
+    qemu_debug_hex((uint32_t)stack_ptr);
+    qemu_debug_string("\n");
+
+    qemu_debug_string("IRET_DEBUG: Current kernel segment registers: CS=");
+    qemu_debug_hex(current_cs);
+    qemu_debug_string(", DS=");
+    qemu_debug_hex(current_ds);
+    qemu_debug_string(", SS=");
+    qemu_debug_hex(current_ss);
+    qemu_debug_string(", EFLAGS=");
+    qemu_debug_hex(current_eflags);
+    qemu_debug_string("\n");
+
+    qemu_debug_string("IRET_DEBUG: About to switch to user mode (ring 3) with:\n");
+    qemu_debug_string("IRET_DEBUG: SS=0x23, ESP=");
+    qemu_debug_hex((uint32_t)stack_ptr);
+    qemu_debug_string(", EFLAGS=0x202, CS=0x1B, EIP=");
+    qemu_debug_hex((uint32_t)entry_point);
+    qemu_debug_string("\n");
+    
     __asm__ __volatile__ (
         "cli;"                  // Disable interrupts.
 
@@ -57,13 +96,17 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process
 void exec_program(int argc, char* argv[]) {
-    // The program to run is now passed as the first argument in the list.
-    // e.g., in "run args.elf hello", argv[1] is "args.elf"
-    const char* filename = argv[1]; 
-    if (!filename) {
-        print_string("run: Missing filename.");
-        return;
+    qemu_debug_string("PROCESS: Entering exec_program.\n");
+    qemu_debug_string("PROCESS: Filename is -> ");
+    qemu_debug_string(argv[0]);
+    qemu_debug_string("\n");
+    // The shell has already processed the 'run' command.
+    // argv[0] is now the filename of the program to execute.
+    if (argc == 0) {
+        print_string("run: Missing filename.\n");
+         return;
     }
+    const char* filename = argv[0];
 
     // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
@@ -89,6 +132,7 @@ void exec_program(int argc, char* argv[]) {
         free(file_buffer);
         return;
     }
+    qemu_debug_string("PROCESS: ELF loaded successfully.\n");
 
     // Locate the program header table using the offset from the main heade
     Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
@@ -127,33 +171,41 @@ void exec_program(int argc, char* argv[]) {
     current_user_stack = user_stack;
 
     // Stack Setup
-    // Use uint32_t for stack pointer arithmetic
+    // Work from the end of the stack buffer down to place arguments.
     uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
 
-    // Place argc/argv onto the user stack
-    // Copy argument strings to the top of the stack
-    char* argv_strings_user[MAX_ARGS];
-    for (int i = 0; i < argc; i++) {
-        user_stack_top -= (strlen(argv[i]) + 1);
-        argv_strings_user[i] = (char*)user_stack_top;
-        memcpy(argv_strings_user[i], argv[i], strlen(argv[i]) + 1);
+    // Copy argument strings to the top of the stack.
+    // This creates a temporary buffer to hold the pointers to our strings on the user stack.
+    char* temp_argv_pointers[MAX_ARGS];
+
+    // Iterate backwards to place strings at lower addresses.
+    for (int i = argc - 1; i >= 0; i--) {
+        uint32_t len = strlen(argv[i]) + 1; // +1 for null terminator
+        user_stack_top -= len;
+        
+        // Copy the string data from the kernel's stack to the user's stack.
+        memcpy((void*)user_stack_top, argv[i], len);
+        
+        // Store the pointer to this new string in our temporary array.
+        temp_argv_pointers[i] = (char*)user_stack_top;
     }
 
-    // Align stack to 4 bytes
+    // Align the stack pointer to a 4-byte boundary for the argv array.
     user_stack_top &= ~0x3;
 
-    // Push the argv array (pointers to the strings)
-    char** argv_user;
+    // Push the argv array (pointers to the strings) onto the user stack.
     user_stack_top -= sizeof(char*) * (argc + 1); // +1 for NULL terminator
-    argv_user = (char**)user_stack_top;
-    for (int i = 0; i < argc; i++) {
-        argv_user[i] = argv_strings_user[i];
-    }
-    argv_user[argc] = NULL; // The list is NULL-terminated
+    char** argv_on_stack = (char**)user_stack_top;
 
-    // Push argc and a pointer to argv (the arguments for main)
+    // Copy the pointers from our temporary array to the new array on the user stack.
+    for (int i = 0; i < argc; i++) {
+        argv_on_stack[i] = temp_argv_pointers[i];
+    }
+    argv_on_stack[argc] = NULL; // Terminate the list with a NULL pointer
+
+    // Push the argc and the pointer to the argv array itself.
     user_stack_top -= sizeof(char**);
-    *((char***)user_stack_top) = argv_user;
+    *((char***)user_stack_top) = argv_on_stack;
     user_stack_top -= sizeof(int);
     *((int*)user_stack_top) = argc;
 
@@ -162,10 +214,42 @@ void exec_program(int argc, char* argv[]) {
 
     // Jump to the program's entry point specified in the ELF header
     // Cast the final stack pointer back to void* for the function call
+    qemu_debug_string("PROCESS: Final user_stack_top: ");
+    qemu_debug_hex(user_stack_top);
+    qemu_debug_string("\n");
+
+    qemu_debug_string("PROCESS: Program entry point: ");
+    qemu_debug_hex(header->entry);
+    qemu_debug_string("\n");
+    
+    // Check the values on the stack right before the switch
+    // The top of the stack should now be argc.
+    int* argc_ptr = (int*)user_stack_top;
+    qemu_debug_string("PROCESS: Argc on stack: ");
+    qemu_debug_hex(*argc_ptr);
+    qemu_debug_string("\n");
+    
+    // The next value should be the argv pointer
+    char*** argv_ptr_on_stack = (char***)(user_stack_top + sizeof(int));
+    qemu_debug_string("PROCESS: Argv on stack: ");
+    qemu_debug_hex((uint32_t)*argv_ptr_on_stack);
+    qemu_debug_string("\n");
+
+    // Jump to the program's entry point specified in the ELF header
+    qemu_debug_string("PROCESS: Dumping user stack contents before switch...\n");
+    // We'll dump the top 64 bytes, which should contain argc, argv,
+    // and the pointers to the argument strings.
+    qemu_debug_memdump((void*)user_stack_top, 64);
+
+    qemu_debug_string("PROCESS: Switching to user mode at entry point ");
+    qemu_debug_hex(header->entry);
+    qemu_debug_string("\n");
+
     switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
 
     // This code is now truly unreachable, but for good practice,
     // if it were to be reached, we'd clean up.
+    qemu_debug_string("PROCESS: Returned from user mode unexpectedly.\n");
     free(user_stack);
     current_user_stack = NULL;
 }

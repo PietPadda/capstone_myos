@@ -9,6 +9,7 @@
 #include <kernel/shell.h>       // restart_shell()
 #include <kernel/cpu/tss.h>     // tss_entry
 #include <kernel/memory.h>      // free()
+#include <kernel/debug.h>       // debug print
 
 #define MAX_SYSCALLS 32
 
@@ -37,12 +38,15 @@ static void sys_getchar(registers_t *r) {
 
 // Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
+    qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
     // Clean up resources (the user stack).
     if (current_user_stack) {
+        qemu_debug_string("SYSCALL: Freeing user stack.\n");
         free(current_user_stack);
         current_user_stack = NULL;
     }
 
+    qemu_debug_string("SYSCALL: Preparing return to shell...\n");
     // Prepare to return to the kernel shell instead of the user program.
     // We do this by modifying the stack frame that the `iret` instruction will use.
     r->eip = (uint32_t)restart_shell;
