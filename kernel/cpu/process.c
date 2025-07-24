@@ -291,10 +291,12 @@ void process_init() {
     strncpy(process_table[0].name, "task_a", PROCESS_NAME_LEN);
     // Set up initial CPU state for IRET
     process_table[0].cpu_state.eip = (uint32_t)task_a;
-    process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
     process_table[0].cpu_state.cs = 0x08; // Kernel Code Segment
     process_table[0].cpu_state.ss = 0x10; // Kernel Data Segment
     process_table[0].cpu_state.eflags = 0x202; // Interrupts enabled
+    // Set BOTH stack pointers for this kernel task
+    process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
+    process_table[0].cpu_state.useresp = (uint32_t)stack_a + 4096;
 
     // --- Task B ---
     void* stack_b = malloc(4096);
@@ -302,10 +304,13 @@ void process_init() {
     process_table[1].state = TASK_STATE_RUNNING;
     strncpy(process_table[1].name, "task_b", PROCESS_NAME_LEN);
     process_table[1].cpu_state.eip = (uint32_t)task_b;
-    process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
+    
     process_table[1].cpu_state.cs = 0x08;
     process_table[1].cpu_state.ss = 0x10;
     process_table[1].cpu_state.eflags = 0x202;
+    // Set BOTH stack pointers for this kernel task
+    process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
+    process_table[1].cpu_state.useresp = (uint32_t)stack_b + 4096;
 
     // Set the first task as the currently running one
     current_task = &process_table[0];
