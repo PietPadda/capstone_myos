@@ -15,6 +15,10 @@ task_struct_t process_table[MAX_PROCESSES];
 // Pointer to the currently running process
 task_struct_t* current_task = NULL;
 
+// Let this file know about our new tasks
+extern void task_a(); 
+extern void task_b();
+
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 
@@ -279,7 +283,34 @@ void process_init() {
     // Clear the entire process table
     memset(process_table, 0, sizeof(process_table));
 
-    // Initialize the first task (the kernel/shell itself)
+    // --- Task A ---
+    // Allocate a kernel stack
+    void* stack_a = malloc(4096);
+    process_table[0].pid = 0;
+    process_table[0].state = TASK_STATE_RUNNING;
+    strncpy(process_table[0].name, "task_a", PROCESS_NAME_LEN);
+    // Set up initial CPU state for IRET
+    process_table[0].cpu_state.eip = (uint32_t)task_a;
+    process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
+    process_table[0].cpu_state.cs = 0x08; // Kernel Code Segment
+    process_table[0].cpu_state.ss = 0x10; // Kernel Data Segment
+    process_table[0].cpu_state.eflags = 0x202; // Interrupts enabled
+
+    // --- Task B ---
+    void* stack_b = malloc(4096);
+    process_table[1].pid = 1;
+    process_table[1].state = TASK_STATE_RUNNING;
+    strncpy(process_table[1].name, "task_b", PROCESS_NAME_LEN);
+    process_table[1].cpu_state.eip = (uint32_t)task_b;
+    process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
+    process_table[1].cpu_state.cs = 0x08;
+    process_table[1].cpu_state.ss = 0x10;
+    process_table[1].cpu_state.eflags = 0x202;
+
+    // Set the first task as the currently running one
+    current_task = &process_table[0];
+
+    /*// Initialize the first task (the kernel/shell itself)
     task_struct_t* shell_task = &process_table[0];
     shell_task->pid = 0;
     shell_task->state = TASK_STATE_RUNNING;
@@ -287,5 +318,45 @@ void process_init() {
     shell_task->user_stack = NULL; // The shell runs in kernel mode, no user stack
 
     // Set the first task as the currently running one
-    current_task = shell_task;
+    current_task = shell_task;*/
+}
+
+// This is our round-robin scheduler.
+void schedule(registers_t *r) {
+    // Save the CPU state of the current task
+    // We only copy the registers that are part of cpu_state_t
+    current_task->cpu_state.eax = r->eax;
+    current_task->cpu_state.ecx = r->ecx;
+    current_task->cpu_state.edx = r->edx;
+    current_task->cpu_state.ebx = r->ebx;
+    current_task->cpu_state.esp = r->esp;
+    current_task->cpu_state.ebp = r->ebp;
+    current_task->cpu_state.esi = r->esi;
+    current_task->cpu_state.edi = r->edi;
+    current_task->cpu_state.eip = r->eip;
+    current_task->cpu_state.cs = r->cs;
+    current_task->cpu_state.eflags = r->eflags;
+    current_task->cpu_state.useresp = r->useresp;
+    current_task->cpu_state.ss = r->ss;
+
+    // Find the next task to run
+    int next_pid = (current_task->pid + 1) % 2; // Simple switch between 0 and 1
+
+    // Update the current task pointer
+    current_task = &process_table[next_pid];
+
+    // Load the CPU state of the new task into the interrupt frame
+    r->eax = current_task->cpu_state.eax;
+    r->ecx = current_task->cpu_state.ecx;
+    r->edx = current_task->cpu_state.edx;
+    r->ebx = current_task->cpu_state.ebx;
+    r->esp = current_task->cpu_state.esp;
+    r->ebp = current_task->cpu_state.ebp;
+    r->esi = current_task->cpu_state.esi;
+    r->edi = current_task->cpu_state.edi;
+    r->eip = current_task->cpu_state.eip;
+    r->cs = current_task->cpu_state.cs;
+    r->eflags = current_task->cpu_state.eflags;
+    r->useresp = current_task->cpu_state.useresp;
+    r->ss = current_task->cpu_state.ss;
 }

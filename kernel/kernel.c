@@ -15,10 +15,31 @@
 #include <kernel/debug.h> // debug prints
 #include <kernel/cpu/process.h> // process_init()
 
+// Let kmain know about the new assembly function
+extern void start_multitasking(registers_t* cpu_state);
+
+// Tell this file about the process table defined in process.c
+extern task_struct_t process_table[MAX_PROCESSES];
 
 // Helper for debug prints
 static inline void outb(unsigned short port, unsigned char data) {
     __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
+}
+
+// Our first simple kernel task
+void task_a() {
+    while (1) {
+        print_char('A');
+        for (int i = 0; i < 10000000; i++) {} // Delay loop
+    }
+}
+
+// Our second simple kernel task
+void task_b() {
+    while (1) {
+        print_char('B');
+        for (int i = 0; i < 10000000; i++) {} // Delay loop
+    }
 }
 
 void kmain() {
@@ -38,12 +59,12 @@ void kmain() {
     qemu_debug_string("tss_inst ");
 
     // Initialize the process table BEFORE syscalls and interrupts
-    process_init();
+    process_init(); // Sets up task_a and task_b
     qemu_debug_string("proc_init ");
 
     // Syscall install after TSS
-    syscall_install();
-    qemu_debug_string("sysc_inst ");
+    // syscall_install();
+    // qemu_debug_string("sysc_inst ");
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
@@ -54,8 +75,8 @@ void kmain() {
     qemu_debug_string("idt_inst ");
 
     // Install the keyboard driver.
-    keyboard_install();
-    qemu_debug_string("keyb_inst ");
+    // keyboard_install();
+    // qemu_debug_string("keyb_inst ");
 
     // Install the timer driver.
     timer_install(); // Install our new timer driver
@@ -72,21 +93,25 @@ void kmain() {
 
     // Initialize the filesystem driver. This must be done after memory
     // is initialized, as it uses malloc().
-    init_fs();
-    qemu_debug_string("fs_init ");
+    // init_fs();
+    // qemu_debug_string("fs_init ");
 
     // Initialize the shell
-    shell_init();
-    qemu_debug_string("shell_init ");
+    // shell_init();
+    // qemu_debug_string("shell_init ");
 
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
-    qemu_debug_string("interrupt_enable\n");
+    qemu_debug_string("interrupt_enable ");
 
     // Start the shell's main processing loop.
     // This function will only return if a program is launched.
-    shell_run();
-    qemu_debug_string("shell_proc_loop ");
+    // shell_run();
+    // qemu_debug_string("shell_proc_loop ");
+
+    // Start multitasking by jumping to the first task
+    start_multitasking(&process_table[0].cpu_state);
+    qemu_debug_string("start_multitasking\n");
 
     // If shell_run returns, a program is running.
     // The kernel should now enter an idle state.

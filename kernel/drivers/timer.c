@@ -4,12 +4,14 @@
 #include <kernel/irq.h>
 #include <kernel/io.h>
 #include <kernel/vga.h> // For printing output
+#include <kernel/cpu/process.h> // schedule()
 
 static volatile uint32_t tick = 0;
 
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
-    tick++; // This is all the handler should do
+    tick++;
+    schedule(r); // On every timer tick, switch tasks!
 }
 
 // Configures the PIT and installs the timer handler.
