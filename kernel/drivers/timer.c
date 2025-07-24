@@ -6,12 +6,18 @@
 #include <kernel/vga.h> // For printing output
 #include <kernel/cpu/process.h> // schedule()
 
+// Make the global flag visible to this file
+extern volatile int multitasking_enabled;
+
 static volatile uint32_t tick = 0;
 
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
     tick++;
-    schedule(r); // On every timer tick, switch tasks!
+    // Only call the scheduler if multitasking has officially started!
+    if (multitasking_enabled) {
+        schedule(r); // On every timer tick, switch tasks!
+    }
 }
 
 // Configures the PIT and installs the timer handler.

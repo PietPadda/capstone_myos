@@ -15,8 +15,11 @@
 #include <kernel/debug.h> // debug prints
 #include <kernel/cpu/process.h> // process_init()
 
+// Make the global flag visible to kmain
+extern volatile int multitasking_enabled;
+
 // Let kmain know about the new assembly function
-extern void start_multitasking(registers_t* cpu_state);
+extern void start_multitasking(cpu_state_t* cpu_state);
 
 // Tell this file about the process table defined in process.c
 extern task_struct_t process_table[MAX_PROCESSES];
@@ -85,10 +88,12 @@ void kmain() {
     // clear the bios text
     sleep(1500); // Pause for 2 seconds
     clear_screen();
+    qemu_debug_string("clear_bios_scr ");
 
     // print the boot screen
     print_bootscreen();
     sleep(3000); // Pause for 2 seconds
+    qemu_debug_string("print_boot_scr ");
     clear_screen();
 
     // Initialize the filesystem driver. This must be done after memory
@@ -108,6 +113,10 @@ void kmain() {
     // This function will only return if a program is launched.
     // shell_run();
     // qemu_debug_string("shell_proc_loop ");
+
+    // Open the gate for the scheduler right before starting.
+    multitasking_enabled = 1;
+    qemu_debug_string("multitasking_enabled ");
 
     // Start multitasking by jumping to the first task
     start_multitasking(&process_table[0].cpu_state);

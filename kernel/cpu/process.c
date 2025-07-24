@@ -15,6 +15,9 @@ task_struct_t process_table[MAX_PROCESSES];
 // Pointer to the currently running process
 task_struct_t* current_task = NULL;
 
+// global flag, initialized to 0 (false)
+volatile int multitasking_enabled = 0;
+
 // Let this file know about our new tasks
 extern void task_a(); 
 extern void task_b();
@@ -289,6 +292,10 @@ void process_init() {
     process_table[0].pid = 0;
     process_table[0].state = TASK_STATE_RUNNING;
     strncpy(process_table[0].name, "task_a", PROCESS_NAME_LEN);
+
+    // sure that every task starts with a clean slate
+    memset(&process_table[0].cpu_state, 0, sizeof(cpu_state_t));
+    
     // Set up initial CPU state for IRET
     process_table[0].cpu_state.eip = (uint32_t)task_a;
     process_table[0].cpu_state.cs = 0x08; // Kernel Code Segment
@@ -303,11 +310,16 @@ void process_init() {
     process_table[1].pid = 1;
     process_table[1].state = TASK_STATE_RUNNING;
     strncpy(process_table[1].name, "task_b", PROCESS_NAME_LEN);
-    process_table[1].cpu_state.eip = (uint32_t)task_b;
+
+    // sure that every task starts with a clean slate
+    memset(&process_table[1].cpu_state, 0, sizeof(cpu_state_t));
     
+    // Set up initial CPU state for IRET
+    process_table[1].cpu_state.eip = (uint32_t)task_b;
     process_table[1].cpu_state.cs = 0x08;
     process_table[1].cpu_state.ss = 0x10;
     process_table[1].cpu_state.eflags = 0x202;
+    
     // Set BOTH stack pointers for this kernel task
     process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
     process_table[1].cpu_state.useresp = (uint32_t)stack_b + 4096;
