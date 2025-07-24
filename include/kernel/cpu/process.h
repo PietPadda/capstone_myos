@@ -50,6 +50,6 @@ typedef struct {
 void switch_to_user_mode(void* entry_point, void* stack_ptr); // takes  entry point AND user stack pointer
 void exec_program(int argc, char* argv[]);
 void process_init();
-void schedule(registers_t *r); // scheduler
+cpu_state_t* schedule(registers_t *r);
 
 #endif

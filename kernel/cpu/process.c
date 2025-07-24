@@ -339,7 +339,8 @@ void process_init() {
 }
 
 // This is our round-robin scheduler.
-void schedule(registers_t *r) {
+// This function DECIDES the next task and returns a pointer to its CPU state.
+cpu_state_t* schedule(registers_t *r) {
     // Save the CPU state of the current task
     // We only copy the registers that are part of cpu_state_t
     current_task->cpu_state.eax = r->eax;
@@ -362,18 +363,6 @@ void schedule(registers_t *r) {
     // Update the current task pointer
     current_task = &process_table[next_pid];
 
-    // Load the CPU state of the new task into the interrupt frame
-    r->eax = current_task->cpu_state.eax;
-    r->ecx = current_task->cpu_state.ecx;
-    r->edx = current_task->cpu_state.edx;
-    r->ebx = current_task->cpu_state.ebx;
-    r->esp = current_task->cpu_state.esp;
-    r->ebp = current_task->cpu_state.ebp;
-    r->esi = current_task->cpu_state.esi;
-    r->edi = current_task->cpu_state.edi;
-    r->eip = current_task->cpu_state.eip;
-    r->cs = current_task->cpu_state.cs;
-    r->eflags = current_task->cpu_state.eflags;
-    r->useresp = current_task->cpu_state.useresp;
-    r->ss = current_task->cpu_state.ss;
+    // Return a pointer to the NEW task's saved state
+    return &current_task->cpu_state;
 }

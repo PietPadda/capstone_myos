@@ -11,12 +11,17 @@ extern volatile int multitasking_enabled;
 
 static volatile uint32_t tick = 0;
 
+// This new assembly function will perform the actual context switch.
+// It is defined in the new switch.asm file.
+extern void task_switch(registers_t* r);
+
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
     tick++;
     // Only call the scheduler if multitasking has officially started!
     if (multitasking_enabled) {
-        schedule(r); // On every timer tick, switch tasks!
+        // The C handler's only job is to call the assembly switcher.
+        task_switch(r); // On every timer tick, switch tasks!
     }
 }
 
