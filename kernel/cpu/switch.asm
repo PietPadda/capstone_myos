@@ -20,8 +20,13 @@ start_multitasking:
     cli
 
     ; Switch to the new task's stack.
-    ; The 'useresp' field holds the correct stack pointer for the task.
     mov esp, [ebx + 44]  ; cpu_state_t.useresp is at offset 44
+
+    ; Push the IRET frame onto the new stack in the correct order for IRET.
+    ; IRET pops EIP, CS, EFLAGS. So we must push them in reverse order.
+    push dword [ebx + 40]   ; EFLAGS
+    push dword [ebx + 36]   ; CS
+    push dword [ebx + 32]   ; EIP
 
     ; Load all general-purpose registers from the cpu_state_t struct.
     ; We load them *before* the IRET so the new task starts with the correct state.
@@ -37,65 +42,59 @@ start_multitasking:
     mov ebx, [ebx + 16]
 
     ; Use IRET to jump to the new task. This is the magic step.
-    ; It pops EIP, CS, and EFLAGS, effectively starting the new task.
-    ; Because we are in Ring 0, it doesn't pop SS or ESP unless we're
-    ; changing privilege levels, which we are not for these kernel tasks.
     iret
 
 ; This is the main context switching function, called by the timer IRQ handler.
 ; It takes a pointer to the *current* task's register state (the 'r' in timer_handler)
 task_switch:
-    ; The C IRQ handler already saved the general-purpose registers for us (pusha).
-    ; Our job is to call the C scheduler to get the *next* task to run.
-    
-    ; Push the pointer to the current registers_t struct, which is the argument
-    ; schedule() expects.
-    push dword [esp + 4]
+    push ebp
+    mov ebp, esp
+
+    ; Call the scheduler. The pointer 'r' is our first argument at [ebp + 8]
+    push dword [ebp + 8]
     call schedule
-    add esp, 4  ; Clean up the argument from the stack.
+    add esp, 4      ; Clean up stack
 
-    ; The C scheduler returns a pointer to the *new* task's cpu_state_t in EAX.
-    ; Now, we restore the state from that struct.
-    
-    ; Before we switch, we MUST send the End-of-Interrupt signal to the PIC.
-    ; If we don't, the PIC won't send any more timer interrupts.
+    ; EAX now holds a pointer to the *next* task's cpu_state_t.
+    ; Let's call this 'new_state'.
+
+    ; Send EOI to PICs
     mov al, 0x20
-    out 0xA0, al ; Send to Slave PIC first
-    out 0x20, al ; Then to Master PIC
+    out 0xA0, al ; Slave
+    out 0x20, al ; Master
 
-    ; Restore all general-purpose registers from the new task's saved state.
-    ; Note: We do not touch ESP here. The 'popa' at the end of the irq_common_stub
-    ; will restore the correct kernel stack pointer.
-    mov edi, [eax + 0]
-    mov esi, [eax + 4]
-    mov ebp, [eax + 8]
-    mov ebx, [eax + 16]
-    mov edx, [eax + 20]
-    mov ecx, [eax + 24]
-    
-    ; We need to be careful with ESP. The original registers_t struct is still on
-    ; the stack. The 'popa' in irq_common_stub expects to see it. We need to
-    ; replace the saved register values on the stack with the ones from the *new* task.
-    ; 'r' (the pointer to registers_t) is at [esp].
-    mov ebp, [esp]      ; Get pointer to registers_t
-    mov [ebp + 28], eax ; eax
-    mov [ebp + 24], ecx ; ecx
-    mov [ebp + 20], edx ; edx
-    mov [ebp + 16], ebx ; ebx
-    ; skip original esp
-    mov [ebp + 8], ebp ; ebp
-    mov [ebp + 4], esi ; esi
-    mov [ebp + 0], edi ; edi
+    ; Overwrite the saved registers on the stack frame created by the interrupt.
+    ; The pointer to this frame ('r') is at [ebp + 8].
+    ; The pointer to the new state is in EAX.
+    mov ebx, [ebp + 8]  ; ebx = r
+    mov ecx, eax        ; ecx = new_state
 
-    ; Finally, we update the instruction pointer (EIP) that the final 'iret'
-    ; in irq_common_stub will use. This is how we jump to the new task.
-    mov edi, [eax + 32] ; Get new EIP
-    mov [ebp + 40], edi ; Save new EIP into the registers_t struct on the stack
+    ; For each register, load from new_state and store into the on-stack frame 'r'.
+    ; We use EDX as a temporary register.
+    mov edx, [ecx + 0]  ; edx = new_state->edi
+    mov [ebx + 28], edx ; r->edi = edx  (Note: edi is at offset 28 in registers_t)
+    mov edx, [ecx + 4]  ; edx = new_state->esi
+    mov [ebx + 24], edx ; r->esi = edx
+    mov edx, [ecx + 8]  ; edx = new_state->ebp
+    mov [ebx + 20], edx ; r->ebp = edx
+    ; We must also update the stack pointer in the frame!
+    mov edx, [ecx + 44] ; edx = new_state->useresp
+    mov [ebx + 16], edx ; r->esp = edx
+    mov edx, [ecx + 16] ; edx = new_state->ebx
+    mov [ebx + 12], edx ; r->ebx = edx
+    mov edx, [ecx + 20] ; edx = new_state->edx
+    mov [ebx + 8], edx  ; r->edx = edx
+    mov edx, [ecx + 24] ; edx = new_state->ecx
+    mov [ebx + 4], edx  ; r->ecx = edx
+    mov edx, [ecx + 28] ; edx = new_state->eax
+    mov [ebx + 0], edx  ; r->eax = edx
 
-    ; The 'eax' register is also part of the saved state, load it last.
-    mov eax, [eax + 28]
+    ; Finally, update the instruction pointer (EIP) that 'iret' will use.
+    mov edx, [ecx + 32] ; edx = new_state->eip
+    mov [ebx + 40], edx ; r->eip = edx
 
-    ; We are done. We simply return to 'irq_common_stub'. The stub will then
-    ; execute 'popa' (restoring our newly loaded register values) and 'iret'
-    ; (jumping to the new task's EIP).
+    ; Restore stack frame and return to irq_common_stub.
+    ; The stub will then `popa` our modified registers and `iret` to the new task.
+    mov esp, ebp
+    pop ebp
     ret

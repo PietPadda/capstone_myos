@@ -355,14 +355,9 @@ cpu_state_t* schedule(registers_t *r) {
     current_task->cpu_state.cs = r->cs;
     current_task->cpu_state.eflags = r->eflags;
 
-    // For a same-privilege interrupt (kernel->kernel), the CPU does not
-    // save the old SS:ESP. The task's stack pointer just before the
-    // interrupt is 12 bytes above the saved EIP on the stack.
-    current_task->cpu_state.useresp = (uint32_t)&r->eip + 12;
-    current_task->cpu_state.useresp = r->useresp;
-
-    // We do not save r->ss or r->esp because they are not valid/useful.
-    // The correct ss (0x10) is already stored from process_init.
+    // For a same-privilege interrupt, the stack pointer to save is the
+    // one that existed before PUSHA, which is stored in r->esp.
+    current_task->cpu_state.useresp = r->esp;
 
     // Find the next task to run
     int next_pid = (current_task->pid + 1) % 2; // Simple switch between 0 and 1
