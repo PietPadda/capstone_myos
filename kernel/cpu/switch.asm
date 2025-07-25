@@ -14,6 +14,8 @@ global task_switch
 section .data
     str_start_multi: db 'switch.asm: entered start_multitasking.', 10, 0 ; 10 is newline
     str_task_switch: db 'switch.asm: entered task_switch.', 10, 0
+    ; Add a new string for our new checkpoint
+    str_task_switch_ret: db 'switch.asm: returned from schedule.', 10, 0
 
 ; This function starts the very first task. It's only called once from kmain.
 ; It takes a pointer to the new task's cpu_state_t on the stack.
@@ -67,6 +69,7 @@ task_switch:
     add esp, 4
     popad
 
+     ; Set up stack frame for C call
     push ebp
     mov ebp, esp
 
@@ -74,6 +77,14 @@ task_switch:
     push dword [ebp + 8]
     call schedule
     add esp, 4      ; Clean up stack
+
+    ; --- NEW CHECKPOINT ---
+    ; Let's see if we ever get here
+    pushad
+    push str_task_switch_ret
+    call qemu_debug_string
+    add esp, 4
+    popad
 
     ; EAX now holds a pointer to the *next* task's cpu_state_t.
     ; Let's call this 'new_state'.
