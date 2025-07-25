@@ -4,14 +4,27 @@ bits 32
 
 ; Externally defined C functions we will call
 extern schedule
+extern qemu_debug_string
 
 ; Functions we will make visible to the linker
 global start_multitasking
 global task_switch
 
+; Add a new section for our debug strings
+section .data
+    str_start_multi: db 'switch.asm: entered start_multitasking.', 10, 0 ; 10 is newline
+    str_task_switch: db 'switch.asm: entered task_switch.', 10, 0
+
 ; This function starts the very first task. It's only called once from kmain.
 ; It takes a pointer to the new task's cpu_state_t on the stack.
 start_multitasking:
+    ; --- Checkpoint ---
+    pushad                      ; Save all general purpose registers
+    push str_start_multi        ; Push the string argument for our C function
+    call qemu_debug_string      ; Call the C function
+    add esp, 4                  ; Clean the argument from the stack
+    popad                       ; Restore all registers
+
     ; Get the pointer to the cpu_state_t struct from the stack.
     mov ebx, [esp + 4]
     
@@ -47,6 +60,13 @@ start_multitasking:
 ; This is the main context switching function, called by the timer IRQ handler.
 ; It takes a pointer to the *current* task's register state (the 'r' in timer_handler)
 task_switch:
+    ; --- Checkpoint ---
+    pushad
+    push str_task_switch
+    call qemu_debug_string
+    add esp, 4
+    popad
+
     push ebp
     mov ebp, esp
 

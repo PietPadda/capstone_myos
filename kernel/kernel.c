@@ -31,6 +31,7 @@ static inline void outb(unsigned short port, unsigned char data) {
 
 // Our first simple kernel task
 void task_a() {
+    qemu_debug_string("task_a: entered.\n");
     while (1) {
         print_char('A');
         for (int i = 0; i < 10000000; i++) {} // Delay loop
@@ -39,6 +40,7 @@ void task_a() {
 
 // Our second simple kernel task
 void task_b() {
+    qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
         for (int i = 0; i < 10000000; i++) {} // Delay loop
@@ -119,8 +121,9 @@ void kmain() {
     qemu_debug_string("multitasking_enabled ");
 
     // Start multitasking by jumping to the first task
+    qemu_debug_string("kmain: Calling start_multitasking...\n");
     start_multitasking(&process_table[0].cpu_state);
-    qemu_debug_string("start_multitasking\n");
+    qemu_debug_string("kmain: Returned from start_multitasking (this is an error).\n");
 
     // If shell_run returns, a program is running.
     // The kernel should now enter an idle state.
