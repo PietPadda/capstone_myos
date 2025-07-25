@@ -27,9 +27,13 @@ void irq_handler(registers_t *r) {
         handler(r);
     }
 
-    // Send the EOI (End of Interrupt) signal to the PICs
-    if (r->int_no >= 40) {
-        port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
+    // Only send an EOI if the interrupt was NOT the timer.
+    // The timer handler sends its own EOI because it involves a context switch.
+    if (r->int_no != 32) {
+        // Send the EOI (End of Interrupt) signal to the PICs
+        if (r->int_no >= 40) {
+            port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
+        }
+        port_byte_out(0x20, 0x20); // Send EOI to master PIC
     }
-    port_byte_out(0x20, 0x20); // Send EOI to master PIC
 }

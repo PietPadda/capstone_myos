@@ -60,10 +60,10 @@ task_switch:
     ; Immediately save the return value from schedule (in EAX) into a safe register.
     mov ecx, eax        ; ecx now holds the pointer to the new task's state.
 
-    ; Now we can safely use EAX for other things, like sending the EOI.
-    mov al, 0x20
-    out 0xA0, al
-    out 0x20, al
+    ; --- REMOVE THIS BLOCK ---
+    ; mov al, 0x20
+    ; out 0xA0, al
+    ; out 0x20, al
 
     ; Get the pointer to the on-stack registers_t ('r')
     mov ebx, [ebp + 8]
