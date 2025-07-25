@@ -5,6 +5,7 @@ bits 32
 ; Externally defined C functions we will call
 extern schedule
 extern qemu_debug_string
+extern qemu_debug_memdump
 
 ; Functions we will make visible to the linker
 global start_multitasking
@@ -87,15 +88,30 @@ task_switch:
     
     ; The C scheduler returned a pointer to the NEW task's cpu_state_t in EAX.
 
-    ; Send End-of-Interrupt signal to the PICs
-    mov al, 0x20
-    out 0xA0, al ; Slave PIC
-    out 0x20, al ; Master PIC
-
     ; Get the pointer to the on-stack registers_t ('r') from our arguments.
     mov ebx, [ebp + 8]  ; ebx = r (points to the stack frame to be modified)
     ; Get the pointer to the new task's state (returned from schedule).
     mov ecx, eax        ; ecx = new_state
+
+    ; --- NEW MEMORY DUMPS ---
+    pushad
+    ; Dump the new state we are about to load (task_b's cpu_state_t)
+    push 52             ; Arg 2: size of cpu_state_t
+    push ecx            ; Arg 1: address of new_state
+    call qemu_debug_memdump
+    add esp, 8          ; Clean up 2 arguments
+
+    ; Dump the on-stack frame we are about to overwrite (task_a's registers_t)
+    push 76             ; Arg 2: size of registers_t
+    push ebx            ; Arg 1: address of r
+    call qemu_debug_memdump
+    add esp, 8          ; Clean up 2 arguments
+    popad
+
+    ; Send End-of-Interrupt signal to the PICs
+    mov al, 0x20
+    out 0xA0, al ; Slave PIC
+    out 0x20, al ; Master PIC
 
     ; --- Overwrite the on-stack interrupt frame with the new task's state ---
     ; We use EDX as a temporary register to move data.
