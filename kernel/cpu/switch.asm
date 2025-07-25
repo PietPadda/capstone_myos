@@ -4,30 +4,14 @@ bits 32
 
 ; Externally defined C functions we will call
 extern schedule
-extern qemu_debug_string
-extern qemu_debug_memdump
 
 ; Functions we will make visible to the linker
 global start_multitasking
 global task_switch
 
-; Add a new section for our debug strings
-section .data
-    str_start_multi: db 'switch.asm: entered start_multitasking.', 10, 0 ; 10 is newline
-    str_task_switch: db 'switch.asm: entered task_switch.', 10, 0
-    ; Add a new string for our new checkpoint
-    str_task_switch_ret: db 'switch.asm: returned from schedule.', 10, 0
-
 ; This function starts the very first task. It's only called once from kmain.
 ; It takes a pointer to the new task's cpu_state_t on the stack.
 start_multitasking:
-    ; --- Checkpoint ---
-    pushad                      ; Save all general purpose registers
-    push str_start_multi        ; Push the string argument for our C function
-    call qemu_debug_string      ; Call the C function
-    add esp, 4                  ; Clean the argument from the stack
-    popad                       ; Restore all registers
-
     ; Get the pointer to the cpu_state_t struct from the stack.
     mov ebx, [esp + 4]
     
@@ -63,13 +47,6 @@ start_multitasking:
 ; This is the main context switching function, called by the timer IRQ handler.
 ; It takes a pointer to the *current* task's register state (the 'r' in timer_handler)
 task_switch:
-    ; --- Checkpoint ---
-    pushad
-    push str_task_switch
-    call qemu_debug_string
-    add esp, 4
-    popad
-
     ; Set up a standard C-style stack frame
     push ebp
     mov ebp, esp
@@ -78,40 +55,18 @@ task_switch:
     push dword [ebp + 8]
     call schedule
     add esp, 4      ; Clean up argument
-
-    ; --- Checkpoint ---
-    pushad
-    push str_task_switch_ret
-    call qemu_debug_string
-    add esp, 4
-    popad
     
-    ; The C scheduler returned a pointer to the NEW task's cpu_state_t in EAX.
+    ; --- THE FIX ---
+    ; Immediately save the return value from schedule (in EAX) into a safe register.
+    mov ecx, eax        ; ecx now holds the pointer to the new task's state.
 
-    ; Get the pointer to the on-stack registers_t ('r') from our arguments.
-    mov ebx, [ebp + 8]  ; ebx = r (points to the stack frame to be modified)
-    ; Get the pointer to the new task's state (returned from schedule).
-    mov ecx, eax        ; ecx = new_state
-
-    ; --- NEW MEMORY DUMPS ---
-    pushad
-    ; Dump the new state we are about to load (task_b's cpu_state_t)
-    push 52             ; Arg 2: size of cpu_state_t
-    push ecx            ; Arg 1: address of new_state
-    call qemu_debug_memdump
-    add esp, 8          ; Clean up 2 arguments
-
-    ; Dump the on-stack frame we are about to overwrite (task_a's registers_t)
-    push 76             ; Arg 2: size of registers_t
-    push ebx            ; Arg 1: address of r
-    call qemu_debug_memdump
-    add esp, 8          ; Clean up 2 arguments
-    popad
-
-    ; Send End-of-Interrupt signal to the PICs
+    ; Now we can safely use EAX for other things, like sending the EOI.
     mov al, 0x20
-    out 0xA0, al ; Slave PIC
-    out 0x20, al ; Master PIC
+    out 0xA0, al
+    out 0x20, al
+
+    ; Get the pointer to the on-stack registers_t ('r')
+    mov ebx, [ebp + 8]
 
     ; --- Overwrite the on-stack interrupt frame with the new task's state ---
     ; We use EDX as a temporary register to move data.
