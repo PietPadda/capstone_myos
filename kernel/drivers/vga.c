@@ -54,6 +54,9 @@ void print_char_color(char c, uint8_t color) {
 }
 
 void print_char(char c) {
+    // Disable interrupts to prevent a task switch during this function.
+    __asm__ __volatile__("cli");
+
     // Handle backspace
     if (c == '\b') {
         // Only backspace if the cursor isn't at the very beginning.
@@ -101,6 +104,9 @@ void print_char(char c) {
 
     // Update the hardware cursor's position.
     update_cursor(cursor_row, cursor_col);
+
+    // Re-enable interrupts now that we are done.
+    __asm__ __volatile__("sti");
 }
 
 void print_string(const char* str) {
