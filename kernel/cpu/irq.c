@@ -27,8 +27,10 @@ void irq_handler(registers_t *r) {
         handler(r);
     }
 
-    // This is the source of the double EOI.
-    // Let's prevent it for the timer.
+    // After a task switch, control never returns to this function.
+    // For timer interrupts, the EOI is handled by either the timer_handler
+    // itself (pre-multitasking) or the task_switch assembly (post-multitasking).
+    // Therefore, we must NOT send an EOI for the timer here.
     if (r->int_no == 32) { // This is IRQ 0, the timer
         return; // The timer_handler/task_switch is responsible for the EOI.
     }

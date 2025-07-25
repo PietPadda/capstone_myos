@@ -24,9 +24,12 @@ static void timer_handler(registers_t *r) {
 
     // Only call the scheduler if multitasking has officially started!
     if (multitasking_enabled) {
-        // The C handler's only job is to call the assembly switcher.
+        // When multitasking, the assembly switcher is responsible for the EOI.
         qemu_debug_string("timer_handler: Fired. Calling task_switch...\n");
         task_switch(r); // On every timer tick, switch tasks!
+     } else {
+        // Before multitasking, we must send the EOI for sleep() to work.
+        port_byte_out(0x20, 0x20);
     }
 }
 
