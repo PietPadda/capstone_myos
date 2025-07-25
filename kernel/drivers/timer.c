@@ -18,14 +18,14 @@ extern void task_switch(registers_t* r);
 // The handler that is called on every timer interrupt (IRQ 0).
 static void timer_handler(registers_t *r) {
     tick++;
+
+    // ALWAYS send an EOI for the timer.
+    port_byte_out(0x20, 0x20);
+
     // Only call the scheduler if multitasking has officially started!
     if (multitasking_enabled) {
         // The C handler's only job is to call the assembly switcher.
         qemu_debug_string("timer_handler: Fired. Calling task_switch...\n");
-
-        // Send the EOI *before* switching. This acknowledges the interrupt
-        // and lets the PIC get ready for the next one.
-        port_byte_out(0x20, 0x20); // Master PIC EOI
         task_switch(r); // On every timer tick, switch tasks!
     }
 }
