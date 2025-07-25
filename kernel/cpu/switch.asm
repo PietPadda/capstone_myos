@@ -69,63 +69,63 @@ task_switch:
     add esp, 4
     popad
 
-     ; Set up stack frame for C call
+    ; Set up a standard C-style stack frame
     push ebp
     mov ebp, esp
 
-    ; Call the scheduler. The pointer 'r' is our first argument at [ebp + 8]
+    ; Call the C scheduler. Its argument 'r' is on our stack at [ebp + 8]
     push dword [ebp + 8]
     call schedule
-    add esp, 4      ; Clean up stack
+    add esp, 4      ; Clean up argument
 
-    ; --- NEW CHECKPOINT ---
-    ; Let's see if we ever get here
+    ; --- Checkpoint ---
     pushad
     push str_task_switch_ret
     call qemu_debug_string
     add esp, 4
     popad
+    
+    ; The C scheduler returned a pointer to the NEW task's cpu_state_t in EAX.
 
-    ; EAX now holds a pointer to the *next* task's cpu_state_t.
-    ; Let's call this 'new_state'.
-
-    ; Send EOI to PICs
+    ; Send End-of-Interrupt signal to the PICs
     mov al, 0x20
-    out 0xA0, al ; Slave
-    out 0x20, al ; Master
+    out 0xA0, al ; Slave PIC
+    out 0x20, al ; Master PIC
 
-    ; Overwrite the saved registers on the stack frame created by the interrupt.
-    ; The pointer to this frame ('r') is at [ebp + 8].
-    ; The pointer to the new state is in EAX.
-    mov ebx, [ebp + 8]  ; ebx = r
+    ; Get the pointer to the on-stack registers_t ('r') from our arguments.
+    mov ebx, [ebp + 8]  ; ebx = r (points to the stack frame to be modified)
+    ; Get the pointer to the new task's state (returned from schedule).
     mov ecx, eax        ; ecx = new_state
 
-    ; For each register, load from new_state and store into the on-stack frame 'r'.
-    ; We use EDX as a temporary register.
-    mov edx, [ecx + 0]  ; edx = new_state->edi
-    mov [ebx + 28], edx ; r->edi = edx  (Note: edi is at offset 28 in registers_t)
-    mov edx, [ecx + 4]  ; edx = new_state->esi
-    mov [ebx + 24], edx ; r->esi = edx
-    mov edx, [ecx + 8]  ; edx = new_state->ebp
-    mov [ebx + 20], edx ; r->ebp = edx
-    ; We must also update the stack pointer in the frame!
-    mov edx, [ecx + 44] ; edx = new_state->useresp
-    mov [ebx + 16], edx ; r->esp = edx
-    mov edx, [ecx + 16] ; edx = new_state->ebx
-    mov [ebx + 12], edx ; r->ebx = edx
-    mov edx, [ecx + 20] ; edx = new_state->edx
-    mov [ebx + 8], edx  ; r->edx = edx
-    mov edx, [ecx + 24] ; edx = new_state->ecx
-    mov [ebx + 4], edx  ; r->ecx = edx
-    mov edx, [ecx + 28] ; edx = new_state->eax
-    mov [ebx + 0], edx  ; r->eax = edx
+    ; --- Overwrite the on-stack interrupt frame with the new task's state ---
+    ; We use EDX as a temporary register to move data.
+    ; Format: mov edx, [new_state + offset]; mov [r + offset], edx
+    mov edx, [ecx + 0]   ; edi
+    mov [ebx + 16], edx
+    mov edx, [ecx + 4]   ; esi
+    mov [ebx + 20], edx
+    mov edx, [ecx + 8]   ; ebp
+    mov [ebx + 24], edx
+    mov edx, [ecx + 44]  ; useresp (the new task's stack pointer)
+    mov [ebx + 28], edx  ; This updates the esp that popa will see
+    mov edx, [ecx + 16]  ; ebx
+    mov [ebx + 32], edx
+    mov edx, [ecx + 20]  ; edx
+    mov [ebx + 36], edx
+    mov edx, [ecx + 24]  ; ecx
+    mov [ebx + 40], edx
+    mov edx, [ecx + 28]  ; eax
+    mov [ebx + 44], edx
+    
+    ; --- This is the most important part: update the return address for iret ---
+    mov edx, [ecx + 32]  ; eip
+    mov [ebx + 56], edx
+    mov edx, [ecx + 36]  ; cs
+    mov [ebx + 60], edx
+    mov edx, [ecx + 40]  ; eflags
+    mov [ebx + 64], edx
 
-    ; Finally, update the instruction pointer (EIP) that 'iret' will use.
-    mov edx, [ecx + 32] ; edx = new_state->eip
-    mov [ebx + 40], edx ; r->eip = edx
-
-    ; Restore stack frame and return to irq_common_stub.
-    ; The stub will then `popa` our modified registers and `iret` to the new task.
+    ; We are done. Restore our stack frame and return to irq_common_stub.
     mov esp, ebp
     pop ebp
     ret
