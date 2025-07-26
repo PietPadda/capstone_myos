@@ -20,7 +20,7 @@ volatile int multitasking_enabled = 0;
 
 // Let this file know about our new tasks
 extern void idle_task();
-extern void task_b();
+extern void shell_task();
 
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
@@ -286,8 +286,8 @@ void process_init() {
     // Clear the entire process table
     memset(process_table, 0, sizeof(process_table));
 
-    // --- Task A ---
-    // Allocate a kernel stack
+    // --- Task 0: The Idle Task ---
+    // This task must always be present and runnable.
     void* stack_a = malloc(4096);
     process_table[0].pid = 0;
     process_table[0].state = TASK_STATE_RUNNING;
@@ -305,17 +305,17 @@ void process_init() {
     process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
     process_table[0].cpu_state.useresp = (uint32_t)stack_a + 4096;
 
-    // --- Task B ---
+    // --- Task 1: The Shell Task ---
     void* stack_b = malloc(4096);
     process_table[1].pid = 1;
     process_table[1].state = TASK_STATE_RUNNING;
-    strncpy(process_table[1].name, "task_b", PROCESS_NAME_LEN);
+    strncpy(process_table[1].name, "shell", PROCESS_NAME_LEN);
 
     // sure that every task starts with a clean slate
     memset(&process_table[1].cpu_state, 0, sizeof(cpu_state_t));
     
     // Set up initial CPU state for IRET
-    process_table[1].cpu_state.eip = (uint32_t)task_b;
+    process_table[1].cpu_state.eip = (uint32_t)shell_task;
     process_table[1].cpu_state.cs = 0x08;
     process_table[1].cpu_state.ss = 0x10;
     process_table[1].cpu_state.eflags = 0x202;

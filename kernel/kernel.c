@@ -37,13 +37,13 @@ void idle_task() {
     }
 }
 
-// Our second simple kernel task
-void task_b() {
-    qemu_debug_string("task_b: entered.\n");
-    while (1) {
-        print_char('B');
-        sleep(1000); // multitask sleep
-    }
+// This wrapper function will be the entry point for our shell process.
+void shell_task() {
+    qemu_debug_string("shell_task: entered.\n");
+    shell_init();
+    qemu_debug_string("shell_init ");
+    shell_run();
+    qemu_debug_string("shell_proc_loop ");
 }
 
 void kmain() {
@@ -63,12 +63,12 @@ void kmain() {
     qemu_debug_string("tss_inst ");
 
     // Initialize the process table BEFORE syscalls and interrupts
-    process_init(); // Sets up idle_task and task_b
+    process_init(); // Sets up idle_task and shell_task
     qemu_debug_string("proc_init ");
 
     // Syscall install after TSS
-    // syscall_install();
-    // qemu_debug_string("sysc_inst ");
+    syscall_install();
+    qemu_debug_string("sysc_inst ");
 
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
@@ -79,8 +79,8 @@ void kmain() {
     qemu_debug_string("idt_inst ");
 
     // Install the keyboard driver.
-    // keyboard_install();
-    // qemu_debug_string("keyb_inst ");
+    keyboard_install();
+    qemu_debug_string("keyb_inst ");
 
     // Install the timer driver.
     timer_install(); // Install our new timer driver
@@ -99,8 +99,8 @@ void kmain() {
 
     // Initialize the filesystem driver. This must be done after memory
     // is initialized, as it uses malloc().
-    // init_fs();
-    // qemu_debug_string("fs_init ");
+    init_fs();
+    qemu_debug_string("fs_init ");
 
     // Initialize the shell
     // shell_init();
@@ -124,8 +124,7 @@ void kmain() {
     start_multitasking(&process_table[0].cpu_state);
     qemu_debug_string("kmain: Returned from start_multitasking (this is an error).\n");
 
-    // If shell_run returns, a program is running.
-    // The kernel should now enter an idle state.
+    // This part of kmain should never be reached.
     while (1) {
         __asm__ __volatile__("hlt");
     }
