@@ -281,29 +281,32 @@ void exec_program(int argc, char* argv[]) {
     switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
 }
 
-// Initializes the process table and creates the first kernel task.
+// This function now builds a fake interrupt context on the stack for each new task.
 void process_init() {
     // Clear the entire process table
     memset(process_table, 0, sizeof(process_table));
 
     // --- Task A ---
-    // Allocate a kernel stack
     void* stack_a = malloc(4096);
     process_table[0].pid = 0;
     process_table[0].state = TASK_STATE_RUNNING;
     strncpy(process_table[0].name, "task_a", PROCESS_NAME_LEN);
-
-    // sure that every task starts with a clean slate
-    memset(&process_table[0].cpu_state, 0, sizeof(cpu_state_t));
     
-    // Set up initial CPU state for IRET
-    process_table[0].cpu_state.eip = (uint32_t)task_a;
-    process_table[0].cpu_state.cs = 0x08; // Kernel Code Segment
-    process_table[0].cpu_state.ss = 0x10; // Kernel Data Segment
-    process_table[0].cpu_state.eflags = 0x202; // Interrupts enabled
-    // Set BOTH stack pointers for this kernel task
-    process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
-    process_table[0].cpu_state.useresp = (uint32_t)stack_a + 4096;
+    // The top of the stack is the end of the allocated buffer
+    uint32_t esp_a = (uint32_t)stack_a + 4096;
+
+    // Manually push the initial context onto the stack for task_a
+    // This must match the order of 'pusha' and the IRET frame.
+    esp_a -= sizeof(registers_t);
+    registers_t* r_a = (registers_t*)esp_a;
+    memset(r_a, 0, sizeof(registers_t)); // Zero out all registers
+
+    r_a->eip = (uint32_t)task_a;
+    r_a->cs = 0x08;      // Kernel Code Segment
+    r_a->eflags = 0x202; // Interrupts enabled
+
+    // Save this crafted stack pointer in the PCB.
+    process_table[0].cpu_state.useresp = esp_a;
 
     // --- Task B ---
     void* stack_b = malloc(4096);
@@ -311,31 +314,19 @@ void process_init() {
     process_table[1].state = TASK_STATE_RUNNING;
     strncpy(process_table[1].name, "task_b", PROCESS_NAME_LEN);
 
-    // sure that every task starts with a clean slate
-    memset(&process_table[1].cpu_state, 0, sizeof(cpu_state_t));
+    uint32_t esp_b = (uint32_t)stack_b + 4096;
+    esp_b -= sizeof(registers_t);
+    registers_t* r_b = (registers_t*)esp_b;
+    memset(r_b, 0, sizeof(registers_t));
+
+    r_b->eip = (uint32_t)task_b;
+    r_b->cs = 0x08;
+    r_b->eflags = 0x202;
     
-    // Set up initial CPU state for IRET
-    process_table[1].cpu_state.eip = (uint32_t)task_b;
-    process_table[1].cpu_state.cs = 0x08;
-    process_table[1].cpu_state.ss = 0x10;
-    process_table[1].cpu_state.eflags = 0x202;
-    
-    // Set BOTH stack pointers for this kernel task
-    process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
-    process_table[1].cpu_state.useresp = (uint32_t)stack_b + 4096;
+    process_table[1].cpu_state.useresp = esp_b;
 
     // Set the first task as the currently running one
     current_task = &process_table[0];
-
-    /*// Initialize the first task (the kernel/shell itself)
-    task_struct_t* shell_task = &process_table[0];
-    shell_task->pid = 0;
-    shell_task->state = TASK_STATE_RUNNING;
-    strncpy(shell_task->name, "shell", PROCESS_NAME_LEN);
-    shell_task->user_stack = NULL; // The shell runs in kernel mode, no user stack
-
-    // Set the first task as the currently running one
-    current_task = shell_task;*/
 }
 
 // This is our new, simplified round-robin scheduler.
