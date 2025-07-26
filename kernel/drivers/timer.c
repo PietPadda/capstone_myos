@@ -19,12 +19,14 @@ extern void task_switch(registers_t* r);
 static void timer_handler(registers_t *r) {
     tick++;
 
-    // If multitasking has officially started, call the assembly context switcher.
-    // The switcher is now responsible for everything, including the EOI.
+    // ALWAYS send an EOI for the timer.
+    port_byte_out(0x20, 0x20);
+
+    // Only call the scheduler if multitasking has officially started!
     if (multitasking_enabled) {
         // When multitasking, the assembly switcher is responsible for the EOI.
         qemu_debug_string("timer_handler: Fired. Calling task_switch...\n");
-        task_switch(r); // On every timer tick, now calls our new assembly function
+        task_switch(r); // On every timer tick, switch tasks!
      } else {
         // Before multitasking, we must send the EOI for sleep() to work.
         port_byte_out(0x20, 0x20);
