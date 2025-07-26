@@ -338,22 +338,18 @@ void process_init() {
     current_task = shell_task;*/
 }
 
-// This is our round-robin scheduler.
-// This function DECIDES the next task and returns a pointer to its CPU state.
+// This is our new, more intelligent round-robin scheduler.
 cpu_state_t* schedule(registers_t *r) {
     qemu_debug_string("schedule: entered.\n");
 
-    qemu_debug_string("schedule: &r = "); qemu_debug_hex((uint32_t)r); qemu_debug_string("\n");
-    qemu_debug_string("schedule: &current_task = "); qemu_debug_hex((uint32_t)current_task); qemu_debug_string("\n");
-    
-        // Check if current_task is valid before using it
+    // This check is a safeguard against catastrophic failure.
     if (!current_task) {
         qemu_debug_string("schedule: FATAL - current_task is NULL. Halting.\n");
         for (;;) __asm__("cli; hlt");
     }
-    qemu_debug_string("schedule: current_task->pid = "); qemu_debug_hex(current_task->pid); qemu_debug_string("\n");
-
-    qemu_debug_string("schedule: Saving state of current task...\n");
+    qemu_debug_string("schedule: Saving state for PID ");
+    qemu_debug_hex(current_task->pid);
+    qemu_debug_string("...\n");
 
     // Save the CPU state of the current task
     // We only copy the registers that are part of cpu_state_t
@@ -375,15 +371,38 @@ cpu_state_t* schedule(registers_t *r) {
 
     qemu_debug_string("schedule: State saved. Finding next task...\n");
 
-    // Find the next task to run
-    int next_pid = (current_task->pid + 1) % 2; // Simple switch between 0 and 1
-    qemu_debug_string("schedule: next_pid = "); qemu_debug_hex(next_pid); qemu_debug_string("\n");
+    // Wake up sleeping tasks
+    uint32_t now = timer_get_ticks();
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (process_table[i].state == TASK_STATE_SLEEPING && now >= process_table[i].wakeup_time) {
+            process_table[i].state = TASK_STATE_RUNNING;
+            qemu_debug_string("schedule: Woke up PID ");
+            qemu_debug_hex(i);
+            qemu_debug_string(".\n");
+        }
+    }
 
-    // Update the current task pointer
-    current_task = &process_table[next_pid];
-     qemu_debug_string("schedule: New current_task pointer = "); qemu_debug_hex((uint32_t)current_task); qemu_debug_string("\n");
+    // Find the next runnable task
+    int next_pid = current_task->pid;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        next_pid = (next_pid + 1) % MAX_PROCESSES;
+        if (process_table[next_pid].state == TASK_STATE_RUNNING) {
+            // Found a runnable task, switch to it.
+            current_task = &process_table[next_pid];
+            qemu_debug_string("schedule: Switching to PID ");
+            qemu_debug_hex(current_task->pid);
+            qemu_debug_string(".\n");
+            return &current_task->cpu_state;
+        }
+    }
 
-    qemu_debug_string("schedule: Returning new state pointer...\n");
+    // Idle Case
+    // If no other task is runnable, just continue with the current one.
+    // This is important for when there's only one active task.
+    qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
+    qemu_debug_hex(current_task->pid);
+    qemu_debug_string(".\n");
+
     // Return a pointer to the NEW task's saved state
     // The assembly code will use this to load the new context.
     return &current_task->cpu_state;
