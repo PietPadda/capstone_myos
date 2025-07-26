@@ -34,7 +34,7 @@ void task_a() {
     qemu_debug_string("task_a: entered.\n");
     while (1) {
         print_char('A');
-        for (int i = 0; i < 50000000; i++) {} // Delay loop
+        for (int i = 0; i < 100000000; i++) {} // Delay loop
     }
 }
 
@@ -43,7 +43,7 @@ void task_b() {
     qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
-        for (int i = 0; i < 50000000; i++) {} // Delay loop
+        for (int i = 0; i < 100000000; i++) {} // Delay loop
     }
 }
 
@@ -88,13 +88,13 @@ void kmain() {
     qemu_debug_string("pit_inst ");
 
     // clear the bios text
-    sleep(1500); // Pause for 2 seconds
+    sleep(800); // Pause for 2 seconds
     clear_screen();
     qemu_debug_string("clear_bios_scr ");
 
     // print the boot screen
     print_bootscreen();
-    sleep(3000); // Pause for 2 seconds
+    sleep(1800); // Pause for 2 seconds
     qemu_debug_string("print_boot_scr ");
     clear_screen();
 
