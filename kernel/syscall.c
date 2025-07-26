@@ -59,10 +59,10 @@ static void sys_exit(registers_t *r) {
         current_task->state = TASK_STATE_ZOMBIE;
     }
 
-    // The user program is done. The 'current_task' is now the shell again.
-    current_task = &process_table[0]; // This correctly resets focus to PID 0
+    // The user program is done. The 'current_task' is now the shell (PID 1) again.
+    current_task = &process_table[1]; // This correctly resets focus to PID 1
 
-    qemu_debug_string("SYSCALL: Preparing return to shell...\n");
+    qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
     // Prepare to return to the kernel shell instead of the user program.
     // We do this by modifying the stack frame that the `iret` instruction will use.
     r->eip = (uint32_t)restart_shell;
