@@ -27,15 +27,13 @@ void irq_handler(registers_t *r) {
         handler(r);
     }
 
-    // This is the source of the double EOI.
-    // Let's prevent it for the timer.
-    if (r->int_no == 32) { // This is IRQ 0, the timer
-        return; // The timer_handler/task_switch is responsible for the EOI.
+    // Only send an EOI if the interrupt was NOT the timer.
+    // The timer handler sends its own EOI because it involves a context switch.
+    if (r->int_no != 32) {
+        // Send the EOI (End of Interrupt) signal to the PICs
+        if (r->int_no >= 40) {
+            port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
+        }
+        port_byte_out(0x20, 0x20); // Send EOI to master PIC
     }
-
-    // Send the EOI (End of Interrupt) signal to the PICs
-    if (r->int_no >= 40) {
-        port_byte_out(0xA0, 0x20); // Send EOI to slave PIC
-    }
-    port_byte_out(0x20, 0x20); // Send EOI to master PIC
 }

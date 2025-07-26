@@ -34,9 +34,7 @@ void task_a() {
     qemu_debug_string("task_a: entered.\n");
     while (1) {
         print_char('A');
-        // Cooperatively yield the CPU for a short time.
-        sleep(100); // Sleep for 100 milliseconds
-
+        for (int i = 0; i < 10000000; i++) {} // Delay loop
     }
 }
 
@@ -45,8 +43,7 @@ void task_b() {
     qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
-        // Cooperatively yield the CPU for a short time.
-        sleep(100); // Sleep for 100 milliseconds
+        for (int i = 0; i < 10000000; i++) {} // Delay loop
     }
 }
 
