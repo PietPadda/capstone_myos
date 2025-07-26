@@ -14,6 +14,7 @@
 typedef enum {
     TASK_STATE_UNUSED,    // This entry in the table is free
     TASK_STATE_RUNNING,   // The process is currently running or ready to run
+    TASK_STATE_SLEEPING,  // The task is paused, waiting for a timeout
     TASK_STATE_ZOMBIE     // The process has finished but is waiting to be cleaned up
 } task_state_t;
 
@@ -44,6 +45,7 @@ typedef struct {
     char name[PROCESS_NAME_LEN];        // The process name
     void* user_stack;                   // Pointer to the user-mode stack
     cpu_state_t cpu_state;              //store the task's registers
+    uint32_t wakeup_time;               // Tick count at which to wake up
     // We will add more fields here later (e.g., registers, memory maps)
 } task_struct_t;
 
