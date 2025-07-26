@@ -2,101 +2,73 @@
 
 bits 32
 
-; Externally defined C functions we will call
-extern schedule
+; External C functions and variables we need
+extern schedule       ; Our simple C scheduler
+extern current_task   ; Pointer to the current task's PCB
 
-; Functions we will make visible to the linker
+; Functions we make visible to the linker
 global start_multitasking
 global task_switch
 
-; This function starts the very first task. It's only called once from kmain.
-; It takes a pointer to the new task's cpu_state_t on the stack.
+; This function starts the very first task. It's only called once.
 start_multitasking:
-    ; Get the pointer to the cpu_state_t struct from the stack.
-    mov ebx, [esp + 4]
-    
-    ; We are about to jump to a new task, so we can disable interrupts.
-    ; The IRET instruction will re-enable them using the task's saved EFLAGS.
+    mov ebx, [esp + 4]  ; Get pointer to the first task's cpu_state_t
     cli
 
     ; Switch to the new task's stack.
-    mov esp, [ebx + 44]  ; cpu_state_t.useresp is at offset 44
+    ; We get the stack pointer from the useresp field.
+    mov esp, [ebx + 44]
 
-    ; Push the IRET frame onto the new stack in the correct order for IRET.
-    ; IRET pops EIP, CS, EFLAGS. So we must push them in reverse order.
+    ; Push the IRET frame onto the new stack.
     push dword [ebx + 40]   ; EFLAGS
     push dword [ebx + 36]   ; CS
     push dword [ebx + 32]   ; EIP
 
     ; Load all general-purpose registers from the cpu_state_t struct.
-    ; We load them *before* the IRET so the new task starts with the correct state.
     mov edi, [ebx + 0]
     mov esi, [ebx + 4]
     mov ebp, [ebx + 8]
-    ; We skip ESP because we've already loaded it.
     mov edx, [ebx + 20]
     mov ecx, [ebx + 24]
     mov eax, [ebx + 28]
-    
-    ; Load EBX last since we were using it as our pointer.
-    mov ebx, [ebx + 16]
+    mov ebx, [ebx + 16] ; Load EBX last
 
-    ; Use IRET to jump to the new task. This is the magic step.
+    ; Jump to the new task. This does not return.
     iret
 
-; This is the main context switching function, called by the timer IRQ handler.
-; It takes a pointer to the *current* task's register state (the 'r' in timer_handler)
+; This is the new, correct context switching function.
+; It's called by the timer handler. The pointer to the interrupt frame ('r')
+; is on the stack, but we will not use it directly anymore. Instead, we use
+; pusha/popa and the ESP register to manage state.
 task_switch:
-    ; Set up a standard C-style stack frame
-    push ebp
-    mov ebp, esp
+    ; --- 1. Save Old State ---
+    ; The CPU has already disabled interrupts and pushed EIP, CS, EFLAGS.
+    ; The IRQ stub in isr.asm has pushed the int_no and a dummy error code.
+    pusha                 ; Save all general purpose registers (eax, ecx, etc.).
 
-    ; Call the C scheduler. Its argument 'r' is on our stack at [ebp + 8]
-    push dword [ebp + 8]
-    call schedule
-    add esp, 4      ; Clean up argument
-    
-    ; Immediately save the return value from schedule (in EAX) into a safe register.
-    mov ecx, eax        ; ecx now holds the pointer to the new task's state.
+    ; Save the current stack pointer (ESP) into the old task's PCB.
+    mov eax, [current_task]
+    mov [eax + 44], esp   ; old_task->cpu_state.useresp = esp
 
-    ; Send End-of-Interrupt to the PIC. This is the safest place to do it.
-    ; The old state is saved and the new state is chosen. We are committed
-    ; to the switch. Now we can tell the PIC it's okay to send more interrupts.
+    ; --- 2. Choose New State ---
+    call schedule         ; Call the C scheduler to update 'current_task'.
+
+    ; --- 3. Restore New State ---
+    ; Load the stack pointer (ESP) from the new task's PCB.
+    ; This is the moment we officially switch stacks.
+    mov eax, [current_task]
+    mov esp, [eax + 44]   ; esp = new_task->cpu_state.useresp
+
+    ; Send End-of-Interrupt to the PIC. This is the safest place to do it,
+    ; after all state is saved and we're committed to the switch.
     mov al, 0x20
     out 0x20, al
 
-    ; Get the pointer to the on-stack registers_t ('r')
-    mov ebx, [ebp + 8]
+    ; Restore all general purpose registers from the new task's stack.
+    popa
 
-    ; --- Overwrite the on-stack interrupt frame with the new task's state ---
-    ; We use EDX as a temporary register to move data.
-    ; Format: mov edx, [new_state + offset]; mov [r + offset], edx
-    mov edx, [ecx + 0]   ; edi
-    mov [ebx + 16], edx
-    mov edx, [ecx + 4]   ; esi
-    mov [ebx + 20], edx
-    mov edx, [ecx + 8]   ; ebp
-    mov [ebx + 24], edx
-    mov edx, [ecx + 44]  ; useresp (the new task's stack pointer)
-    mov [ebx + 28], edx  ; This updates the esp that popa will see
-    mov edx, [ecx + 16]  ; ebx
-    mov [ebx + 32], edx
-    mov edx, [ecx + 20]  ; edx
-    mov [ebx + 36], edx
-    mov edx, [ecx + 24]  ; ecx
-    mov [ebx + 40], edx
-    mov edx, [ecx + 28]  ; eax
-    mov [ebx + 44], edx
-    
-    ; --- This is the most important part: update the return address for iret ---
-    mov edx, [ecx + 32]  ; eip
-    mov [ebx + 56], edx
-    mov edx, [ecx + 36]  ; cs
-    mov [ebx + 60], edx
-    mov edx, [ecx + 40]  ; eflags
-    mov [ebx + 64], edx
+    ; The IRQ stub pushed these; we must pop them to clean up the stack.
+    add esp, 8
 
-    ; We are done. Restore our stack frame and return to irq_common_stub.
-    mov esp, ebp
-    pop ebp
-    ret
+    ; Return from the interrupt, loading the new EIP, CS, and EFLAGS.
+    iret
