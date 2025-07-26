@@ -44,19 +44,25 @@ static void sys_getchar(registers_t *r) {
 static void sys_exit(registers_t *r) {
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
 
-    // Clean up resources using the PCB
-    if (current_task && current_task->user_stack) {
+    // Keep a pointer to the task we are exiting.
+    task_struct_t* task_to_exit = current_task;
+
+    // Clean up resources (like the user stack).
+    if (task_to_exit && task_to_exit->user_stack) {
         qemu_debug_string("SYSCALL: Freeing user stack for PID ");
-        qemu_debug_hex(current_task->pid);
+        qemu_debug_hex(task_to_exit->pid);
         qemu_debug_string(".\n");
 
-        free(current_task->user_stack);
-        current_task->user_stack = NULL;
+        free(task_to_exit->user_stack);
+        task_to_exit->user_stack = NULL;
     }
 
     // Mark the task as finished
-    if (current_task) {
-        current_task->state = TASK_STATE_ZOMBIE;
+    if (task_to_exit) {
+        // Instead of just making a zombie, free the process slot completely
+        task_to_exit->state = TASK_STATE_ZOMBIE;
+        // Clear the name for a clean 'ps' output next time.
+        memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
     }
 
     // The user program is done. The 'current_task' is now the shell (PID 1) again.
