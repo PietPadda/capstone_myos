@@ -34,8 +34,7 @@ void task_a() {
     qemu_debug_string("task_a: entered.\n");
     while (1) {
         print_char('A');
-        // Halt until the next interrupt (the timer tick)
-        __asm__ __volatile__("hlt");
+        sleep(1000); // Sleep for 1000 milliseconds
     }
 }
 
@@ -44,8 +43,7 @@ void task_b() {
     qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
-        // Halt until the next interrupt (the timer tick)
-        __asm__ __volatile__("hlt");
+        sleep(500); // Sleep for 500 milliseconds
     }
 }
 

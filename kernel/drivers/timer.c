@@ -3,11 +3,15 @@
 #include <kernel/timer.h>
 #include <kernel/irq.h>
 #include <kernel/io.h>
-#include <kernel/vga.h> // For printing output
+#include <kernel/vga.h>         // For printing output
 #include <kernel/cpu/process.h> // schedule()
+#include <kernel/debug.h>       // For debug printing
 
 // Make the global flag visible to this file
 extern volatile int multitasking_enabled;
+
+// Make the globally defined current_task pointer visible to this file.
+extern task_struct_t* current_task;
 
 static volatile uint32_t tick = 0;
 
@@ -49,7 +53,7 @@ uint32_t timer_get_ticks() {
     return tick;
 }
 
-// delay tick func
+// Puts the current task to sleep for a specified number of milliseconds.
 void sleep(uint32_t milliseconds) {
     uint32_t start_tick = timer_get_ticks();
     // Our timer is at 100Hz, so 1 tick happens every 10ms.
@@ -60,11 +64,17 @@ void sleep(uint32_t milliseconds) {
         ticks_to_wait = 1;
     }
 
-    uint32_t end_tick = start_tick + ticks_to_wait;
+    // Set the state and wakeup time on the current task's PCB.
+    current_task->state = TASK_STATE_SLEEPING;
+    current_task->wakeup_time = start_tick + ticks_to_wait;
 
-    while (timer_get_ticks() < end_tick) {
-        // This is the fix: Re-enable interrupts and then immediately halt.
-        // The CPU will wait here until the next timer interrupt arrives.
-        __asm__ __volatile__("sti\n\thlt");
-    }
+    qemu_debug_string("sleep: PID ");
+    qemu_debug_hex(current_task->pid);
+    qemu_debug_string(" sleeping until tick ");
+    qemu_debug_hex(current_task->wakeup_time);
+    qemu_debug_string(".\n");
+
+    // Yield the CPU by halting. The scheduler will not run this task again
+    // until the timer handler has woken it up.
+    __asm__ __volatile__("hlt");
 }
