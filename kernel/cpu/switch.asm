@@ -56,14 +56,14 @@ task_switch:
     call schedule
     add esp, 4      ; Clean up argument
     
+    ; --- THE FIX ---
     ; Immediately save the return value from schedule (in EAX) into a safe register.
     mov ecx, eax        ; ecx now holds the pointer to the new task's state.
 
-    ; Send End-of-Interrupt to the PIC. This is the safest place to do it.
-    ; The old state is saved and the new state is chosen. We are committed
-    ; to the switch. Now we can tell the PIC it's okay to send more interrupts.
-    mov al, 0x20
-    out 0x20, al
+    ; --- REMOVE THIS BLOCK ---
+    ; mov al, 0x20
+    ; out 0xA0, al
+    ; out 0x20, al
 
     ; Get the pointer to the on-stack registers_t ('r')
     mov ebx, [ebp + 8]
