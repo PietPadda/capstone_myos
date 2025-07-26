@@ -53,6 +53,21 @@ uint32_t timer_get_ticks() {
     return tick;
 }
 
+// This is a simple, blocking delay function for use when the scheduler is not active.
+void delay_ms(uint32_t milliseconds) {
+    uint32_t start_tick = timer_get_ticks();
+    uint32_t ticks_to_wait = milliseconds / 10;
+    if (ticks_to_wait == 0) {
+        ticks_to_wait = 1;
+    }
+    uint32_t end_tick = start_tick + ticks_to_wait;
+
+    while (timer_get_ticks() < end_tick) {
+        // Re-enable interrupts and halt. This is safe for a single-threaded context.
+        __asm__ __volatile__("sti\n\thlt");
+    }
+}
+
 // Puts the current task to sleep for a specified number of milliseconds.
 void sleep(uint32_t milliseconds) {
     uint32_t start_tick = timer_get_ticks();

@@ -88,13 +88,13 @@ void kmain() {
     qemu_debug_string("pit_inst ");
 
     // clear the bios text
-    sleep(800); // Pause for 2 seconds
+    delay_ms(800); // Use our blocking delay before the scheduler is active.
     clear_screen();
     qemu_debug_string("clear_bios_scr ");
 
     // print the boot screen
     print_bootscreen();
-    sleep(1800); // Pause for 2 seconds
+    delay_ms(1800); // Use our blocking delay before the scheduler is active.
     qemu_debug_string("print_boot_scr ");
     clear_screen();
 
