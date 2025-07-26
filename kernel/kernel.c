@@ -34,7 +34,8 @@ void task_a() {
     qemu_debug_string("task_a: entered.\n");
     while (1) {
         print_char('A');
-        for (int i = 0; i < 100000000; i++) {} // Delay loop
+        // Halt until the next interrupt (the timer tick)
+        __asm__ __volatile__("hlt");
     }
 }
 
@@ -43,7 +44,8 @@ void task_b() {
     qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
-        for (int i = 0; i < 100000000; i++) {} // Delay loop
+        // Halt until the next interrupt (the timer tick)
+        __asm__ __volatile__("hlt");
     }
 }
 
