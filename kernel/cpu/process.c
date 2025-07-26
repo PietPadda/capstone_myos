@@ -19,7 +19,7 @@ task_struct_t* current_task = NULL;
 volatile int multitasking_enabled = 0;
 
 // Let this file know about our new tasks
-extern void task_a(); 
+extern void idle_task();
 extern void task_b();
 
 // We need to access our TSS entry defined in tss.c
@@ -291,13 +291,13 @@ void process_init() {
     void* stack_a = malloc(4096);
     process_table[0].pid = 0;
     process_table[0].state = TASK_STATE_RUNNING;
-    strncpy(process_table[0].name, "task_a", PROCESS_NAME_LEN);
+    strncpy(process_table[0].name, "idle", PROCESS_NAME_LEN);
 
     // sure that every task starts with a clean slate
     memset(&process_table[0].cpu_state, 0, sizeof(cpu_state_t));
     
     // Set up initial CPU state for IRET
-    process_table[0].cpu_state.eip = (uint32_t)task_a;
+    process_table[0].cpu_state.eip = (uint32_t)idle_task;
     process_table[0].cpu_state.cs = 0x08; // Kernel Code Segment
     process_table[0].cpu_state.ss = 0x10; // Kernel Data Segment
     process_table[0].cpu_state.eflags = 0x202; // Interrupts enabled
@@ -386,7 +386,9 @@ cpu_state_t* schedule(registers_t *r) {
     int next_pid = current_task->pid;
     for (int i = 0; i < MAX_PROCESSES; i++) {
         next_pid = (next_pid + 1) % MAX_PROCESSES;
-        if (process_table[next_pid].state == TASK_STATE_RUNNING) {
+        // We add "next_pid != 0" to temporarily skip the idle task
+        // unless it's the only option left.
+        if (process_table[next_pid].state == TASK_STATE_RUNNING && next_pid != 0) {
             // Found a runnable task, switch to it.
             current_task = &process_table[next_pid];
             qemu_debug_string("schedule: Switching to PID ");
@@ -397,8 +399,8 @@ cpu_state_t* schedule(registers_t *r) {
     }
 
     // Idle Case
-    // If no other task is runnable, just continue with the current one.
-    // This is important for when there's only one active task.
+     // If no other task was found, default to the idle task.
+    current_task = &process_table[0];
     qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
     qemu_debug_hex(current_task->pid);
     qemu_debug_string(".\n");

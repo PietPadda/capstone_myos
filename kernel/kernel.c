@@ -29,12 +29,11 @@ static inline void outb(unsigned short port, unsigned char data) {
     __asm__ __volatile__("outb %0, %1" : : "a"(data), "Nd"(port));
 }
 
-// Our first simple kernel task
-void task_a() {
-    qemu_debug_string("task_a: entered.\n");
+// This is our new dedicated idle task. It does nothing but halt.
+void idle_task() {
+    qemu_debug_string("idle_task: entered.\n");
     while (1) {
-        print_char('A');
-        sleep(1000); // Sleep for 1000 milliseconds
+        __asm__ __volatile__("hlt");
     }
 }
 
@@ -43,7 +42,7 @@ void task_b() {
     qemu_debug_string("task_b: entered.\n");
     while (1) {
         print_char('B');
-        sleep(500); // Sleep for 500 milliseconds
+        sleep(1000); // multitask sleep
     }
 }
 
@@ -64,7 +63,7 @@ void kmain() {
     qemu_debug_string("tss_inst ");
 
     // Initialize the process table BEFORE syscalls and interrupts
-    process_init(); // Sets up task_a and task_b
+    process_init(); // Sets up idle_task and task_b
     qemu_debug_string("proc_init ");
 
     // Syscall install after TSS
