@@ -92,3 +92,10 @@ void pmm_free_frame(void* addr) {
     uint32_t frame_idx = (uint32_t)addr / PMM_FRAME_SIZE;
     pmm_clear_bit(frame_idx);
 }
+
+// Returns the first memory address available for use after the PMM bitmap.
+void* pmm_get_free_addr() {
+    // The bitmap is an array of uint32_t. We can get its end address
+    // by taking the start address and adding its size in bytes.
+    return (void*)((uint32_t)pmm_bitmap + pmm_bitmap_size);
+}

@@ -2,6 +2,7 @@
 
 #include <kernel/memory.h>
 #include <kernel/io.h>     // port_byte_out
+#include <kernel/pmm.h>
 
 // This symbol is defined by the linker script
 extern uint32_t kernel_end;
@@ -19,8 +20,8 @@ static uint32_t heap_top;
 static block_header_t* free_list_head = NULL;
 
 void init_memory() {
-    // The heap starts right where the kernel binary ends
-    heap_top = (uint32_t)&kernel_end;
+    // The heap now starts right after the PMM's bitmap, not at kernel_end.
+    heap_top = (uint32_t)pmm_get_free_addr();
     // free_list_head is now correctly zeroed by the .bss clearing code
 }
 

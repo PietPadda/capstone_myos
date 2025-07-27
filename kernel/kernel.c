@@ -14,6 +14,7 @@
 #include <kernel/syscall.h> // User Mode Syscalls
 #include <kernel/debug.h> // debug prints
 #include <kernel/cpu/process.h> // process_init()
+#include <kernel/pmm.h>
 
 // Make the global flag visible to kmain
 extern volatile int multitasking_enabled;
@@ -49,8 +50,14 @@ void shell_task() {
 void kmain() {
     qemu_debug_string("KERNEL:\nkmain_start ");
 
+    // Initialize the Physical Memory Manager.
+    // We'll assume 16MB of RAM for now. (16 * 1024 * 1024 = 16777216)
+    pmm_init(16777216);
+    qemu_debug_string("pmm_init ");
+
     // initiate dynamic mem allocation
     // Modules like TSS and FS depend on malloc() being ready
+    // Initialize our old heap allocator AFTER the PMM.
     init_memory(); 
     qemu_debug_string("mem_init ");
 

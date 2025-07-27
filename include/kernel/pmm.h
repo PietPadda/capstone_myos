@@ -19,4 +19,7 @@ void* pmm_alloc_frame();
 // addr: The physical address of the frame to free.
 void pmm_free_frame(void* addr);
 
+// Returns the first memory address available for use after the PMM bitmap.
+void* pmm_get_free_addr();
+
 #endif
