@@ -56,7 +56,6 @@ task_switch:
     call schedule
     add esp, 4      ; Clean up argument
     
-    ; --- THE FIX ---
     ; Immediately save the return value from schedule (in EAX) into a safe register.
     mov ecx, eax        ; ecx now holds the pointer to the new task's state.
 
@@ -88,13 +87,21 @@ task_switch:
     mov edx, [ecx + 28]  ; eax
     mov [ebx + 44], edx
     
-    ; --- This is the most important part: update the return address for iret ---
+    ; Update the IRET frame on the stack
     mov edx, [ecx + 32]  ; eip
     mov [ebx + 56], edx
     mov edx, [ecx + 36]  ; cs
     mov [ebx + 60], edx
     mov edx, [ecx + 40]  ; eflags
     mov [ebx + 64], edx
+
+    ; --- THE FIX ---
+    ; We must also update the user stack pointer and segment for the IRET.
+    ; These are at offsets 68 and 72 in the registers_t struct.
+    mov edx, [ecx + 44]  ; new_task->cpu_state.useresp
+    mov [ebx + 68], edx  ; r->useresp
+    mov edx, [ecx + 48]  ; new_task->cpu_state.ss
+    mov [ebx + 72], edx  ; r->ss
 
     ; We are done. Restore our stack frame and return to irq_common_stub.
     mov esp, ebp
