@@ -357,7 +357,7 @@ cpu_state_t* schedule(registers_t *r) {
     current_task->cpu_state.ecx = r->ecx;
     current_task->cpu_state.edx = r->edx;
     current_task->cpu_state.ebx = r->ebx;
-    current_task->cpu_state.esp = r->esp;
+    // current_task->cpu_state.esp = r->esp; // r->esp is the kernel stack pointer after pusha, not the task's ESP
     current_task->cpu_state.ebp = r->ebp;
     current_task->cpu_state.esi = r->esi;
     current_task->cpu_state.edi = r->edi;
@@ -367,7 +367,21 @@ cpu_state_t* schedule(registers_t *r) {
 
     // For a same-privilege interrupt, the stack pointer to save is the
     // one that existed before PUSHA, which is stored in r->esp.
-    current_task->cpu_state.useresp = r->esp;
+    //current_task->cpu_state.useresp = r->esp;
+
+    // Check if the interrupt came from user mode (ring 3).
+    // The user code segment selector is 0x1B (index 3, RPL 3).
+    // The kernel code segment selector is 0x08.
+    if (r->cs == 0x1B) {
+        // This was a user task. The CPU pushed useresp and ss.
+        current_task->cpu_state.useresp = r->useresp;
+        current_task->cpu_state.ss = r->ss;
+    } else {
+        // This was a kernel task. The CPU did not change stacks.
+        // The task's stack pointer is the kernel stack pointer at the time of interrupt.
+        current_task->cpu_state.useresp = r->esp;
+        current_task->cpu_state.ss = 0x10; // Kernel Data Segment
+    }
 
     qemu_debug_string("schedule: State saved. Finding next task...\n");
 
