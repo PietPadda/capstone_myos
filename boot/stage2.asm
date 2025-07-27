@@ -15,6 +15,9 @@ start:
     ; Set up our own stack.
     mov sp, 0x7C00 ; Set stack pointer to a safe area below the original bootloader
 
+    ; Enable the A20 line to access memory above 1MB.
+    call enable_a20
+
     ; --- Load Kernel using modern LBA Extended Read ---
     ; Kernel is located starting at LBA 5 by our build script.
     mov si, dap                 ; Point SI to our Disk Address Packet
@@ -61,6 +64,50 @@ print_error_loop:
 hang:
     cli
     hlt
+
+; --- A20 Gate Enable Routine (via Keyboard Controller) ---
+enable_a20:
+    cli
+    call a20_wait_input  ; Wait for keyboard controller to be ready
+    mov al, 0xAD         ; Command to disable keyboard
+    out 0x64, al
+
+    call a20_wait_input
+    mov al, 0xD0         ; Command to read from controller's output port
+    out 0x64, al
+
+    call a20_wait_output ; Wait for data to be available
+    in al, 0x60          ; Read the controller status byte
+    push eax
+
+    call a20_wait_input
+    mov al, 0xD1         ; Command to write to controller's output port
+    out 0x64, al
+
+    call a20_wait_input
+    pop eax
+    or al, 2             ; Set bit 1 (the A20 bit)
+    out 0x60, al         ; Write the modified status byte back
+
+    call a20_wait_input
+    mov al, 0xAE         ; Command to re-enable the keyboard
+    out 0x64, al
+    sti
+    ret
+
+; Helper: Wait for keyboard controller input buffer to be empty
+a20_wait_input:
+    in al, 0x64
+    test al, 2
+    jnz a20_wait_input
+    ret
+
+; Helper: Wait for keyboard controller output buffer to be full
+a20_wait_output:
+    in al, 0x64
+    test al, 1
+    jz a20_wait_output
+    ret
 
 ; =======================================================
 ; ### 32-BIT PROTECTED MODE CODE ###
