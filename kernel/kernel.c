@@ -51,6 +51,14 @@ void shell_task() {
 void kmain() {
     qemu_debug_string("KERNEL:\nkmain_start ");
 
+    // Install the kernel's GDT
+    gdt_install();
+    qemu_debug_string("gdt_inst ");
+
+    // Install the TSS right after the GDT
+    tss_install(); 
+    qemu_debug_string("tss_inst ");
+
     // Initialize the Physical Memory Manager.
     // We'll assume 16MB of RAM for now. (16 * 1024 * 1024 = 16777216)
     pmm_init(16777216);
@@ -85,14 +93,6 @@ void kmain() {
     // Must happen after PPM and Dynamic Heap
     paging_init();
     qemu_debug_string("paging_init ");
-
-     // Install the kernel's GDT
-    gdt_install();
-    qemu_debug_string("gdt_inst ");
-
-    // Install the TSS right after the GDT
-    tss_install(); 
-    qemu_debug_string("tss_inst ");
 
     // Initialize the process table BEFORE syscalls and interrupts
     process_init(); // Sets up idle_task and shell_task

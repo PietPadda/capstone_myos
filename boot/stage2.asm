@@ -134,9 +134,8 @@ start_32bit:
     mov gs, ax
     mov ss, ax
 
-    ; Move the stack to a much higher address (e.g., 0x900000) to avoid
-    ; being overwritten by the 1MB kernel load.
-    mov esp, 0x900000
+    ; Move the stack to a safe address WITHIN our 4MB identity map.
+    mov esp, 0x90000
 
     ; Jump to the kernel's entry point
     jmp 0x10000
