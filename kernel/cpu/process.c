@@ -8,6 +8,7 @@
 #include <kernel/elf.h>     // ELF loader struc
 #include <kernel/string.h> // For memcpy and strlen
 #include <kernel/debug.h>   // debug print
+#include <kernel/timer.h>
 
 // The process table - now global
 task_struct_t process_table[MAX_PROCESSES];

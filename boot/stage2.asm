@@ -12,9 +12,9 @@ start:
     ; Stage 1 passes the boot drive number in DL. We save it immediately.
     mov [boot_drive], dl
 
-    ; Set up our stack in a safe, low memory area BEFORE attempting the disk read.
-    ; This prevents the loaded kernel data from overwriting the stack.
-    mov sp, 0x5000 
+    ; Set the stack pointer to a known safe area (0x9000), well below
+    ; where the kernel will be loaded (0x10000) and away from our own code (0x5000).
+    mov sp, 0x9000
 
     ; Enable the A20 line to access memory above 1MB.
     call enable_a20

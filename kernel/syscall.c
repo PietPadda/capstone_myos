@@ -11,6 +11,7 @@
 #include <kernel/memory.h>      // free()
 #include <kernel/debug.h>       // debug print
 #include <kernel/cpu/process.h> 
+#include <kernel/string.h>
 
 #define MAX_SYSCALLS 32
 
