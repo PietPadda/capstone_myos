@@ -15,47 +15,37 @@ page_directory_t* kernel_directory = NULL;
 
 // This function sets up and enables paging.
 void paging_init() {
-    // Create the Identity Map
     // Allocate a frame for our kernel's page directory.
-    // pmm_alloc_frame() returns a 4KB-aligned address.
     kernel_directory = (page_directory_t*)pmm_alloc_frame();
     if (!kernel_directory) {
-        qemu_debug_string("Paging Error: Failed to allocate kernel directory.\n");
+        // Handle allocation failure
         return;
     }
-    // Clear the allocated memory.
     memset(kernel_directory, 0, sizeof(page_directory_t));
 
-    // We will now create an identity map for the first 16MB of memory.
-    // This covers all our kernel code, data, and available memory for now.
-    for (uint32_t addr = 0; addr < 16 * 1024 * 1024; addr += PMM_FRAME_SIZE) {
-        // Calculate the indices for the page directory and page table.
-        uint32_t pd_idx = addr / (PAGE_TABLE_ENTRIES * PMM_FRAME_SIZE);
-        uint32_t pt_idx = (addr / PMM_FRAME_SIZE) % PAGE_TABLE_ENTRIES;
-
-        // Check if the page table for this address has been created yet.
-        if (kernel_directory->entries[pd_idx] == 0) {
-            // Allocate a new frame for the page table.
-            page_table_t* new_table = (page_table_t*)pmm_alloc_frame();
-            if (!new_table) {
-                qemu_debug_string("Paging Error: Failed to allocate page table.\n");
-                return;
-            }
-            memset(new_table, 0, sizeof(page_table_t));
-
-            // Set the entry in the page directory.
-            // We use the physical address of the table and set the Present and R/W flags.
-            kernel_directory->entries[pd_idx] = (pde_t)new_table | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    // We need to map 16MB of memory, which requires 4 page tables (4MB each).
+    // Pre-allocate and set up the Page Directory Entries for these tables.
+    for (int i = 0; i < 4; i++) {
+        page_table_t* table = (page_table_t*)pmm_alloc_frame();
+        if (!table) {
+            // Handle allocation failure
+            return;
         }
-
-        // Get the page table from the directory entry.
-        page_table_t* table = (page_table_t*)(kernel_directory->entries[pd_idx] & ~0xFFF);
-        
-        // Set the entry in the page table to map this virtual page to the same physical frame.
-        table->entries[pt_idx] = addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+        memset(table, 0, sizeof(page_table_t));
+        // We set Present, Read/Write, and User flags for each page table.
+        kernel_directory->entries[i] = (pde_t)table | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
     }
 
-    // We will now call the assembly stubs after creating the identity map.
+    // Now, loop through the tables and create the 1-to-1 (identity) mapping.
+    uint32_t virt_addr = 0;
+    for (int pd_idx = 0; pd_idx < 4; pd_idx++) {
+        page_table_t* table = (page_table_t*)(kernel_directory->entries[pd_idx] & ~0xFFF);
+        for (int pt_idx = 0; pt_idx < PAGE_TABLE_ENTRIES; pt_idx++) {
+            table->entries[pt_idx] = virt_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+            virt_addr += PMM_FRAME_SIZE;
+        }
+    }
+
     // Load the page directory into the CR3 register and enable paging.
     load_page_directory(kernel_directory);
     enable_paging();
