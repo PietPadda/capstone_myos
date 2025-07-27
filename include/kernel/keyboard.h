@@ -9,4 +9,7 @@ void keyboard_install();
 // Reads a single character from the keyboard buffer, blocking if empty.
 char keyboard_read_char();
 
+// Clear the keyboard before running new cmds etc
+void keyboard_flush();
+
 #endif

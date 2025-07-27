@@ -47,30 +47,23 @@ static void sys_exit(registers_t *r) {
     // Keep a pointer to the task we are exiting.
     task_struct_t* task_to_exit = current_task;
 
-    // Clean up resources (like the user stack).
-    if (task_to_exit && task_to_exit->user_stack) {
-        qemu_debug_string("SYSCALL: Freeing user stack for PID ");
-        qemu_debug_hex(task_to_exit->pid);
-        qemu_debug_string(".\n");
+    // Switch context to the shell (PID 1) first
+    current_task = &process_table[1]; // This correctly resets focus to PID 1
 
-        free(task_to_exit->user_stack);
-        task_to_exit->user_stack = NULL;
-    }
-
-    // Mark the task as finished
+    // Clean up resources of the exited task
     if (task_to_exit) {
-        // Instead of just making a zombie, free the process slot completely
-        task_to_exit->state = TASK_STATE_ZOMBIE;
-        // Clear the name for a clean 'ps' output next time.
+        if (task_to_exit->user_stack) {
+            free(task_to_exit->user_stack);
+            task_to_exit->user_stack = NULL;
+        }
+        
+       // Mark the slot as free for reuse
+        task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
         memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
     }
 
-    // The user program is done. The 'current_task' is now the shell (PID 1) again.
-    current_task = &process_table[1]; // This correctly resets focus to PID 1
-
     qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
-    // Prepare to return to the kernel shell instead of the user program.
-    // We do this by modifying the stack frame that the `iret` instruction will use.
+    // Prepare the IRET frame to jump back to the shell's restart function.
     r->eip = (uint32_t)restart_shell;
     r->cs = 0x08;      // Kernel Code Segment
     r->ss = 0x10;      // Kernel Stack Segment

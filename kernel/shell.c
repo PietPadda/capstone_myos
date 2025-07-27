@@ -268,6 +268,9 @@ void process_command() {
     // run command
     } else if (strcmp(argv[0], "run") == 0) {
         if (argc > 1) {
+            // Flush any lingering keyboard input before launching the program.
+            keyboard_flush();
+            
             qemu_debug_string("SHELL: 'run' command detected. Calling exec_program...\n");
             // Pass the adjusted arguments to the new process.
             // argc-1: Don't count the "run" command itself.

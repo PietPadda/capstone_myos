@@ -103,3 +103,9 @@ char keyboard_read_char() {
     kbd_buffer_read_idx = (kbd_buffer_read_idx + 1) % KBD_BUFFER_SIZE;
     return c;
 }
+
+// Clears the keyboard buffer by resetting the read/write pointers.
+void keyboard_flush() {
+    // This is an atomic operation on x86, so it's safe.
+    kbd_buffer_read_idx = kbd_buffer_write_idx;
+}
