@@ -52,8 +52,20 @@ void shell_handle_input(char c) {
 
 // The main loop for the shell.
 void shell_run() {
+    char c;
     while (1) {
-        char c = keyboard_read_char();
+        // We create a critical section around keyboard input.
+        // Disable interrupts to prevent the scheduler from running.
+        __asm__ __volatile__("cli");
+
+        // Call our blocking function. The hlt instruction will still
+        // allow the CPU to wake up for the keyboard IRQ.
+        c = keyboard_read_char();
+        
+        // Re-enable interrupts so the system can continue multitasking.
+        __asm__ __volatile__("sti");
+        
+        // Now, handle the character we received.
         shell_handle_input(c);
     }
 }
@@ -270,7 +282,7 @@ void process_command() {
         if (argc > 1) {
             // Flush any lingering keyboard input before launching the program.
             keyboard_flush();
-            
+
             qemu_debug_string("SHELL: 'run' command detected. Calling exec_program...\n");
             // Pass the adjusted arguments to the new process.
             // argc-1: Don't count the "run" command itself.
