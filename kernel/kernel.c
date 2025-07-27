@@ -55,6 +55,25 @@ void kmain() {
     pmm_init(16777216);
     qemu_debug_string("pmm_init ");
 
+    // PMM Sanity Check
+    void* frame1 = pmm_alloc_frame();
+    qemu_debug_string("PMM Test: Alloc frame 1 at ");
+    qemu_debug_hex((uint32_t)frame1);
+    qemu_debug_string("\n");
+
+    void* frame2 = pmm_alloc_frame();
+    qemu_debug_string("PMM Test: Alloc frame 2 at ");
+    qemu_debug_hex((uint32_t)frame2);
+    qemu_debug_string("\n");
+
+    pmm_free_frame(frame1);
+    qemu_debug_string("PMM Test: Freed frame 1\n");
+
+    void* frame3 = pmm_alloc_frame();
+    qemu_debug_string("PMM Test: Alloc frame 3 at ");
+    qemu_debug_hex((uint32_t)frame3);
+    qemu_debug_string(" (should be same as frame 1)\n");
+
     // initiate dynamic mem allocation
     // Modules like TSS and FS depend on malloc() being ready
     // Initialize our old heap allocator AFTER the PMM.
