@@ -47,11 +47,11 @@ void pmm_init(uint32_t mem_size_bytes) {
     // Initially, mark all frames as free (set all bits to 0).
     memset(pmm_bitmap, 0, pmm_bitmap_size);
 
-    // Calculate how many frames are occupied by the kernel and the bitmap itself.
-    // correct kernel start address: 0x10000
-    uint32_t reserved_bytes = (uint32_t)&kernel_end - 0x10000 + pmm_bitmap_size;
-    uint32_t reserved_frames = reserved_bytes / PMM_FRAME_SIZE;
-    if (reserved_bytes % PMM_FRAME_SIZE != 0) {
+    // Calculate the total number of frames to reserve from address 0 up to
+    // the end of our PMM bitmap.
+    uint32_t reserved_end_address = (uint32_t)&kernel_end + pmm_bitmap_size;
+    uint32_t reserved_frames = reserved_end_address / PMM_FRAME_SIZE;
+    if (reserved_end_address  % PMM_FRAME_SIZE != 0) {
         reserved_frames++;
     }
 
