@@ -17,34 +17,39 @@ page_directory_t* kernel_directory = NULL;
 void paging_init() {
     // Allocate a frame for our kernel's page directory.
     kernel_directory = (page_directory_t*)pmm_alloc_frame();
-    if (!kernel_directory) {
-        // Handle allocation failure
-        return;
-    }
-    memset(kernel_directory, 0, sizeof(page_directory_t));
+    if (!kernel_directory) return; // Handle allocation failure
+    
+    // We will reserve the last entry in the page directory for temporary mapping.
+    // This gives us a virtual address (0xFFC00000) that we can use to access
+    // the physical memory of any page table we need to modify.
+    page_table_t* temp_mapping = (page_table_t*)0xFFC00000;
 
-    // We need to map 16MB of memory, which requires 4 page tables (4MB each).
-    // Pre-allocate and set up the Page Directory Entries for these tables.
-    for (int i = 0; i < 4; i++) {
-        page_table_t* table = (page_table_t*)pmm_alloc_frame();
-        if (!table) {
-            // Handle allocation failure
-            return;
-        }
-        memset(table, 0, sizeof(page_table_t));
-        // We set Present, Read/Write, and User flags for each page table.
-        kernel_directory->entries[i] = (pde_t)table | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
-    }
-
-    // Now, loop through the tables and create the 1-to-1 (identity) mapping.
     uint32_t virt_addr = 0;
+    // We map 4 Page Tables to cover 16MB.
     for (int pd_idx = 0; pd_idx < 4; pd_idx++) {
-        page_table_t* table = (page_table_t*)(kernel_directory->entries[pd_idx] & ~0xFFF);
+        // Allocate a physical frame for the page table.
+        page_table_t* new_table_phys = (page_table_t*)pmm_alloc_frame();
+        if (!new_table_phys) return;
+
+        // Put its physical address in the page directory.
+        kernel_directory->entries[pd_idx] = (pde_t)new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+        
+        // Now, temporarily map this physical table to our virtual mapping address.
+        kernel_directory->entries[1023] = (pde_t)new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+        
+        // Flush the TLB entry for our temporary mapping address.
+        __asm__ __volatile__("invlpg (0xFFC00000)");
+
+        // Now we can write to the page table using the `temp_mapping` virtual pointer.
         for (int pt_idx = 0; pt_idx < PAGE_TABLE_ENTRIES; pt_idx++) {
-            table->entries[pt_idx] = virt_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+            temp_mapping->entries[pt_idx] = virt_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
             virt_addr += PMM_FRAME_SIZE;
         }
     }
+    
+    // Unmap the temporary page table entry before we finish.
+    kernel_directory->entries[1023] = 0;
+    __asm__ __volatile__("invlpg (0xFFC00000)");
 
     // Load the page directory into the CR3 register and enable paging.
     load_page_directory(kernel_directory);
