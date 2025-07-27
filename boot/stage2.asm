@@ -12,8 +12,9 @@ start:
     ; Stage 1 passes the boot drive number in DL. We save it immediately.
     mov [boot_drive], dl
 
-    ; Set up our own stack.
-    mov sp, 0x7C00 ; Set stack pointer to a safe area below the original bootloader
+    ; Set up our stack in a safe, low memory area BEFORE attempting the disk read.
+    ; This prevents the loaded kernel data from overwriting the stack.
+    mov sp, 0x5000 
 
     ; Enable the A20 line to access memory above 1MB.
     call enable_a20
