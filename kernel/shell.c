@@ -15,6 +15,9 @@
 // Let the shell know about the process table defined in process.c
 extern task_struct_t process_table[MAX_PROCESSES];
 
+// Make the global current_task pointer visible to this file.
+extern task_struct_t* current_task;
+
 #define PROMPT "PGOS> "
 #define MAX_CMD_LEN 256
 
@@ -52,20 +55,9 @@ void shell_handle_input(char c) {
 
 // The main loop for the shell.
 void shell_run() {
-    char c;
     while (1) {
-        // We create a critical section around keyboard input.
-        // Disable interrupts to prevent the scheduler from running.
-        __asm__ __volatile__("cli");
-
-        // Call our blocking function. The hlt instruction will still
-        // allow the CPU to wake up for the keyboard IRQ.
-        c = keyboard_read_char();
-        
-        // Re-enable interrupts so the system can continue multitasking.
-        __asm__ __volatile__("sti");
-        
-        // Now, handle the character we received.
+        // simple, direct call
+        char c = keyboard_read_char();
         shell_handle_input(c);
     }
 }
@@ -282,12 +274,18 @@ void process_command() {
         if (argc > 1) {
             // Flush any lingering keyboard input before launching the program.
             keyboard_flush();
-
             qemu_debug_string("SHELL: 'run' command detected. Calling exec_program...\n");
-            // Pass the adjusted arguments to the new process.
-            // argc-1: Don't count the "run" command itself.
-            // &argv[1]: Start the argument list from the program name.
-            exec_program(argc - 1, &argv[1]);
+            int child_pid = exec_program(argc - 1, &argv[1]);
+        
+            if (child_pid >= 0) {
+                // We successfully launched a child. Now, we wait for it.
+                current_task->state = TASK_STATE_WAITING;
+                qemu_debug_string("Shell waiting for child process...\n");
+
+                // Force a context switch to run the new program.
+                // The scheduler will skip us until the child exits and wakes us up.
+                __asm__ __volatile__("int $0x20"); // Fire timer IRQ
+            }
         } else {
             print_string("Usage: run <filename>");
         }

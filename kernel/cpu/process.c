@@ -104,7 +104,8 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process
-void exec_program(int argc, char* argv[]) {
+// This function now returns the PID of the new process, or -1 on failure.
+int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Entering exec_program.\n");
     qemu_debug_string("PROCESS: Filename is -> ");
     qemu_debug_string(argv[0]);
@@ -113,7 +114,7 @@ void exec_program(int argc, char* argv[]) {
     // argv[0] is now the filename of the program to execute.
     if (argc == 0) {
         print_string("run: Missing filename.\n");
-         return;
+         return -1;
     }
     const char* filename = argv[0];
 
@@ -122,14 +123,14 @@ void exec_program(int argc, char* argv[]) {
     if (!file_entry) {
         print_string("run: File not found: ");
         print_string(filename);
-        return;
+        return -1;
     }
 
     // Read the entire file into a temporary buffer in kernel memory
     uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
     if (!file_buffer) {
         print_string("run: Not enough memory to load program.\n");
-        return;
+        return -1;
     }
 
     // Cast the beginning of the buffer to an ELF header
@@ -139,7 +140,7 @@ void exec_program(int argc, char* argv[]) {
     if (header->magic != ELF_MAGIC) {
         print_string("run: Not an ELF executable.\n");
         free(file_buffer);
-        return;
+        return -1;
     }
     qemu_debug_string("PROCESS: ELF loaded successfully.\n");
 
@@ -183,7 +184,7 @@ void exec_program(int argc, char* argv[]) {
     if (!new_task) {
         print_string("run: No free processes left.\n");
         free(file_buffer);
-        return;
+        return -1; // Return -1 on failure
     }
 
     // Allocate a separate, aligned stack for the user program.
@@ -191,7 +192,7 @@ void exec_program(int argc, char* argv[]) {
     if (!user_stack) {
         print_string("run: Not enough memory for user stack.\n");
         free(file_buffer);
-        return;
+        return -1;
     }
 
     // Configure the new process's PCB
@@ -239,46 +240,18 @@ void exec_program(int argc, char* argv[]) {
     user_stack_top -= sizeof(int);
     *((int*)user_stack_top) = argc;
 
+    // Instead of switching directly, we now set up the initial cpu_state
+    // for the scheduler to use on the first context switch to this task.
+    memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
+    new_task->cpu_state.eip = (uint32_t)header->entry;
+    new_task->cpu_state.useresp = (uint32_t)user_stack_top;
+    new_task->cpu_state.cs = 0x1B;  // User Code Segment
+    new_task->cpu_state.ss = 0x23;  // User Data Segment
+    new_task->cpu_state.eflags = 0x202; // Interrupts enabled
+
     // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
-
-    // Set the new task as the currently running one BEFORE we make the switch.
-    current_task = new_task;
-
-    // Jump to the program's entry point specified in the ELF header
-    // Cast the final stack pointer back to void* for the function call
-    qemu_debug_string("PROCESS: Final user_stack_top: ");
-    qemu_debug_hex(user_stack_top);
-    qemu_debug_string("\n");
-
-    qemu_debug_string("PROCESS: Program entry point: ");
-    qemu_debug_hex(header->entry);
-    qemu_debug_string("\n");
-    
-    // Check the values on the stack right before the switch
-    // The top of the stack should now be argc.
-    int* argc_ptr = (int*)user_stack_top;
-    qemu_debug_string("PROCESS: Argc on stack: ");
-    qemu_debug_hex(*argc_ptr);
-    qemu_debug_string("\n");
-    
-    // The next value should be the argv pointer
-    char*** argv_ptr_on_stack = (char***)(user_stack_top + sizeof(int));
-    qemu_debug_string("PROCESS: Argv on stack: ");
-    qemu_debug_hex((uint32_t)*argv_ptr_on_stack);
-    qemu_debug_string("\n");
-
-    // Jump to the program's entry point specified in the ELF header
-    qemu_debug_string("PROCESS: Dumping user stack contents before switch...\n");
-    // We'll dump the top 64 bytes, which should contain argc, argv,
-    // and the pointers to the argument strings.
-    qemu_debug_memdump((void*)user_stack_top, 64);
-
-    qemu_debug_string("PROCESS: Switching to user mode at entry point ");
-    qemu_debug_hex(header->entry);
-    qemu_debug_string("\n");
-
-    switch_to_user_mode((void*)header->entry, (void*)user_stack_top);
+    return new_pid; // Return the new PID to the caller (the shell)
 }
 
 // Initializes the process table and creates the first kernel task.

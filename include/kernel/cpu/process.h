@@ -15,6 +15,7 @@ typedef enum {
     TASK_STATE_UNUSED,    // This entry in the table is free
     TASK_STATE_RUNNING,   // The process is currently running or ready to run
     TASK_STATE_SLEEPING,  // The task is paused, waiting for a timeout
+    TASK_STATE_WAITING,   // Task is blocked, waiting for a child to exit
     TASK_STATE_ZOMBIE     // The process has finished but is waiting to be cleaned up
 } task_state_t;
 
@@ -50,7 +51,7 @@ typedef struct {
 } task_struct_t;
 
 void switch_to_user_mode(void* entry_point, void* stack_ptr); // takes  entry point AND user stack pointer
-void exec_program(int argc, char* argv[]);
+int exec_program(int argc, char* argv[]);
 void process_init();
 cpu_state_t* schedule(registers_t *r);
 

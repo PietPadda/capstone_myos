@@ -91,11 +91,11 @@ void keyboard_install() {
 
 // Blocks until a character is available and returns it.
 char keyboard_read_char() {
-    // Wait for a character to be available in the buffer
+    // Wait for a character to be available
     while (kbd_buffer_read_idx == kbd_buffer_write_idx) {
-        // Halt the CPU. The caller is responsible for ensuring interrupts
-        // are enabled so the CPU can be woken by a keypress.
-        __asm__ __volatile__("hlt");
+        // Atomically enable interrupts and then halt.
+        // The CPU will wait here until the next interrupt (e.g., a keypress).
+        __asm__ __volatile__("sti\n\thlt");
     }
 
     // Read the character from the buffer

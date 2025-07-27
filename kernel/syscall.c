@@ -47,28 +47,24 @@ static void sys_exit(registers_t *r) {
     // Keep a pointer to the task we are exiting.
     task_struct_t* task_to_exit = current_task;
 
-    // Switch context to the shell (PID 1) first
-    current_task = &process_table[1]; // This correctly resets focus to PID 1
+    // Wake up the parent shell (PID 1) if it's waiting.
+    if (process_table[1].state == TASK_STATE_WAITING) {
+        process_table[1].state = TASK_STATE_RUNNING;
+    }
 
-    // Clean up resources of the exited task
+    // Clean up the exited task completely, fixing the resource leak.
     if (task_to_exit) {
         if (task_to_exit->user_stack) {
             free(task_to_exit->user_stack);
-            task_to_exit->user_stack = NULL;
         }
-        
-       // Mark the slot as free for reuse
+        // Mark the slot as free for reuse
         task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
         memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
     }
 
     qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
-    // Prepare the IRET frame to jump back to the shell's restart function.
-    r->eip = (uint32_t)restart_shell;
-    r->cs = 0x08;      // Kernel Code Segment
-    r->ss = 0x10;      // Kernel Stack Segment
-    r->useresp = tss_entry.esp0;
-    r->eflags = 0x202; // Interrupts enabled (IF = 1), plus a mandatory bit.
+    // Force a context switch. The scheduler will now see the shell is runnable.
+    __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
 }
 
 void syscall_install() {
