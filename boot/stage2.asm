@@ -75,8 +75,9 @@ start_32bit:
     mov gs, ax
     mov ss, ax
 
-    ; Set up the stack in a high memory area
-    mov esp, 0x90000
+    ; Move the stack to a much higher address (e.g., 0x900000) to avoid
+    ; being overwritten by the 1MB kernel load.
+    mov esp, 0x900000
 
     ; Jump to the kernel's entry point
     jmp 0x10000
