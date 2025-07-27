@@ -19,25 +19,36 @@ start:
     ; Enable the A20 line to access memory above 1MB.
     call enable_a20
 
-    ; --- Load Kernel using modern LBA Extended Read ---
-    ; Kernel is located starting at LBA 5 by our build script.
+    ; --- Load Kernel using modern LBA Extended Read in a loop ---
+    ; We will read 8 chunks of 32KB each to load a total of 256KB.
+    ; 256KB = 512 sectors. 512 sectors / 64 sectors_per_chunk = 8 chunks.
+    mov cx, 8                   ; CX will be our loop counter (8 chunks)
+    mov dword [current_lba], 5  ; The kernel starts at LBA 5
+    
+    ; Set the initial memory destination segment to 0x1000 (for physical addr 0x10000)
+    mov ax, 0x1000
+    mov es, ax
+
+load_loop:
+    ; Set up the Disk Address Packet for this chunk
     mov si, dap                 ; Point SI to our Disk Address Packet
-    ; Reduce read size to a safer 128KB (256 sectors) to avoid BIOS boundary issues.
-    mov word [si + 2], 256
+    mov word [si + 2], 64       ; Read 64 sectors per loop (32KB) -- BIOS limit
     mov word [si + 4], 0x0000   ; Target buffer offset
     mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
-    mov dword [si + 8], 5       ; LBA Start = 5 (after stage1 and stage2)
+    mov ebx, [current_lba]
+    mov [si + 8], ebx           ; LBA start for this chunk
 
+    ; Call BIOS extended read
     mov ah, 0x42                ; BIOS Extended Read function
     mov dl, [boot_drive]        ; Use the saved drive number
     int 0x13
-    jc disk_error
+    jc disk_error               ; If any chunk fails, we abort
 
     ; --- Enter Protected Mode ---
-    cli                         ; 1. Disable interrupts
-    lgdt [gdt_descriptor]       ; 2. Load our GDT
+    cli                         ; Disable interrupts
+    lgdt [gdt_descriptor]       ; Load our GDT
     
-    mov eax, cr0                ; 3. Set the PE bit in CR0 to enable protected mode
+    mov eax, cr0                ; Set the PE bit in CR0 to enable protected mode
     or eax, 0x01
     mov cr0, eax
 
@@ -49,10 +60,11 @@ start:
     mov es, ax
     mov ss, ax
     
-    jmp GDT_CODE:start_32bit    ; 4. Far jump to flush the CPU pipeline
+    jmp GDT_CODE:start_32bit    ; Far jump to flush the CPU pipeline
 
 disk_error:
     mov si, msg_disk_error
+
 print_error_loop:
     lodsb
     or al, al
@@ -134,6 +146,7 @@ start_32bit:
 ; =======================================================
 boot_drive:     db 0
 msg_disk_error: db 'Stage 2 read error!', 0
+current_lba:    dd 0    ; store the current LBA for the loop
 
 ; Disk Address Packet (DAP) for the extended read call
 dap:
