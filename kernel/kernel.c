@@ -14,7 +14,8 @@
 #include <kernel/syscall.h> // User Mode Syscalls
 #include <kernel/debug.h> // debug prints
 #include <kernel/cpu/process.h> // process_init()
-#include <kernel/pmm.h>
+#include <kernel/pmm.h> // physical memory manager
+#include <kernel/paging.h> // paging creator
 
 // Make the global flag visible to kmain
 extern volatile int multitasking_enabled;
@@ -79,6 +80,11 @@ void kmain() {
     // Initialize our old heap allocator AFTER the PMM.
     init_memory(); 
     qemu_debug_string("mem_init ");
+
+    // Initialize and enable paging
+    // Must happen after PPM and Dynamic Heap
+    paging_init();
+    qemu_debug_string("paging_init ");
 
      // Install the kernel's GDT
     gdt_install();
