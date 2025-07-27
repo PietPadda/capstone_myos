@@ -17,4 +17,9 @@ enable_paging:
     mov eax, cr0
     or eax, 0x80000000 ; Set bit 31 (PG)
     mov cr0, eax
+    ; Immediately jump to a label to flush the CPU's prefetch queue.
+    ; This is required by the Intel SDM after enabling paging.
+    jmp .flush_pipe
+
+.flush_pipe:
     ret
