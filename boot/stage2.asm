@@ -22,9 +22,8 @@ start:
     ; --- Load Kernel using modern LBA Extended Read ---
     ; Kernel is located starting at LBA 5 by our build script.
     mov si, dap                 ; Point SI to our Disk Address Packet
-    ; Increase sectors to read to 2048 (1MB), ensuring our whole kernel
-    ; and initial data structures are loaded into memory.
-    mov word [si + 2], 2048       ; Increase sectors to read to X 512b sectors
+    ; Reduce read size to a safer 128KB (256 sectors) to avoid BIOS boundary issues.
+    mov word [si + 2], 256
     mov word [si + 4], 0x0000   ; Target buffer offset
     mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
     mov dword [si + 8], 5       ; LBA Start = 5 (after stage1 and stage2)
