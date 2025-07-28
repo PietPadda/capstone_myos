@@ -51,13 +51,10 @@ void shell_task() {
 void kmain() {
     qemu_debug_string("KERNEL:\nkmain_start ");
 
-    // Install the kernel's GDT
-    gdt_install();
-    qemu_debug_string("gdt_inst ");
-
-    // Install the TSS right after the GDT
-    tss_install(); 
-    qemu_debug_string("tss_inst ");
+    // Install the IDT first so we can catch any exceptions.
+    // install our Interrupt Service Routines and load the IDT.
+    idt_install();
+    qemu_debug_string("idt_inst ");
 
     // Initialize the Physical Memory Manager.
     // We'll assume 16MB of RAM for now. (16 * 1024 * 1024 = 16777216)
@@ -94,6 +91,17 @@ void kmain() {
     paging_init();
     qemu_debug_string("paging_init ");
 
+    // Install the kernel's GDT
+    // Reload the GDT AFTER paging is enabled. This ensures the CPU
+    // is using the correct descriptor table in the new memory map.
+    gdt_install();
+    qemu_debug_string("gdt_inst ");
+
+    // Now, initialize the rest of the systems that depend on the GDT.
+    // Install the TSS right after the GDT
+    tss_install(); 
+    qemu_debug_string("tss_inst ");
+
     // Initialize the process table BEFORE syscalls and interrupts
     process_init(); // Sets up idle_task and shell_task
     qemu_debug_string("proc_init ");
@@ -105,10 +113,6 @@ void kmain() {
     // Remap the PIC first to get the hardware into a stable state.
     pic_remap(0x20, 0x28); // Master PIC at 0x20, Slave at 0x28
     qemu_debug_string("pic_remap ");
-
-    // Now, install our Interrupt Service Routines and load the IDT.
-    idt_install();
-    qemu_debug_string("idt_inst ");
 
     // Install the keyboard driver.
     keyboard_install();
@@ -134,18 +138,9 @@ void kmain() {
     init_fs();
     qemu_debug_string("fs_init ");
 
-    // Initialize the shell
-    // shell_init();
-    // qemu_debug_string("shell_init ");
-
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
     qemu_debug_string("interrupt_enable ");
-
-    // Start the shell's main processing loop.
-    // This function will only return if a program is launched.
-    // shell_run();
-    // qemu_debug_string("shell_proc_loop ");
 
     // Open the gate for the scheduler right before starting.
     multitasking_enabled = 1;
