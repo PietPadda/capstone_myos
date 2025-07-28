@@ -10,8 +10,8 @@
 extern void load_page_directory(page_directory_t* dir);
 extern void enable_paging();
 
-// The kernel's page directory.
-page_directory_t* kernel_directory = NULL;
+// Make the kernel_directory static so its pointer is not stored on the stack.
+static page_directory_t* kernel_directory = NULL;
 
 // This function sets up and enables paging.
 void paging_init() {
@@ -39,13 +39,15 @@ void paging_init() {
     // Loop through all 1024 entries in the page table to map 4MB.
     for (int i = 0; i < 1024; i++) {
         uint32_t phys_addr = i * 0x1000;
-        pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+        // Add the USER flag to all kernel pages. Ring 0 can still access them.
+        pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
         first_pt->entries[i] = page;
     }
     qemu_debug_string("PAGING_INIT: first_pt entries filled\n");
 
     // Put the newly created page table into the first entry of the page directory.
-    kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    // Add the USER flag here as well.
+    kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
     qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
 
     load_page_directory(kernel_directory);
