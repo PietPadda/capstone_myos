@@ -50,6 +50,12 @@ void paging_init() {
     kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
     qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
 
+    // Add the recursive mapping.
+    // The last entry of the page directory is made to point to the directory's physical address.
+    uint32_t page_dir_phys_addr = (uint32_t)kernel_directory;
+    kernel_directory->entries[1023] = page_dir_phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    qemu_debug_string("PAGING_INIT: Recursive mapping set for entry 1023.\n");
+
     load_page_directory(kernel_directory);
     qemu_debug_string("PAGING_INIT: CR3 loaded with page directory address\n");
 
