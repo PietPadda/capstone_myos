@@ -138,6 +138,10 @@ void kmain() {
     init_fs();
     qemu_debug_string("fs_init ");
 
+    // Initialize our disk driver's shared I/O buffer AFTER paging is on.
+    disk_init();
+    qemu_debug_string("disk_init ");
+
     // Enable interrupts! From this point on, the CPU will respond to hardware.
     __asm__ __volatile__ ("sti");
     qemu_debug_string("interrupt_enable ");
