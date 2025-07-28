@@ -9,6 +9,5 @@
 // lba: The linear block address of the sector.
 // buffer: A pointer to a 512-byte buffer to store the data.
 void read_disk_sector(uint32_t lba, uint8_t* buffer_out);
-void disk_init();
 
 #endif

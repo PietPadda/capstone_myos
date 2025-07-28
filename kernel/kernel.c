@@ -121,15 +121,10 @@ void kmain() {
     // Install the timer driver.
     timer_install(); // Install our new timer driver
     qemu_debug_string("pit_inst ");
-    
-    // Initialize the filesystem driver. This must be done after memory
-    // is initialized, as it uses malloc().
+
+    // Initialize the filesystem driver
     init_fs();
     qemu_debug_string("fs_init ");
-
-    // Initialize our disk driver's shared I/O buffer AFTER paging is on.
-    disk_init();
-    qemu_debug_string("disk_init ");
 
     // clear the bios text
     delay_ms(800); // Use our blocking delay before the scheduler is active.
