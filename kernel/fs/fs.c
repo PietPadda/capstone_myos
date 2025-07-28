@@ -6,6 +6,7 @@
 #include <kernel/memory.h>
 #include <kernel/io.h>
 #include <kernel/string.h> // For our new string functions
+#include <kernel/pmm.h>
 
 fat12_bpb_t* bpb; // make global
 static uint8_t* fat_buffer;
@@ -15,13 +16,13 @@ uint32_t root_directory_size; // global ie no static
 
 void init_fs() {
     // Read the BIOS Parameter Block (Sector 0)
-    uint8_t* buffer = (uint8_t*)malloc(512);
+    uint8_t* buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM instead of malloc
     read_disk_sector(0, buffer);
     bpb = (fat12_bpb_t*)buffer;
 
     // Read the FAT into memory
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
-    fat_buffer = (uint8_t*)malloc(fat_size_bytes);
+    fat_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM. Assume FAT fits in 4KB for now.
     for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
         read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
     }
@@ -38,7 +39,7 @@ void init_fs() {
     data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
 
     // Read the entire root directory into a new buffer
-    root_directory_buffer = (uint8_t*)malloc(root_dir_size_sectors * bpb->bytes_per_sector);
+    root_directory_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM. Assume root dir fits in 4KB.
     for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
         read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
     }
@@ -96,12 +97,10 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 
 void* fs_read_file(fat_dir_entry_t* entry) {
     uint32_t size = entry->file_size;
-    if (size == 0) return malloc(1); // Handle empty files
+    if (size == 0) return pmm_alloc_frame(); // Handle empty files, still give it a page.
 
-    // Allocate enough space for the full clusters to prevent a buffer overflow.
-    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
-    uint32_t num_clusters = (size + bytes_per_cluster - 1) / bytes_per_cluster;
-    uint8_t* file_buffer = (uint8_t*)malloc(num_clusters * bytes_per_cluster);
+    // For now, we will only support files that fit in a single 4KB frame.
+    uint8_t* file_buffer = (uint8_t*)pmm_alloc_frame();
 
     if (!file_buffer) {
         return NULL;
@@ -113,7 +112,7 @@ void* fs_read_file(fat_dir_entry_t* entry) {
     // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
         fs_read_cluster(current_cluster, current_pos);
-        current_pos += bytes_per_cluster;
+        current_pos += bpb->sectors_per_cluster * bpb->bytes_per_sector;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
     return file_buffer;
