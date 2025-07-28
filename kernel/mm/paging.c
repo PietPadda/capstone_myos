@@ -15,45 +15,42 @@ page_directory_t* kernel_directory = NULL;
 
 // This function sets up and enables paging.
 void paging_init() {
-    // Allocate a frame for our kernel's page directory.
+    qemu_debug_string("PAGING_INIT: start\n");
+
     kernel_directory = (page_directory_t*)pmm_alloc_frame();
-    if (!kernel_directory) return; // Handle allocation failure
-    
-    // We will reserve the last entry in the page directory for temporary mapping.
-    // This gives us a virtual address (0xFFC00000) that we can use to access
-    // the physical memory of any page table we need to modify.
-    page_table_t* temp_mapping = (page_table_t*)0xFFC00000;
-
-    uint32_t virt_addr = 0;
-    // We map 4 Page Tables to cover 16MB.
-    for (int pd_idx = 0; pd_idx < 4; pd_idx++) {
-        // Allocate a physical frame for the page table.
-        page_table_t* new_table_phys = (page_table_t*)pmm_alloc_frame();
-        if (!new_table_phys) return;
-
-        // Put its physical address in the page directory.
-        kernel_directory->entries[pd_idx] = (pde_t)new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
-        
-        // Now, temporarily map this physical table to our virtual mapping address.
-        kernel_directory->entries[1023] = (pde_t)new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-        
-        // Flush the TLB entry for our temporary mapping address.
-        __asm__ __volatile__("invlpg (0xFFC00000)");
-
-        // Now we can write to the page table using the `temp_mapping` virtual pointer.
-        for (int pt_idx = 0; pt_idx < PAGE_TABLE_ENTRIES; pt_idx++) {
-            temp_mapping->entries[pt_idx] = virt_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
-            virt_addr += PMM_FRAME_SIZE;
-        }
+    if (!kernel_directory) {
+        qemu_debug_string("PAGING_INIT: PANIC! no frame for page directory\n");
+        return;
     }
-    
-    // Unmap the temporary page table entry before we finish.
-    kernel_directory->entries[1023] = 0;
-    __asm__ __volatile__("invlpg (0xFFC00000)");
+    qemu_debug_string("PAGING_INIT: kernel_directory allocated\n");
+    memset(kernel_directory, 0, sizeof(page_directory_t));
+    qemu_debug_string("PAGING_INIT: kernel_directory zeroed\n");
 
-    // Load the page directory into the CR3 register and enable paging.
+    // We will identity map the first 4MB of memory.
+    page_table_t* first_pt = (page_table_t*)pmm_alloc_frame();
+    if (!first_pt) {
+        qemu_debug_string("PAGING_INIT: PANIC! no frame for page table\n");
+        return;
+    }
+    qemu_debug_string("PAGING_INIT: first_pt allocated\n");
+    memset(first_pt, 0, sizeof(page_table_t));
+    qemu_debug_string("PAGING_INIT: first_pt zeroed\n");
+
+    // Loop through all 1024 entries in the page table to map 4MB.
+    for (int i = 0; i < 1024; i++) {
+        uint32_t phys_addr = i * 0x1000;
+        pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+        first_pt->entries[i] = page;
+    }
+    qemu_debug_string("PAGING_INIT: first_pt entries filled\n");
+
+    // Put the newly created page table into the first entry of the page directory.
+    kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
+
     load_page_directory(kernel_directory);
+    qemu_debug_string("PAGING_INIT: CR3 loaded with page directory address\n");
+
     enable_paging();
-    
-    qemu_debug_string("Paging enabled.\n");
+    qemu_debug_string("PAGING_INIT: Paging bit set in CR0. MMU is now active.\n");
 }
