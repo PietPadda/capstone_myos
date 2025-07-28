@@ -49,6 +49,37 @@ void shell_task() {
 }
 
 void kmain() {
+    qemu_debug_string("--- KERNEL BOOT ---\n");
+    
+    // Install the IDT first so we can catch any exceptions.
+    idt_install();
+    
+    // Initialize memory managers.
+    pmm_init(16777216); // 16MB
+    init_memory();
+    qemu_debug_string("Memory managers initialized.\n");
+
+    // Enable paging.
+    paging_init();
+    qemu_debug_string("Paging init complete.\n");
+
+    // Reload GDT and TSS after changing the memory map.
+    gdt_install();
+    qemu_debug_string("GDT reloaded post-paging.\n");
+    tss_install();
+    qemu_debug_string("TSS reloaded post-paging.\n");
+
+    // If we get here, paging is on and stable.
+    clear_screen();
+    qemu_debug_string("PGOS Booted Successfully with Paging Enabled!");
+    print_string("PGOS Booted Successfully with Paging Enabled!");
+
+    // Halt the system.
+    for (;;) {
+        __asm__ __volatile__("hlt");
+    }
+
+    /*
     qemu_debug_string("KERNEL:\nkmain_start ");
 
     // Install the IDT first so we can catch any exceptions.
@@ -158,5 +189,5 @@ void kmain() {
     // This part of kmain should never be reached.
     while (1) {
         __asm__ __volatile__("hlt");
-    }
+    } */
 }
