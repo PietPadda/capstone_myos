@@ -14,6 +14,10 @@ global task_switch
 start_multitasking:
     ; Get the pointer to the cpu_state_t struct from the stack.
     mov ebx, [esp + 4]
+
+    ; Load the new task's page directory
+    mov eax, [ebx + 52] ; cpu_state.cr3 is at offset 52
+    mov cr3, eax
     
     ; We are about to jump to a new task, so we can disable interrupts.
     ; The IRET instruction will re-enable them using the task's saved EFLAGS.
@@ -95,13 +99,17 @@ task_switch:
     mov edx, [ecx + 40]  ; eflags
     mov [ebx + 64], edx
 
-    ; --- THE FIX ---
     ; We must also update the user stack pointer and segment for the IRET.
     ; These are at offsets 68 and 72 in the registers_t struct.
     mov edx, [ecx + 44]  ; new_task->cpu_state.useresp
     mov [ebx + 68], edx  ; r->useresp
     mov edx, [ecx + 48]  ; new_task->cpu_state.ss
     mov [ebx + 72], edx  ; r->ss
+
+    ; --- THIS IS THE MAGIC ---
+    ; Load the physical address of the new task's page directory into CR3.
+    mov edx, [ecx + 52]  ; new_task->cpu_state.cr3 is at offset 52
+    mov cr3, edx
 
     ; We are done. Restore our stack frame and return to irq_common_stub.
     mov esp, ebp

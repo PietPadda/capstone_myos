@@ -10,8 +10,8 @@
 extern void load_page_directory(page_directory_t* dir);
 extern void enable_paging();
 
-// Make the kernel_directory static so its pointer is not stored on the stack.
-static page_directory_t* kernel_directory = NULL;
+// The kernel's page directory, now globally visible.
+page_directory_t* kernel_directory = NULL;
 
 // This function sets up and enables paging.
 void paging_init() {

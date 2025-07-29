@@ -29,6 +29,9 @@ typedef struct {
     pde_t entries[PAGE_DIRECTORY_ENTRIES];
 } __attribute__((aligned(PMM_FRAME_SIZE))) page_directory_t;
 
+// Make the kernel's page directory globally accessible
+extern page_directory_t* kernel_directory;
+
 // This will be our main function to set up paging.
 void paging_init();
 

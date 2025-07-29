@@ -26,6 +26,9 @@ extern void shell_task();
 // We need to access our TSS entry defined in tss.c
 extern struct tss_entry_struct tss_entry;
 
+// Let this file know about the kernel's page directory
+extern page_directory_t* kernel_directory;
+
 // This is the function that performs the context switch to user mode.
 // It sets up the stack for the IRET instruction and jumps.
 void switch_to_user_mode(void* entry_point, void* stack_ptr) {
@@ -267,6 +270,8 @@ void process_init() {
     process_table[0].state = TASK_STATE_RUNNING;
     strncpy(process_table[0].name, "idle", PROCESS_NAME_LEN);
 
+    process_table[0].page_directory = kernel_directory; // All kernel tasks use the kernel's map
+
     // sure that every task starts with a clean slate
     memset(&process_table[0].cpu_state, 0, sizeof(cpu_state_t));
     
@@ -279,11 +284,15 @@ void process_init() {
     process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
     process_table[0].cpu_state.useresp = (uint32_t)stack_a + 4096;
 
+    process_table[0].cpu_state.cr3 = (uint32_t)kernel_directory; // Set the physical address for CR3
+
     // --- Task 1: The Shell Task ---
     void* stack_b = malloc(4096);
     process_table[1].pid = 1;
     process_table[1].state = TASK_STATE_RUNNING;
     strncpy(process_table[1].name, "shell", PROCESS_NAME_LEN);
+
+    process_table[1].page_directory = kernel_directory; // All kernel tasks use the kernel's map
 
     // sure that every task starts with a clean slate
     memset(&process_table[1].cpu_state, 0, sizeof(cpu_state_t));
@@ -298,18 +307,10 @@ void process_init() {
     process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
     process_table[1].cpu_state.useresp = (uint32_t)stack_b + 4096;
 
+    process_table[1].cpu_state.cr3 = (uint32_t)kernel_directory; // Set the physical address for CR3
+
     // Set the first task as the currently running one
     current_task = &process_table[0];
-
-    /*// Initialize the first task (the kernel/shell itself)
-    task_struct_t* shell_task = &process_table[0];
-    shell_task->pid = 0;
-    shell_task->state = TASK_STATE_RUNNING;
-    strncpy(shell_task->name, "shell", PROCESS_NAME_LEN);
-    shell_task->user_stack = NULL; // The shell runs in kernel mode, no user stack
-
-    // Set the first task as the currently running one
-    current_task = shell_task;*/
 }
 
 // This is our new, more intelligent round-robin scheduler.
@@ -338,6 +339,8 @@ cpu_state_t* schedule(registers_t *r) {
     current_task->cpu_state.eip = r->eip;
     current_task->cpu_state.cs = r->cs;
     current_task->cpu_state.eflags = r->eflags;
+
+    current_task->cpu_state.cr3 = (uint32_t)current_task->page_directory; // Save the physical address of the page directory
 
     // For a same-privilege interrupt, the stack pointer to save is the
     // one that existed before PUSHA, which is stored in r->esp.
@@ -376,7 +379,7 @@ cpu_state_t* schedule(registers_t *r) {
         next_pid = (next_pid + 1) % MAX_PROCESSES;
         // We add "next_pid != 0" to temporarily skip the idle task
         // unless it's the only option left.
-        if (process_table[next_pid].state == TASK_STATE_RUNNING && next_pid != 0) {
+        if (process_table[next_pid].state == TASK_STATE_RUNNING) { // Simpler logic, idle task is just another task
             // Found a runnable task, switch to it.
             current_task = &process_table[next_pid];
             qemu_debug_string("schedule: Switching to PID ");
@@ -387,7 +390,8 @@ cpu_state_t* schedule(registers_t *r) {
     }
 
     // Idle Case
-     // If no other task was found, default to the idle task.
+    // If no runnable task is found (should only happen if all are waiting/sleeping),
+    // If no other task was found, default to the idle task.
     current_task = &process_table[0];
     qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
     qemu_debug_hex(current_task->pid);

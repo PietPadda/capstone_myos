@@ -38,6 +38,9 @@ typedef struct {
     uint32_t eflags;  // Offset 40
     uint32_t useresp; // Offset 44 (The task's actual stack pointer)
     uint32_t ss;      // Offset 48
+
+    // Page directory physical address
+    uint32_t cr3; // Offset 52
 } __attribute__((packed)) cpu_state_t;
 
 // The Process Control Block (PCB)
@@ -46,7 +49,7 @@ typedef struct {
     task_state_t state;                 // The current state of the process
     char name[PROCESS_NAME_LEN];        // The process name
     void* user_stack;                   // Pointer to the user-mode stack
-    page_directory_t* page_directory;   // Pointer to this process's page directory
+    page_directory_t* page_directory;   // Virtual address of the page directory
     cpu_state_t cpu_state;              //store the task's registers
     uint32_t wakeup_time;               // Tick count at which to wake up
     // We will add more fields here later (e.g., registers, memory maps)
