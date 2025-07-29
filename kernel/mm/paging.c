@@ -148,3 +148,7 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
         __asm__ __volatile__("invlpg (%0)" : : "b"(virt_addr) : "memory");
     }
 }
+
+void paging_switch_directory(page_directory_t* dir) {
+    load_page_directory(dir);
+}

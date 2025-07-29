@@ -47,4 +47,7 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
 // Gets the page table entry for a virtual address.
 pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create);
 
+// Switches the current page directory.
+void paging_switch_directory(page_directory_t* dir);
+
 #endif

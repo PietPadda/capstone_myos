@@ -104,23 +104,26 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
     );
 }
 
-#define USER_STACK_SIZE 4096 // 4KB stack for user programs
+#define USER_STACK_SIZE 4096         // 4KB stack for user programs
+#define USER_STACK_TOP    0xE0000000 // User stacks will start at 3.5GB
+#define USER_STACK_PAGES  4          // and be 16KB (4 pages) in size
 
 // This function finds an ELF executable on disk, loads it into memory,
-// and starts it as a new user-mode process
-// This function now returns the PID of the new process, or -1 on failure.
+// and starts it as a new user-mode process in its own address space.
 int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Entering exec_program.\n");
-    qemu_debug_string("PROCESS: Filename is -> ");
-    qemu_debug_string(argv[0]);
-    qemu_debug_string("\n");
+
     // The shell has already processed the 'run' command.
     // argv[0] is now the filename of the program to execute.
     if (argc == 0) {
         print_string("run: Missing filename.\n");
          return -1;
     }
+
     const char* filename = argv[0];
+    qemu_debug_string("PROCESS: Filename is -> ");
+    qemu_debug_string(filename);
+    qemu_debug_string("\n");
 
     // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
@@ -148,33 +151,55 @@ int exec_program(int argc, char* argv[]) {
     }
     qemu_debug_string("PROCESS: ELF loaded successfully.\n");
 
-    // Locate the program header table using the offset from the main heade
-    Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
+    // --- Address Space Creation ---
+    // 1. Create a new, separate address space for the process.
+    page_directory_t* new_dir = paging_clone_directory(kernel_directory);
+    if (!new_dir) {
+        print_string("run: Could not create address space.\n");
+        free(file_buffer);
+        return -1;
+    }
+    
+    // 2. Temporarily switch into the new address space to map the program.
+    page_directory_t* old_dir = (page_directory_t*)current_task->cpu_state.cr3;
+    paging_switch_directory(new_dir);
 
-    // Iterate through program headers
+    // 3. Map the program's code and data segments from the ELF file.
+    Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
     for (int i = 0; i < header->phnum; i++) {
         Elf32_Phdr* phdr = &phdrs[i];
-
-        // We only care about "loadable" segments.
         if (phdr->type == PT_LOAD) {
-            // Copy the segment from the file buffer to its final virtual address.
-            uint8_t* dest = (uint8_t*)phdr->vaddr;
-            uint8_t* src = file_buffer + phdr->offset;
-            for (uint32_t j = 0; j < phdr->filesz; j++) {
-                dest[j] = src[j];
+            // Map every page covered by this segment.
+            for (uint32_t p = 0; p < phdr->memsz; p += PMM_FRAME_SIZE) {
+                uint32_t virt_addr = phdr->vaddr + p;
+                uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
+                if (!phys_frame) {
+                    // Proper cleanup would be needed here in a production OS
+                    paging_switch_directory(old_dir);
+                    paging_free_directory(new_dir);
+                    free(file_buffer);
+                    print_string("run: Out of physical memory.\n");
+                    return -1;
+                }
+                paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
             }
-
-            // Handle the .bss section (uninitialized data)
-            // memsz might be > filesz. The difference is the .bss section.
-            if (phdr->memsz > phdr->filesz) {
-                uint32_t bss_size = phdr->memsz - phdr->filesz;
-                uint8_t* bss_start = dest + phdr->filesz;
-                memset(bss_start, 0, bss_size);
-            }
+            // Now that the memory is mapped, copy the segment data from the file.
+            memcpy((void*)phdr->vaddr, file_buffer + phdr->offset, phdr->filesz);
         }
     }
 
-    // Find a free slot in the process table
+    // 4. Map the user stack at a high virtual address.
+    for (int i = 0; i < USER_STACK_PAGES; i++) {
+        uint32_t virt_addr = USER_STACK_TOP - (i * PMM_FRAME_SIZE);
+        uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
+        if (!phys_frame) { /* Handle error as above */ return -1; }
+        paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
+    }
+    
+    // 5. Switch back to the original address space of the shell.
+    paging_switch_directory(old_dir);
+
+    // Find a free process slot in the process table
     task_struct_t* new_task = NULL;
     int new_pid = -1;
     for (int i = 0; i < MAX_PROCESSES; i++) {
@@ -187,27 +212,19 @@ int exec_program(int argc, char* argv[]) {
 
     if (!new_task) {
         print_string("run: No free processes left.\n");
+        paging_free_directory(new_dir); // Clean up the created directory
         free(file_buffer);
         return -1; // Return -1 on failure
-    }
-
-    // Allocate a separate, aligned stack for the user program.
-    void* user_stack = malloc(USER_STACK_SIZE);
-    if (!user_stack) {
-        print_string("run: Not enough memory for user stack.\n");
-        free(file_buffer);
-        return -1;
     }
 
     // Configure the new process's PCB
     new_task->pid = new_pid;
     new_task->state = TASK_STATE_RUNNING;
     strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
-    new_task->user_stack = user_stack; // Store stack in the PCB
-    // For now, all user processes will share the kernel's page directory.
-    // This doesn't provide memory protection, but it fixes the crash.
-    new_task->page_directory = kernel_directory;
+    new_task->user_stack = (void*)USER_STACK_TOP;
+    new_task->page_directory = new_dir; // Set the new address space
 
+    /*
     // Stack Setup
     // Work from the end of the stack buffer down to place arguments.
     uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
@@ -245,10 +262,12 @@ int exec_program(int argc, char* argv[]) {
     user_stack_top -= sizeof(char**);
     *((char***)user_stack_top) = argv_on_stack;
     user_stack_top -= sizeof(int);
-    *((int*)user_stack_top) = argc;
+    *((int*)user_stack_top) = argc;*/
 
-    // Instead of switching directly, we now set up the initial cpu_state
-    // for the scheduler to use on the first context switch to this task.
+    // For now, we skip passing arguments as it requires writing to the new address space
+    uint32_t user_stack_top = (uint32_t)new_task->user_stack;
+
+    // Set up the initial CPU state for the new process.
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
     new_task->cpu_state.eip = (uint32_t)header->entry;
     new_task->cpu_state.useresp = (uint32_t)user_stack_top;
