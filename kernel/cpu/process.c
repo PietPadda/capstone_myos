@@ -115,6 +115,8 @@ int exec_program(int argc, char* argv[]) {
 
     // The shell has already processed the 'run' command.
     // argv[0] is now the filename of the program to execute.
+
+    // error handling
     if (argc == 0) {
         print_string("run: Missing filename.\n");
          return -1;
@@ -127,6 +129,8 @@ int exec_program(int argc, char* argv[]) {
 
     // Find the file on disk using our filesystem driver.
     fat_dir_entry_t* file_entry = fs_find_file(filename);
+
+    // error handling
     if (!file_entry) {
         print_string("run: File not found: ");
         print_string(filename);
@@ -154,6 +158,8 @@ int exec_program(int argc, char* argv[]) {
     // --- Address Space Creation ---
     // 1. Create a new, separate address space for the process.
     page_directory_t* new_dir = paging_clone_directory(kernel_directory);
+
+    // error handling
     if (!new_dir) {
         print_string("run: Could not create address space.\n");
         free(file_buffer);
@@ -173,6 +179,8 @@ int exec_program(int argc, char* argv[]) {
             for (uint32_t p = 0; p < phdr->memsz; p += PMM_FRAME_SIZE) {
                 uint32_t virt_addr = phdr->vaddr + p;
                 uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
+
+                // error handling
                 if (!phys_frame) {
                     // Proper cleanup would be needed here in a production OS
                     paging_switch_directory(old_dir);
@@ -192,42 +200,15 @@ int exec_program(int argc, char* argv[]) {
     for (int i = 0; i < USER_STACK_PAGES; i++) {
         uint32_t virt_addr = USER_STACK_TOP - (i * PMM_FRAME_SIZE);
         uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
+
+        // error handling
         if (!phys_frame) { /* Handle error as above */ return -1; }
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
     }
-    
-    // 5. Switch back to the original address space of the shell.
-    paging_switch_directory(old_dir);
 
-    // Find a free process slot in the process table
-    task_struct_t* new_task = NULL;
-    int new_pid = -1;
-    for (int i = 0; i < MAX_PROCESSES; i++) {
-        if (process_table[i].state == TASK_STATE_UNUSED) {
-            new_task = &process_table[i];
-            new_pid = i;
-            break;
-        }
-    }
-
-    if (!new_task) {
-        print_string("run: No free processes left.\n");
-        paging_free_directory(new_dir); // Clean up the created directory
-        free(file_buffer);
-        return -1; // Return -1 on failure
-    }
-
-    // Configure the new process's PCB
-    new_task->pid = new_pid;
-    new_task->state = TASK_STATE_RUNNING;
-    strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
-    new_task->user_stack = (void*)USER_STACK_TOP;
-    new_task->page_directory = new_dir; // Set the new address space
-
-    /*
-    // Stack Setup
-    // Work from the end of the stack buffer down to place arguments.
-    uint32_t user_stack_top = (uint32_t)user_stack + USER_STACK_SIZE;
+    // Setup argc/argv on the new stack
+    // We are still inside the new address space, so we can write to the stack's virtual address.
+    uint32_t user_stack_top = USER_STACK_TOP;
 
     // Copy argument strings to the top of the stack.
     // This creates a temporary buffer to hold the pointers to our strings on the user stack.
@@ -262,15 +243,43 @@ int exec_program(int argc, char* argv[]) {
     user_stack_top -= sizeof(char**);
     *((char***)user_stack_top) = argv_on_stack;
     user_stack_top -= sizeof(int);
-    *((int*)user_stack_top) = argc;*/
+    *((int*)user_stack_top) = argc;
+    
+    // 5. Switch back to the original address space of the shell.
+    paging_switch_directory(old_dir);
 
-    // For now, we skip passing arguments as it requires writing to the new address space
-    uint32_t user_stack_top = (uint32_t)new_task->user_stack;
+    // Find a free process slot in the process table
+    task_struct_t* new_task = NULL;
+
+    // find new task
+    int new_pid = -1;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (process_table[i].state == TASK_STATE_UNUSED) {
+            new_task = &process_table[i];
+            new_pid = i;
+            break;
+        }
+    }
+
+    // error handling
+    if (!new_task) {
+        print_string("run: No free processes left.\n");
+        paging_free_directory(new_dir); // Clean up the created directory
+        free(file_buffer);
+        return -1; // Return -1 on failure
+    }
+
+    // Configure the new process's PCB
+    new_task->pid = new_pid;
+    new_task->state = TASK_STATE_RUNNING;
+    strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
+    new_task->user_stack = (void*)USER_STACK_TOP;
+    new_task->page_directory = new_dir; // Set the new address space
 
     // Set up the initial CPU state for the new process.
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
     new_task->cpu_state.eip = (uint32_t)header->entry;
-    new_task->cpu_state.useresp = (uint32_t)user_stack_top;
+    new_task->cpu_state.useresp = user_stack_top; // Use the final calculated stack top
     new_task->cpu_state.cs = 0x1B;  // User Code Segment
     new_task->cpu_state.ss = 0x23;  // User Data Segment
     new_task->cpu_state.eflags = 0x202; // Interrupts enabled
