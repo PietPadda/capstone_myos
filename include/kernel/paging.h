@@ -35,4 +35,10 @@ extern page_directory_t* kernel_directory;
 // This will be our main function to set up paging.
 void paging_init();
 
+// Clones a page directory.
+page_directory_t* paging_clone_directory(page_directory_t* src);
+
+// Frees all memory associated with a page directory.
+void paging_free_directory(page_directory_t* dir);
+
 #endif

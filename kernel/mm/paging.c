@@ -62,3 +62,35 @@ void paging_init() {
     enable_paging();
     qemu_debug_string("PAGING_INIT: Paging bit set in CR0. MMU is now active.\n");
 }
+
+// Clones a page directory and its tables.
+page_directory_t* paging_clone_directory(page_directory_t* src) {
+    // Allocate a new frame for the new page directory.
+    page_directory_t* new_dir = (page_directory_t*)pmm_alloc_frame();
+    if (!new_dir) {
+        return NULL;
+    }
+    memset(new_dir, 0, sizeof(page_directory_t));
+
+    // Copy the kernel-space entries from the source directory.
+    // The kernel space is typically in the upper 1GB (last 256 entries).
+    // For now, we'll copy all existing entries, as we only have kernel mappings.
+    for (int i = 0; i < 1024; i++) {
+        if (src->entries[i] & PAGING_FLAG_PRESENT) {
+            new_dir->entries[i] = src->entries[i];
+        }
+    }
+
+    // Add the recursive mapping for the new directory.
+    new_dir->entries[1023] = (uint32_t)new_dir | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    
+    return new_dir;
+}
+
+// Frees a page directory.
+// (For now, it only frees the directory frame itself, not the tables).
+void paging_free_directory(page_directory_t* dir) {
+    if (dir) {
+        pmm_free_frame(dir);
+    }
+}
