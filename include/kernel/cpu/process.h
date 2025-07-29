@@ -5,6 +5,7 @@
 
 #include <kernel/types.h>
 #include <kernel/exceptions.h> // registers_t
+#include <kernel/paging.h>     // For page_directory_t
 
 #define MAX_ARGS 16 // Maximum number of command arguments
 #define MAX_PROCESSES 16 // Maximum number of processes in the system
@@ -45,6 +46,7 @@ typedef struct {
     task_state_t state;                 // The current state of the process
     char name[PROCESS_NAME_LEN];        // The process name
     void* user_stack;                   // Pointer to the user-mode stack
+    page_directory_t* page_directory;   // Pointer to this process's page directory
     cpu_state_t cpu_state;              //store the task's registers
     uint32_t wakeup_time;               // Tick count at which to wake up
     // We will add more fields here later (e.g., registers, memory maps)
