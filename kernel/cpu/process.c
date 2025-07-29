@@ -204,6 +204,9 @@ int exec_program(int argc, char* argv[]) {
     new_task->state = TASK_STATE_RUNNING;
     strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
     new_task->user_stack = user_stack; // Store stack in the PCB
+    // For now, all user processes will share the kernel's page directory.
+    // This doesn't provide memory protection, but it fixes the crash.
+    new_task->page_directory = kernel_directory;
 
     // Stack Setup
     // Work from the end of the stack buffer down to place arguments.
@@ -252,6 +255,7 @@ int exec_program(int argc, char* argv[]) {
     new_task->cpu_state.cs = 0x1B;  // User Code Segment
     new_task->cpu_state.ss = 0x23;  // User Data Segment
     new_task->cpu_state.eflags = 0x202; // Interrupts enabled
+    new_task->cpu_state.cr3 = (uint32_t)new_task->page_directory; // Set physical address for CR3
 
     // The program is now in memory, so we can free the temporary file buffer
     free(file_buffer);
