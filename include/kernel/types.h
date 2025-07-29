@@ -18,6 +18,11 @@ typedef signed long long   int64_t;
 // Standard size type, essential for memory operations
 typedef uint32_t size_t;
 
+// Define a boolean type for our freestanding environment
+typedef int bool;
+#define true 1
+#define false 0
+
 // Definition for a null pointer constant
 #define NULL ((void*)0)
 

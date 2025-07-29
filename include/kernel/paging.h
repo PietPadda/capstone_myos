@@ -41,4 +41,10 @@ page_directory_t* paging_clone_directory(page_directory_t* src);
 // Frees all memory associated with a page directory.
 void paging_free_directory(page_directory_t* dir);
 
+// Maps a virtual address to a physical address in the given page directory.
+void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_addr, uint32_t flags);
+
+// Gets the page table entry for a virtual address.
+pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create);
+
 #endif
