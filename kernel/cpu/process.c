@@ -198,11 +198,14 @@ int exec_program(int argc, char* argv[]) {
 
     // 4. Map the user stack at a high virtual address.
     for (int i = 0; i < USER_STACK_PAGES; i++) {
-        uint32_t virt_addr = USER_STACK_TOP - (i * PMM_FRAME_SIZE);
+        // Correctly calculate the virtual address for each stack page, moving downwards.
+        // The first page (i=0) will contain USER_STACK_TOP itself.
+        uint32_t virt_addr = (USER_STACK_TOP - USER_STACK_SIZE) + (i * PMM_FRAME_SIZE);
         uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
 
         // error handling
-        if (!phys_frame) { /* Handle error as above */ return -1; }
+        if (!phys_frame) { 
+            return -1; }
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
     }
 
