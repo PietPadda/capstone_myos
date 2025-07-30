@@ -79,26 +79,28 @@ page_directory_t* paging_clone_directory(page_directory_t* src) {
     }
 
     // To safely write to this new physical page, we must map it into our
-    // current virtual address space. We can temporarily use the last PDE for this.
-    page_table_t* temp_mapping = &CURRENT_PAGE_TABLES[1022];
-    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022];
+    // current virtual address space. We can temporarily use an unused PDE for this.
+    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022]; // Use a high, unused entry
+    uint32_t temp_vaddr = (uint32_t)&CURRENT_PAGE_TABLES[1022];
     *pde = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_mapping));
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
 
-    // Now, `temp_mapping` is a virtual pointer to our new directory.
+    // Now, `temp_vaddr` is a virtual pointer to our new directory.
     // We can safely clear it and copy the kernel entries.
-    memset(temp_mapping, 0, sizeof(page_directory_t));
+    page_directory_t* new_dir_virt = (page_directory_t*)temp_vaddr;
+    memset(new_dir_virt, 0, sizeof(page_directory_t));
 
-    // Copy the kernel-space entries from the source directory.
-    // The kernel space is typically in the upper 1GB (last 256 entries).
-    // For now, we'll copy all existing entries, as we only have kernel mappings.
-    for (int i = 0; i < 1024; i++) { // Copy kernel space (top 1GB)
-        temp_mapping->entries[i] = src->entries[i];
+    // Copy only the kernel-space entries from the source directory.
+    // The kernel space is in the upper 1GB (last 256 entries, index 768-1023).
+    for (int i = 768; i < 1024; i++) {
+        if (src->entries[i] & PAGING_FLAG_PRESENT) {
+            new_dir_virt->entries[i] = src->entries[i];
+        }
     }
 
     // Unmap the temporary page.
     *pde = 0;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_mapping));
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
 
     // The physical address is the handle we return.
     return new_dir_phys;
@@ -109,36 +111,39 @@ void paging_free_directory(page_directory_t* dir_phys) {
     // err check
     if (!dir_phys) return;
 
-    // We must map the directory to write to it, same trick as above.
-    page_table_t* temp_dir_map = &CURRENT_PAGE_TABLES[1022];
+    // Map the directory to be freed so we can read its entries.
     pde_t* pde = &CURRENT_PAGE_DIR->entries[1022];
+    uint32_t temp_vaddr = (uint32_t)&CURRENT_PAGE_TABLES[1022];
     *pde = (pde_t)dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_dir_map));
+     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
+    page_directory_t* dir_virt = (page_directory_t*)temp_vaddr;
     
-    // Iterate through all page directory entries.
+    // Iterate through all page directory entries (0-767)
     for (int i = 0; i < 768; i++) { // Iterate user-space PDEs
-        if (temp_dir_map->entries[i] & PAGING_FLAG_PRESENT) {
-            page_table_t* pt_phys = (page_table_t*)(temp_dir_map->entries[i] & ~0xFFF);
+        if (dir_virt->entries[i] & PAGING_FLAG_PRESENT) {
+            page_table_t* pt_phys = (page_table_t*)(dir_virt->entries[i] & ~0xFFF);
             
             // Temporarily map the page table to free its frames
-            page_table_t* temp_pt_map = &CURRENT_PAGE_TABLES[1021];
             pde_t* pde2 = &CURRENT_PAGE_DIR->entries[1021];
+            uint32_t temp_vaddr2 = (uint32_t)&CURRENT_PAGE_TABLES[1021];
             *pde2 = (pde_t)pt_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_pt_map));
+            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr2));
+            page_table_t* pt_virt = (page_table_t*)temp_vaddr2;
 
             for (int j = 0; j < 1024; j++) {
-                if (temp_pt_map->entries[j] & PAGING_FLAG_PRESENT) {
-                    pmm_free_frame((void*)(temp_pt_map->entries[j] & ~0xFFF));
+                if (pt_virt->entries[j] & PAGING_FLAG_PRESENT) {
+                    pmm_free_frame((void*)(pt_virt->entries[j] & ~0xFFF));
                 }
             }
-            *pde2 = 0; // Unmap
-            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_pt_map));
+            *pde2 = 0; // Unmap page table
+            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr2));
             pmm_free_frame(pt_phys);
         }
     }
 
-    *pde = 0; // Unmap
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_dir_map));
+    // Unmap the page directory itself before freeing it.
+    *pde = 0;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
     pmm_free_frame(dir_phys);
 }
 
