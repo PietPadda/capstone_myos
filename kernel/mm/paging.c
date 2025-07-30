@@ -13,6 +13,13 @@ extern void enable_paging();
 // The kernel's page directory, now globally visible.
 page_directory_t* kernel_directory = NULL;
 
+// A virtual address pointer to the page tables of the current page directory.
+#define CURRENT_PAGE_TABLES ((page_table_t*)0xFFC00000)
+
+// A virtual address pointer to the current page directory, thanks to our recursive mapping.
+#define CURRENT_PAGE_DIR ((page_directory_t*)0xFFFFF000)
+
+
 // This function sets up and enables paging.
 void paging_init() {
     qemu_debug_string("PAGING_INIT: start\n");
@@ -65,76 +72,75 @@ void paging_init() {
 
 // Clones a page directory and its tables.
 page_directory_t* paging_clone_directory(page_directory_t* src) {
-    // Allocate a new frame for the new page directory.
-    page_directory_t* new_dir = (page_directory_t*)pmm_alloc_frame();
-    if (!new_dir) {
+    // Allocate a physical frame for the new directory.
+    page_directory_t* new_dir_phys = (page_directory_t*)pmm_alloc_frame();
+    if (!new_dir_phys) {
         return NULL;
     }
-    memset(new_dir, 0, sizeof(page_directory_t));
+
+    // To safely write to this new physical page, we must map it into our
+    // current virtual address space. We can temporarily use the last PDE for this.
+    page_table_t* temp_mapping = &CURRENT_PAGE_TABLES[1022];
+    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022];
+    *pde = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_mapping));
+
+    // Now, `temp_mapping` is a virtual pointer to our new directory.
+    // We can safely clear it and copy the kernel entries.
+    memset(temp_mapping, 0, sizeof(page_directory_t));
 
     // Copy the kernel-space entries from the source directory.
     // The kernel space is typically in the upper 1GB (last 256 entries).
     // For now, we'll copy all existing entries, as we only have kernel mappings.
-    for (int i = 0; i < 1024; i++) {
-        if (src->entries[i] & PAGING_FLAG_PRESENT) {
-            new_dir->entries[i] = src->entries[i];
-        }
+    for (int i = 0; i < 1024; i++) { // Copy kernel space (top 1GB)
+        temp_mapping->entries[i] = src->entries[i];
     }
 
-    // Add the recursive mapping for the new directory.
-    new_dir->entries[1023] = (uint32_t)new_dir | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    
-    return new_dir;
+    // Unmap the temporary page.
+    *pde = 0;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_mapping));
+
+    // The physical address is the handle we return.
+    return new_dir_phys;
 }
 
 // Frees all user-space pages and page tables for a given page directory.
-void paging_free_directory(page_directory_t* dir) {
+void paging_free_directory(page_directory_t* dir_phys) {
     // err check
-    if (!dir) {
-        return;
-    }
-    // Temporarily switch to the kernel's page directory if we aren't already in it.
-    // This is a safeguard to ensure we can access CURRENT_PAGE_TABLES.
-    page_directory_t* current_dir;
-    __asm__("mov %%cr3, %0" : "=r"(current_dir));
-    if (current_dir != kernel_directory) {
-        paging_switch_directory(kernel_directory);
-    }
+    if (!dir_phys) return;
+
+    // We must map the directory to write to it, same trick as above.
+    page_table_t* temp_dir_map = &CURRENT_PAGE_TABLES[1022];
+    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022];
+    *pde = (pde_t)dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_dir_map));
     
     // Iterate through all page directory entries.
-    for (int i = 0; i < 1024; i++) {
-        pde_t pde = dir->entries[i];
+    for (int i = 0; i < 768; i++) { // Iterate user-space PDEs
+        if (temp_dir_map->entries[i] & PAGING_FLAG_PRESENT) {
+            page_table_t* pt_phys = (page_table_t*)(temp_dir_map->entries[i] & ~0xFFF);
+            
+            // Temporarily map the page table to free its frames
+            page_table_t* temp_pt_map = &CURRENT_PAGE_TABLES[1021];
+            pde_t* pde2 = &CURRENT_PAGE_DIR->entries[1021];
+            *pde2 = (pde_t)pt_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_pt_map));
 
-        // We only care about user-space page tables that are present.
-        // We skip kernel-space tables (i >= 768) to avoid double-freeing.
-        if ((pde & PAGING_FLAG_PRESENT) && (pde & PAGING_FLAG_USER) && i < 768) {
-            page_table_t* pt = (page_table_t*)(pde & ~0xFFF);
-
-            // Iterate through the page table entries.
             for (int j = 0; j < 1024; j++) {
-                pte_t pte = pt->entries[j];
-                if (pte & PAGING_FLAG_PRESENT) {
-                    // This PTE points to a physical frame. Free it.
-                    void* frame_addr = (void*)(pte & ~0xFFF);
-                    pmm_free_frame(frame_addr);
+                if (temp_pt_map->entries[j] & PAGING_FLAG_PRESENT) {
+                    pmm_free_frame((void*)(temp_pt_map->entries[j] & ~0xFFF));
                 }
             }
-            // Free the page table itself.
-            pmm_free_frame(pt);
+            *pde2 = 0; // Unmap
+            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_pt_map));
+            pmm_free_frame(pt_phys);
         }
     }
 
-    // Finally, free the page directory frame itself.
-    pmm_free_frame(dir);
-    
-    // Switch back to the original directory if we changed it.
-    if (current_dir != kernel_directory) {
-        paging_switch_directory(current_dir);
-    }
+    *pde = 0; // Unmap
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_dir_map));
+    pmm_free_frame(dir_phys);
 }
-
-// A virtual address pointer to the page tables of the current page directory.
-#define CURRENT_PAGE_TABLES ((page_table_t*)0xFFC00000)
 
 // Finds the Page Table Entry (PTE) for a given virtual address.
 // If a page table doesn't exist and `create` is true, it will be allocated.

@@ -95,8 +95,12 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
     return NULL; // File not found
 }
 
+// This label is defined in dma_buffer.asm.
+extern uint8_t dma_buffer[];
+
 void* fs_read_file(fat_dir_entry_t* entry) {
     uint32_t size = entry->file_size;
+
     // Handle empty files
     if (size == 0) return malloc(1); 
 
@@ -114,18 +118,17 @@ void* fs_read_file(fat_dir_entry_t* entry) {
 
     // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
-        // We need a temporary, 512-byte buffer on the stack to read each cluster.
-        uint8_t cluster_buffer[512];
-        fs_read_cluster(current_cluster, cluster_buffer);
+        // Read a cluster into our safe, static DMA buffer.
+        read_disk_sector(data_area_start_sector + (current_cluster - 2), dma_buffer);
 
         // Figure out how much of this cluster to copy.
-        uint32_t remaining_bytes = size - (current_pos - file_buffer);
-        uint32_t bytes_to_copy = (remaining_bytes > bytes_per_cluster) ? bytes_per_cluster : remaining_bytes;
+        uint32_t remaining = size - (current_pos - file_buffer);
+        uint32_t to_copy = (remaining > bytes_per_cluster) ? bytes_per_cluster : remaining;
 
-        // Copy the data from the cluster buffer to our main file buffer.
-        memcpy(current_pos, cluster_buffer, bytes_to_copy);
+        // Copy the data from the dma buffer to our main file buffer.
+        memcpy(current_pos, dma_buffer, to_copy);
 
-        current_pos += bytes_to_copy;
+        current_pos += to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
     return file_buffer;
