@@ -46,8 +46,8 @@ void paging_init() {
     qemu_debug_string("PAGING_INIT: first_pt entries filled\n");
 
     // Put the newly created page table into the first entry of the page directory.
-    // Add the USER flag here as well.
-    kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+    // The USER flag is NOT set, protecting the kernel from user-mode access.
+    kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW ;
     qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
 
     // Add the recursive mapping.
