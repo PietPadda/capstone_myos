@@ -39,8 +39,8 @@ void paging_init() {
     // Loop through all 1024 entries in the page table to map 4MB.
     for (int i = 0; i < 1024; i++) {
         uint32_t phys_addr = i * 0x1000;
-        // Add the USER flag to all kernel pages. Ring 0 can still access them.
-        pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+        // The USER flag is no longer needed here, as the PDE provides protection.
+        pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
         first_pt->entries[i] = page;
     }
     qemu_debug_string("PAGING_INIT: first_pt entries filled\n");

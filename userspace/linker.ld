@@ -4,8 +4,8 @@ ENTRY(_start_user_program)
 OUTPUT_FORMAT(elf32-i386)
 
 SECTIONS {
-    /* Programs will be loaded at 1MB */
-    . = 0x100000;
+    /* Programs will now be loaded at 4MB */
+    . = 0x400000;
 
     .text : {
         *(.text)
