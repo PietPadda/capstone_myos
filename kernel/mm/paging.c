@@ -95,8 +95,6 @@ void paging_free_directory(page_directory_t* dir) {
     }
 }
 
-// A virtual address pointer to the current page directory, thanks to our recursive mapping.
-#define CURRENT_PAGE_DIR ((page_directory_t*)0xFFFFF000)
 // A virtual address pointer to the page tables of the current page directory.
 #define CURRENT_PAGE_TABLES ((page_table_t*)0xFFC00000)
 
@@ -107,20 +105,25 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
     uint32_t pd_idx = virt_addr >> 22;
     uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
 
-    // To modify the inactive 'dir', we need to temporarily map its page tables
-    // into our current address space. We do this by temporarily using its tables
-    // in our own directory's recursive slot.
-    uint32_t page_dir_phys_addr = (uint32_t)CURRENT_PAGE_DIR->entries[pd_idx];
-
-    if (!(page_dir_phys_addr & PAGING_FLAG_PRESENT)) {
+    // Check if the page table is present in the target directory
+    if (!(dir->entries[pd_idx] & PAGING_FLAG_PRESENT)) {
         if (create) {
             // The page table doesn't exist, so we allocate a new physical frame for it.
             uint32_t new_table_phys = (uint32_t)pmm_alloc_frame();
+
+            // err check
             if (!new_table_phys) {
                 return NULL; // Out of memory
             }
-            // Add the new table to the target page directory.
+            // IMPORTANT: Initialize the new page table to all zeros!
+            memset((void*)new_table_phys, 0, sizeof(page_table_t));
+
+            // Map the new table into the directory with USER flag
             dir->entries[pd_idx] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+
+            // We just modified a PDE. We must invalidate the TLB entry for the
+            // corresponding page table's virtual address in our recursive mapping.
+            __asm__ __volatile__("invlpg (%0)" : : "b"(&CURRENT_PAGE_TABLES[pd_idx]) : "memory");
         } else {
             return NULL; // Page table doesn't exist and we're not allowed to create it.
         }
@@ -129,6 +132,8 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
     // Now, we can access the page table via our recursive mapping "window".
     // CURRENT_PAGE_TABLES gives us a virtual address to the array of all page tables.
     // pd_idx selects the correct page table from that array.
+
+    // Now, we can safely access the page table.
     page_table_t* table = &CURRENT_PAGE_TABLES[pd_idx];
     
     // Return a pointer to the actual Page Table Entry.

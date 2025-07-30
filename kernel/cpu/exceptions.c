@@ -30,20 +30,27 @@ static void dump_stack(uint32_t *stack_ptr) {
 
 // C-level handler for all exceptions
 void fault_handler(registers_t *r) {
+    // Read the CR2 register, which contains the linear address that caused the fault
+    uint32_t faulting_address;
+    __asm__ __volatile__("mov %%cr2, %0" : "=r" (faulting_address));
+
+    // clear screen for fault handler
     clear_screen();
 
     print_string("CPU EXCEPTION CAUGHT! -- SYSTEM HALTED\n");
-    print_string("Interrupt Number: ");
-    print_hex(r->int_no);
-    print_string("  Error Code: ");
-    print_hex(r->err_code);
+    print_string("Interrupt Number: "); print_hex(r->int_no);
+    print_string("  Error Code: "); print_hex(r->err_code);
+    print_string("\nFaulting Address: ");  print_hex(faulting_address); // Print CR2
+
     print_string("\n-- REGISTER DUMP --\n");
     print_string("EAX: "); print_hex(r->eax); print_string("  EBX: "); print_hex(r->ebx);
     print_string("  ECX: "); print_hex(r->ecx); print_string("\nEDX: "); print_hex(r->edx);
     print_string("  ESI: "); print_hex(r->esi); print_string("  EDI: "); print_hex(r->edi);
+
     print_string("\n-- SEGMENT DUMP --\n");
     print_string("CS:  "); print_hex(r->cs);  print_string("  DS:  "); print_hex(r->ds);
     print_string("  SS:  "); print_hex(r->ss);
+    
     print_string("\n-- CONTROL DUMP --\n");
     print_string("EIP: "); print_hex(r->eip); 
     print_string("  EFLAGS: "); print_hex(r->eflags);
