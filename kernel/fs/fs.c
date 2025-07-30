@@ -97,22 +97,35 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 
 void* fs_read_file(fat_dir_entry_t* entry) {
     uint32_t size = entry->file_size;
-    if (size == 0) return pmm_alloc_frame(); // Handle empty files, still give it a page.
+    // Handle empty files
+    if (size == 0) return malloc(1); 
 
-    // For now, we will only support files that fit in a single 4KB frame.
-    uint8_t* file_buffer = (uint8_t*)pmm_alloc_frame();
+    // Allocate a single, contiguous buffer from the kernel's heap.
+    uint8_t* file_buffer = (uint8_t*)malloc(size);
 
+    // error check
     if (!file_buffer) {
-        return NULL;
+        return NULL; // Out of memory
     }
 
     uint8_t* current_pos = file_buffer;
     uint16_t current_cluster = entry->first_cluster_low;
+    uint32_t bytes_per_cluster = bpb->sectors_per_cluster * bpb->bytes_per_sector;
 
     // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
-        fs_read_cluster(current_cluster, current_pos);
-        current_pos += bpb->sectors_per_cluster * bpb->bytes_per_sector;
+        // We need a temporary, 512-byte buffer on the stack to read each cluster.
+        uint8_t cluster_buffer[512];
+        fs_read_cluster(current_cluster, cluster_buffer);
+
+        // Figure out how much of this cluster to copy.
+        uint32_t remaining_bytes = size - (current_pos - file_buffer);
+        uint32_t bytes_to_copy = (remaining_bytes > bytes_per_cluster) ? bytes_per_cluster : remaining_bytes;
+
+        // Copy the data from the cluster buffer to our main file buffer.
+        memcpy(current_pos, cluster_buffer, bytes_to_copy);
+
+        current_pos += bytes_to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
     return file_buffer;

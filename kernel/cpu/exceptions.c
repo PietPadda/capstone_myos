@@ -19,7 +19,7 @@ static void print_eflags(uint32_t eflags) {
 // Helper function to dump a section of the stack
 static void dump_stack(uint32_t *stack_ptr) {
     print_string("\n-- STACK DUMP --\n");
-    for (int i = 0; i < 14; ++i) {
+    for (int i = 0; i < 13; ++i) {
         uint32_t value = stack_ptr[i];
         print_hex((uint32_t)&stack_ptr[i]);
         print_string(": ");
@@ -50,7 +50,7 @@ void fault_handler(registers_t *r) {
     print_string("\n-- SEGMENT DUMP --\n");
     print_string("CS:  "); print_hex(r->cs);  print_string("  DS:  "); print_hex(r->ds);
     print_string("  SS:  "); print_hex(r->ss);
-    
+
     print_string("\n-- CONTROL DUMP --\n");
     print_string("EIP: "); print_hex(r->eip); 
     print_string("  EFLAGS: "); print_hex(r->eflags);

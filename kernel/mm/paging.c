@@ -87,11 +87,49 @@ page_directory_t* paging_clone_directory(page_directory_t* src) {
     return new_dir;
 }
 
-// Frees a page directory.
-// (For now, it only frees the directory frame itself, not the tables).
+// Frees all user-space pages and page tables for a given page directory.
 void paging_free_directory(page_directory_t* dir) {
-    if (dir) {
-        pmm_free_frame(dir);
+    // err check
+    if (!dir) {
+        return;
+    }
+    // Temporarily switch to the kernel's page directory if we aren't already in it.
+    // This is a safeguard to ensure we can access CURRENT_PAGE_TABLES.
+    page_directory_t* current_dir;
+    __asm__("mov %%cr3, %0" : "=r"(current_dir));
+    if (current_dir != kernel_directory) {
+        paging_switch_directory(kernel_directory);
+    }
+    
+    // Iterate through all page directory entries.
+    for (int i = 0; i < 1024; i++) {
+        pde_t pde = dir->entries[i];
+
+        // We only care about user-space page tables that are present.
+        // We skip kernel-space tables (i >= 768) to avoid double-freeing.
+        if ((pde & PAGING_FLAG_PRESENT) && (pde & PAGING_FLAG_USER) && i < 768) {
+            page_table_t* pt = (page_table_t*)(pde & ~0xFFF);
+
+            // Iterate through the page table entries.
+            for (int j = 0; j < 1024; j++) {
+                pte_t pte = pt->entries[j];
+                if (pte & PAGING_FLAG_PRESENT) {
+                    // This PTE points to a physical frame. Free it.
+                    void* frame_addr = (void*)(pte & ~0xFFF);
+                    pmm_free_frame(frame_addr);
+                }
+            }
+            // Free the page table itself.
+            pmm_free_frame(pt);
+        }
+    }
+
+    // Finally, free the page directory frame itself.
+    pmm_free_frame(dir);
+    
+    // Switch back to the original directory if we changed it.
+    if (current_dir != kernel_directory) {
+        paging_switch_directory(current_dir);
     }
 }
 

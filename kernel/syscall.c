@@ -55,9 +55,13 @@ static void sys_exit(registers_t *r) {
 
     // Clean up the exited task completely, fixing the resource leak.
     if (task_to_exit) {
-        if (task_to_exit->user_stack) {
-            free(task_to_exit->user_stack);
-        }
+        qemu_debug_string("SYSCALL: Freeing memory for PID ");
+        qemu_debug_hex(task_to_exit->pid);
+        qemu_debug_string("...\n");
+
+        // Free the entire address space
+        paging_free_directory(task_to_exit->page_directory);
+        
         // Mark the slot as free for reuse
         task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
         memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
