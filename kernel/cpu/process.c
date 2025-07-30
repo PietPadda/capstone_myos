@@ -203,7 +203,7 @@ int exec_program(int argc, char* argv[]) {
         uint32_t virt_addr = (USER_STACK_TOP - USER_STACK_SIZE) + (i * PMM_FRAME_SIZE);
         uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
 
-        // error handling
+        // error handling.
         if (!phys_frame) { 
             return -1; }
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
