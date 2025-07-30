@@ -210,38 +210,38 @@ int exec_program(int argc, char* argv[]) {
     // We are still inside the new address space, so we can write to the stack's virtual address.
     uint32_t user_stack_top = USER_STACK_TOP;
 
-    // Copy argument strings to the top of the stack.
-    // This creates a temporary buffer to hold the pointers to our strings on the user stack.
-    char* temp_argv_pointers[MAX_ARGS];
+    // A temporary array on the kernel stack to hold the new user-stack pointers to the argument strings
+    char* user_argv[MAX_ARGS];
 
-    // Iterate backwards to place strings at lower addresses.
+    // First, copy the string data for each argument onto the top of the user stack.
+    // We iterate backwards to keep them in the correct order.
     for (int i = argc - 1; i >= 0; i--) {
-        uint32_t len = strlen(argv[i]) + 1; // +1 for null terminator
+        size_t len = strlen(argv[i]) + 1;
         user_stack_top -= len;
-        
-        // Copy the string data from the kernel's stack to the user's stack.
         memcpy((void*)user_stack_top, argv[i], len);
-        
-        // Store the pointer to this new string in our temporary array.
-        temp_argv_pointers[i] = (char*)user_stack_top;
+        user_argv[i] = (char*)user_stack_top; // Store the new pointer
     }
 
-    // Align the stack pointer to a 4-byte boundary for the argv array.
+    // Align the stack to a 4-byte boundary before pushing pointers
     user_stack_top &= ~0x3;
 
-    // Push the argv array (pointers to the strings) onto the user stack.
-    user_stack_top -= sizeof(char*) * (argc + 1); // +1 for NULL terminator
+    // Now, push the pointers to the strings (the argv array) onto the stack.
+    // We include one extra for the NULL terminator.
+    user_stack_top -= sizeof(char*) * (argc + 1);
     char** argv_on_stack = (char**)user_stack_top;
-
-    // Copy the pointers from our temporary array to the new array on the user stack.
     for (int i = 0; i < argc; i++) {
-        argv_on_stack[i] = temp_argv_pointers[i];
+        argv_on_stack[i] = user_argv[i];
     }
-    argv_on_stack[argc] = NULL; // Terminate the list with a NULL pointer
+    argv_on_stack[argc] = NULL; // The list must be NULL-terminated
 
-    // Push the argc and the pointer to the argv array itself.
+    // Finally, push the main arguments that user_entry.asm expects:
+    // the pointer to the argv array, and argc.
+    
+    // Push argv pointer
     user_stack_top -= sizeof(char**);
-    *((char***)user_stack_top) = argv_on_stack;
+    *((uint32_t*)user_stack_top) = (uint32_t)argv_on_stack;
+
+    // Push argc
     user_stack_top -= sizeof(int);
     *((int*)user_stack_top) = argc;
     
