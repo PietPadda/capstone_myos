@@ -196,6 +196,19 @@ int exec_program(int argc, char* argv[]) {
             }
             // Now that the memory is mapped, copy the segment data from the file.
             memcpy((void*)phdr->vaddr, file_buffer + phdr->offset, phdr->filesz);
+
+            // The .bss section needs to be zeroed. It's the part of the segment
+            // from the end of the file data up to the full memory size.
+            if (phdr->memsz > phdr->filesz) {
+                uint32_t bss_start = phdr->vaddr + phdr->filesz;
+                uint32_t bss_size = phdr->memsz - phdr->filesz;
+                qemu_debug_string("PROCESS: Zeroing .bss section at ");
+                qemu_debug_hex(bss_start);
+                qemu_debug_string(" for ");
+                qemu_debug_hex(bss_size);
+                qemu_debug_string(" bytes.\n");
+                memset((void*)bss_start, 0, bss_size);
+            }
         }
     }
 
