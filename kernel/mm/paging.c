@@ -71,41 +71,52 @@ void paging_init() {
 }
 
 // Clones a page directory and its tables.
-page_directory_t* paging_clone_directory(page_directory_t* src) {
+page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     // Allocate a physical frame for the new directory.
     qemu_debug_string("PAGING: clone_directory started.\n");
     page_directory_t* new_dir_phys = (page_directory_t*)pmm_alloc_frame();
+
+    // error check
     if (!new_dir_phys) {
         return NULL;
     }
 
-    // To safely write to this new physical page, we must map it into our
-    // current virtual address space. We can temporarily use an unused PDE for this.
-    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022]; // Use a high, unused entry
-    uint32_t temp_vaddr = (uint32_t)&CURRENT_PAGE_TABLES[1022];
-    *pde = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
+    // Temporarily map the NEW directory so we can write to it.
+    // We'll use entry 1022 for this.
+    pde_t* pde_new = &CURRENT_PAGE_DIR->entries[1022];
+    uint32_t temp_vaddr_new = (uint32_t)&CURRENT_PAGE_TABLES[1022];
+    *pde_new = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_new));
+    page_directory_t* new_dir_virt = (page_directory_t*)temp_vaddr_new;
 
-    // Now, `temp_vaddr` is a virtual pointer to our new directory.
-    // We can safely clear it and copy the kernel entries.
-    page_directory_t* new_dir_virt = (page_directory_t*)temp_vaddr;
+    // Temporarily map the SOURCE directory so we can read from it.
+    // We'll use entry 1021 for this.
+    pde_t* pde_src = &CURRENT_PAGE_DIR->entries[1021];
+    uint32_t temp_vaddr_src = (uint32_t)&CURRENT_PAGE_TABLES[1021];
+    *pde_src = (pde_t)src_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_src));
+    page_directory_t* src_virt = (page_directory_t*)temp_vaddr_src;
+
+    // Now we can safely access both directories via their virtual addresses
     memset(new_dir_virt, 0, sizeof(page_directory_t));
 
-    // Copy only the kernel-space entries from the source directory.
+    // Copy kernel-space entries from the source (now virtually mapped)
     // The kernel space is in the upper 1GB (last 256 entries, 
     // (768 to 1022). We skip 1023 (the recursive entry).
     for (int i = 768; i < 1023; i++) {
-        if (src->entries[i] & PAGING_FLAG_PRESENT) {
-            new_dir_virt->entries[i] = src->entries[i];
+        if (src_virt->entries[i] & PAGING_FLAG_PRESENT) {
+            new_dir_virt->entries[i] = src_virt->entries[i];
         }
     }
 
-    // CRITICAL FIX: Set the recursive mapping for the NEW directory to point to ITSELF.
+    // Set the recursive mapping for the NEW directory to point to ITSELF.
     new_dir_virt->entries[1023] = (uint32_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
 
-    // Unmap the temporary page.
-    *pde = 0;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
+    // Unmap the temporary pages we created.
+    *pde_new = 0;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_new));
+    *pde_src = 0;
+    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_src));
 
     // The physical address is the handle we return.
     qemu_debug_string("PAGING: clone_directory finished successfully.\n");
