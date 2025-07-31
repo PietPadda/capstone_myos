@@ -73,6 +73,7 @@ void paging_init() {
 // Clones a page directory and its tables.
 page_directory_t* paging_clone_directory(page_directory_t* src) {
     // Allocate a physical frame for the new directory.
+    qemu_debug_string("PAGING: clone_directory started.\n");
     page_directory_t* new_dir_phys = (page_directory_t*)pmm_alloc_frame();
     if (!new_dir_phys) {
         return NULL;
@@ -91,18 +92,23 @@ page_directory_t* paging_clone_directory(page_directory_t* src) {
     memset(new_dir_virt, 0, sizeof(page_directory_t));
 
     // Copy only the kernel-space entries from the source directory.
-    // The kernel space is in the upper 1GB (last 256 entries, index 768-1023).
-    for (int i = 768; i < 1024; i++) {
+    // The kernel space is in the upper 1GB (last 256 entries, 
+    // (768 to 1022). We skip 1023 (the recursive entry).
+    for (int i = 768; i < 1023; i++) {
         if (src->entries[i] & PAGING_FLAG_PRESENT) {
             new_dir_virt->entries[i] = src->entries[i];
         }
     }
+
+    // CRITICAL FIX: Set the recursive mapping for the NEW directory to point to ITSELF.
+    new_dir_virt->entries[1023] = (uint32_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
 
     // Unmap the temporary page.
     *pde = 0;
     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
 
     // The physical address is the handle we return.
+    qemu_debug_string("PAGING: clone_directory finished successfully.\n");
     return new_dir_phys;
 }
 

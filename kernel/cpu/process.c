@@ -157,6 +157,7 @@ int exec_program(int argc, char* argv[]) {
 
     // --- Address Space Creation ---
     // 1. Create a new, separate address space for the process.
+    qemu_debug_string("PROCESS: Cloning kernel page directory...\n");
     page_directory_t* new_dir = paging_clone_directory(kernel_directory);
 
     // error handling
@@ -165,9 +166,11 @@ int exec_program(int argc, char* argv[]) {
         free(file_buffer);
         return -1;
     }
+    qemu_debug_string("PROCESS: Page directory cloned.\n");
     
     // 2. Temporarily switch into the new address space to map the program.
     page_directory_t* old_dir = (page_directory_t*)current_task->cpu_state.cr3;
+    qemu_debug_string("PROCESS: Temporarily switching to new address space to map pages...\n");
     paging_switch_directory(new_dir);
 
     // 3. Map the program's code and data segments from the ELF file.
@@ -249,6 +252,7 @@ int exec_program(int argc, char* argv[]) {
     *((int*)user_stack_top) = argc;
     
     // 5. Switch back to the original address space of the shell.
+    qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
 
     // Find a free process slot in the process table
@@ -289,6 +293,7 @@ int exec_program(int argc, char* argv[]) {
     new_task->cpu_state.cr3 = (uint32_t)new_task->page_directory; // Set physical address for CR3
 
     // The program is now in memory, so we can free the temporary file buffer
+    qemu_debug_string("PROCESS: New task configured. Ready for scheduler.\n");
     free(file_buffer);
     return new_pid; // Return the new PID to the caller (the shell)
 }
