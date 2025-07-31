@@ -128,17 +128,25 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("\n");
 
     // Find the file on disk using our filesystem driver.
+    qemu_debug_string("PROCESS: Calling fs_find_file...\n");
     fat_dir_entry_t* file_entry = fs_find_file(filename);
+    qemu_debug_string("PROCESS: Returned from fs_find_file.\n");
 
     // error handling
     if (!file_entry) {
+        qemu_debug_string("PROCESS: file_entry is NULL.\n");
         print_string("run: File not found: ");
         print_string(filename);
         return -1;
     }
+    qemu_debug_string("PROCESS: file_entry is VALID.\n");
 
     // Read the entire file into a temporary buffer in kernel memory
+    qemu_debug_string("PROCESS: Calling fs_read_file...\n");
     uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
+    qemu_debug_string("PROCESS: Returned from fs_read_file.\n");
+
+    // error handling
     if (!file_buffer) {
         print_string("run: Not enough memory to load program.\n");
         return -1;
