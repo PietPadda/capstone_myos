@@ -4,6 +4,7 @@
 #include <kernel/gdt.h>      // For the gdt_set_gate function
 #include <kernel/string.h>   // For memset
 #include <kernel/memory.h>   // For malloc
+#include <kernel/pmm.h>      // For pmm_alloc_frame
 
 // Our single, global TSS instance
 struct tss_entry_struct tss_entry;
@@ -24,14 +25,13 @@ void tss_install() {
     // explicitly tell the CPU there is no I/O map (x86 requirement)
     tss_entry.iomap_base = sizeof(tss_entry);
 
-    // allocate the stack on the heap
-    uint32_t stack_size = 4096;
-    void* stack = malloc(stack_size);
+    // Allocate a dedicated 4KB page for the kernel stack.
+    void* stack = pmm_alloc_frame();
 
     // Set the kernel stack segment and pointer
     tss_entry.ss0  = 0x10; // Kernel Data Segment selector
-    // The stack grows downwards. The top must be aligned. We enforce 16-byte alignment.
-    tss_entry.esp0 = ((uint32_t)stack + stack_size) & ~0xF; // use the allocated stack
+    // The stack grows downwards. The top must be aligned. We enforce 16-byte alignment
+    tss_entry.esp0 = ((uint32_t)stack + PMM_FRAME_SIZE) & ~0xF; // use the allocated frame
 
     // Load the TSS selector into the CPU's Task Register (TR)
     tss_flush();
