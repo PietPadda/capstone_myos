@@ -307,6 +307,11 @@ int exec_program(int argc, char* argv[]) {
 
     // The program is now in memory, so we can free the temporary file buffer
     qemu_debug_string("PROCESS: New task configured. Ready for scheduler.\n");
+    qemu_debug_string("  PID: "); qemu_debug_hex(new_task->pid);
+    qemu_debug_string("\n  EIP: "); qemu_debug_hex(new_task->cpu_state.eip);
+    qemu_debug_string("\n  ESP: "); qemu_debug_hex(new_task->cpu_state.useresp);
+    qemu_debug_string("\n  CR3: "); qemu_debug_hex(new_task->cpu_state.cr3);
+    qemu_debug_string("\n");
     free(file_buffer);
     return new_pid; // Return the new PID to the caller (the shell)
 }

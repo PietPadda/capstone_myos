@@ -4,6 +4,10 @@ bits 32
 
 ; Externally defined C functions we will call
 extern schedule
+extern qemu_debug_string ; Make our debug function visible
+
+; A string to print from assembly
+switch_msg: db 'task_switch: Entered assembly function.', 0
 
 ; Functions we will make visible to the linker
 global start_multitasking
@@ -51,6 +55,14 @@ start_multitasking:
 ; This is the main context switching function, called by the timer IRQ handler.
 ; It takes a pointer to the *current* task's register state (the 'r' in timer_handler)
 task_switch:
+    ; --- New Debug Print ---
+    pusha
+    push switch_msg
+    call qemu_debug_string
+    add esp, 4
+    popa
+    ; --- End New Debug Print ---
+
     ; Set up a standard C-style stack frame
     push ebp
     mov ebp, esp
