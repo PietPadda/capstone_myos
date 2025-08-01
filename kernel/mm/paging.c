@@ -178,8 +178,9 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
     uint32_t pd_idx = virt_addr >> 22;
     uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
 
-    // Check if the page table is present in the target directory
-    if (!(dir->entries[pd_idx] & PAGING_FLAG_PRESENT)) {
+    // We operate on the CURRENTLY ACTIVE page directory, which `exec_program`
+    // has already switched to. We use the magic virtual address for this.
+    if (!(CURRENT_PAGE_DIR->entries[pd_idx] & PAGING_FLAG_PRESENT)) {
         if (create) {
             // The page table doesn't exist, so we allocate a new physical frame for it.
             uint32_t new_table_phys = (uint32_t)pmm_alloc_frame();
@@ -188,25 +189,28 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
             if (!new_table_phys) {
                 return NULL; // Out of memory
             }
-            // IMPORTANT: Initialize the new page table to all zeros!
-            memset((void*)new_table_phys, 0, sizeof(page_table_t));
+            
+            // Get a virtual pointer to the new physical table to clear it.
+            // We can do this by temporarily mapping it.
+            page_table_t* table_virt = (page_table_t*)0xFFBFF000; // Use a dedicated temp virtual address
+            CURRENT_PAGE_DIR->entries[1022] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+            __asm__ __volatile__("invlpg (%0)" : : "b"(table_virt));
+            memset(table_virt, 0, sizeof(page_table_t));
+            CURRENT_PAGE_DIR->entries[1022] = 0; // Unmap
+             __asm__ __volatile__("invlpg (%0)" : : "b"(table_virt));
 
-            // Map the new table into the directory with USER flag
-            dir->entries[pd_idx] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
 
-            // We just modified a PDE. We must invalidate the TLB entry for the
-            // corresponding page table's virtual address in our recursive mapping.
+            // Map the new table into the active directory with USER flag
+            CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+
+            // Invalidate the TLB for the page table's recursive mapping address
             __asm__ __volatile__("invlpg (%0)" : : "b"(&CURRENT_PAGE_TABLES[pd_idx]) : "memory");
         } else {
             return NULL; // Page table doesn't exist and we're not allowed to create it.
         }
     }
 
-    // Now, we can access the page table via our recursive mapping "window".
-    // CURRENT_PAGE_TABLES gives us a virtual address to the array of all page tables.
-    // pd_idx selects the correct page table from that array.
-
-    // Now, we can safely access the page table.
+    // Now, we can safely access the page table via our recursive mapping "window".
     page_table_t* table = &CURRENT_PAGE_TABLES[pd_idx];
     
     // Return a pointer to the actual Page Table Entry.
