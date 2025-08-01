@@ -80,6 +80,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     if (!new_dir_phys) {
         return NULL;
     }
+    qemu_debug_string("PAGING: new_dir_phys allocated.\n");
 
     // Temporarily map the NEW directory so we can write to it.
     // We'll use entry 1022 for this.
@@ -88,6 +89,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     *pde_new = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_new));
     page_directory_t* new_dir_virt = (page_directory_t*)temp_vaddr_new;
+    qemu_debug_string("PAGING: new_dir temporarily mapped.\n");
 
     // Temporarily map the SOURCE directory so we can read from it.
     // We'll use entry 1021 for this.
@@ -96,9 +98,11 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     *pde_src = (pde_t)src_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
      __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_src));
     page_directory_t* src_virt = (page_directory_t*)temp_vaddr_src;
+    qemu_debug_string("PAGING: src_dir temporarily mapped.\n");
 
     // Now we can safely access both directories via their virtual addresses
     memset(new_dir_virt, 0, sizeof(page_directory_t));
+    qemu_debug_string("PAGING: new_dir_virt zeroed.\n");
 
     // Copy kernel-space entries from the source (now virtually mapped)
     // The kernel space is in the upper 1GB (last 256 entries, 
@@ -108,15 +112,18 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
             new_dir_virt->entries[i] = src_virt->entries[i];
         }
     }
+    qemu_debug_string("PAGING: kernel entries copied.\n");
 
     // Set the recursive mapping for the NEW directory to point to ITSELF.
     new_dir_virt->entries[1023] = (uint32_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    qemu_debug_string("PAGING: recursive mapping set for new_dir.\n");
 
     // Unmap the temporary pages we created.
     *pde_new = 0;
     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_new));
     *pde_src = 0;
     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_src));
+    qemu_debug_string("PAGING: temporary pages unmapped.\n");
 
     // The physical address is the handle we return.
     qemu_debug_string("PAGING: clone_directory finished successfully.\n");
