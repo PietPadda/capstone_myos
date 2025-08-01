@@ -62,8 +62,16 @@ void init_fs() {
 
 // Reads a 12-bit FAT entry from the in-memory FAT buffer.
 uint16_t fs_get_fat_entry(uint16_t cluster) {
+    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
     // Each FAT12 entry is 1.5 bytes, so we multiply by 1.5 (or 3/2) to get the byte offset.
     uint32_t fat_offset = (cluster * 3) / 2;
+
+    // Add a bounds check to prevent reading past the end of the FAT buffer.
+    // We check for fat_offset + 1 because we read two bytes (a uint16_t).
+    if (fat_offset + 1 >= fat_size_bytes) {
+        qemu_debug_string("  FAT_GET: offset is out of bounds! Returning EOC.\n");
+        return 0xFFF; // Return End-of-Chain
+    }
 
     // Log the inputs to the function.
     qemu_debug_string("  FAT_GET: cluster=");
@@ -84,17 +92,19 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     if (cluster % 2 == 0) {
         // For an even cluster, we want the lower 12 bits of the 16-bit value.
         // Example: Byte1=AB, Byte2=CD -> We want 0xCAB
-        return entry & 0x0FFF;
+        entry &= 0x0FFF;
     } else {
-        // Log the final, processed value we are returning.
-        qemu_debug_string("  FAT_GET: returning_next_cluster=0x");
-        qemu_debug_hex(entry);
-        qemu_debug_string("\n");
-
         // For an odd cluster, we want the upper 12 bits.
         // Example: Byte1=AB, Byte2=CD -> We want 0xDCB
-        return entry >> 4;
+        entry >>= 4;
     }
+
+    // Log the final, processed value we are returning.
+    qemu_debug_string("  FAT_GET: returning_next_cluster=0x");
+    qemu_debug_hex(entry);
+    qemu_debug_string("\n");
+
+    return entry;
 }
 
 void fs_read_cluster(uint16_t cluster, uint8_t* buffer) {
