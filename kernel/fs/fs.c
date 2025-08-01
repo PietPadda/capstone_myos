@@ -62,12 +62,12 @@ void init_fs() {
 
 // Reads a 12-bit FAT entry from the in-memory FAT buffer.
 uint16_t fs_get_fat_entry(uint16_t cluster) {
-    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
     // Each FAT12 entry is 1.5 bytes, so we multiply by 1.5 (or 3/2) to get the byte offset.
     uint32_t fat_offset = (cluster * 3) / 2;
+    uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
 
-    // Add a bounds check to prevent reading past the end of the FAT buffer.
-    // We check for fat_offset + 1 because we read two bytes (a uint16_t).
+    // --- Defensive Bounds Check ---
+    // We check for fat_offset + 1 because we need to read two bytes.
     if (fat_offset + 1 >= fat_size_bytes) {
         qemu_debug_string("  FAT_GET: offset is out of bounds! Returning EOC.\n");
         return 0xFFF; // Return End-of-Chain
@@ -80,21 +80,23 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     qemu_debug_hex(fat_offset);
     qemu_debug_string("\n");
 
-    // Read the two bytes at the calculated offset. This is always aligned.
-    uint16_t entry = *(uint16_t*)&fat_buffer[fat_offset];
+    // --- Safe, Byte-by-Byte Read to Avoid Unaligned Access ---
+    uint8_t byte1 = fat_buffer[fat_offset];
+    uint8_t byte2 = fat_buffer[fat_offset + 1];
+    uint16_t entry = (byte2 << 8) | byte1; // Combine them into a 16-bit value
 
     // Log the raw 16-bit value we read from the FAT.
     qemu_debug_string("  FAT_GET: raw_entry_read=0x");
     qemu_debug_hex(entry);
     qemu_debug_string("\n");
     
-    // check if cluster number is even or odd.
-    if (cluster & 1) { // Check if cluster is odd
-        // For an odd cluster, we want the upper 12 bits.
-        entry >>= 4;
-    } else {
+    // The logic depends on whether the cluster number is even or odd.
+    if (cluster % 2 == 0) {
         // For an even cluster, we want the lower 12 bits.
         entry &= 0x0FFF;
+    } else {
+        // For an odd cluster, we want the upper 12 bits.
+        entry >>= 4;
     }
 
     // Log the final, processed value we are returning.
