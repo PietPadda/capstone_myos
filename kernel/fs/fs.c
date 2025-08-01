@@ -88,15 +88,13 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     qemu_debug_hex(entry);
     qemu_debug_string("\n");
     
-    // The logic depends on whether the cluster number is even or odd.
-    if (cluster % 2 == 0) {
-        // For an even cluster, we want the lower 12 bits of the 16-bit value.
-        // Example: Byte1=AB, Byte2=CD -> We want 0xCAB
-        entry &= 0x0FFF;
-    } else {
+    // check if cluster number is even or odd.
+    if (cluster & 1) { // Check if cluster is odd
         // For an odd cluster, we want the upper 12 bits.
-        // Example: Byte1=AB, Byte2=CD -> We want 0xDCB
         entry >>= 4;
+    } else {
+        // For an even cluster, we want the lower 12 bits.
+        entry &= 0x0FFF;
     }
 
     // Log the final, processed value we are returning.
