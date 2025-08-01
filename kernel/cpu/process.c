@@ -111,6 +111,14 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process in its own address space.
 int exec_program(int argc, char* argv[]) {
+    // --- START CRITICAL SECTION ---
+    // This is the definitive fix. We disable interrupts because the entire process
+    // of loading a file, allocating memory, and setting up new page tables is
+    // not "re-entrant". If a timer interrupt fires in the middle of this,
+    // the scheduler will corrupt the state of our shell task, leading to a
+    // triple fault when the shell resumes.
+    __asm__ __volatile__("cli");
+
     qemu_debug_string("PROCESS: Entering exec_program.\n");
 
     // The shell has already processed the 'run' command.
@@ -119,14 +127,9 @@ int exec_program(int argc, char* argv[]) {
     // error handling
     if (argc == 0) {
         print_string("run: Missing filename.\n");
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
-
-    // --- START CRITICAL SECTION ---
-    // We disable interrupts here because the following code is not re-entrant
-    // and modifies shared kernel state (memory, process table). A timer
-    // interrupt firing here would corrupt the state of the shell.
-    __asm__ __volatile__("cli");
 
     const char* filename = argv[0];
     qemu_debug_string("PROCESS: Filename is -> ");
@@ -159,6 +162,9 @@ int exec_program(int argc, char* argv[]) {
         __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
+
+    // From here on, we are manipulating page tables and process state.
+    // It is critical that we are not interrupted.
 
     // Cast the beginning of the buffer to an ELF header
     Elf32_Ehdr* header = (Elf32_Ehdr*)file_buffer;
@@ -342,8 +348,8 @@ int exec_program(int argc, char* argv[]) {
     free(file_buffer);
 
     // --- END CRITICAL SECTION ---
-    // The new task is safely in the process table. We can now re-enable
-    // interrupts. The next timer tick will correctly schedule this new process.
+    // The new task is safely in the process table. We can now re-enable interrupts.
+    // The next timer tick will correctly schedule this new process.
     __asm__ __volatile__("sti");
 
     return new_pid; // Return the new PID to the caller (the shell)
