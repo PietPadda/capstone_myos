@@ -65,8 +65,20 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     // Each FAT12 entry is 1.5 bytes, so we multiply by 1.5 (or 3/2) to get the byte offset.
     uint32_t fat_offset = (cluster * 3) / 2;
 
+    // Log the inputs to the function.
+    qemu_debug_string("  FAT_GET: cluster=");
+    qemu_debug_hex(cluster);
+    qemu_debug_string(", calculated_offset=");
+    qemu_debug_hex(fat_offset);
+    qemu_debug_string("\n");
+
     // Read the two bytes at the calculated offset. This is always aligned.
     uint16_t entry = *(uint16_t*)&fat_buffer[fat_offset];
+
+    // Log the raw 16-bit value we read from the FAT.
+    qemu_debug_string("  FAT_GET: raw_entry_read=0x");
+    qemu_debug_hex(entry);
+    qemu_debug_string("\n");
     
     // The logic depends on whether the cluster number is even or odd.
     if (cluster % 2 == 0) {
@@ -74,6 +86,11 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
         // Example: Byte1=AB, Byte2=CD -> We want 0xCAB
         return entry & 0x0FFF;
     } else {
+        // Log the final, processed value we are returning.
+        qemu_debug_string("  FAT_GET: returning_next_cluster=0x");
+        qemu_debug_hex(entry);
+        qemu_debug_string("\n");
+
         // For an odd cluster, we want the upper 12 bits.
         // Example: Byte1=AB, Byte2=CD -> We want 0xDCB
         return entry >> 4;
