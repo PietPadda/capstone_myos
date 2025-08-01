@@ -415,11 +415,8 @@ cpu_state_t* schedule(registers_t *r) {
         current_task->cpu_state.ss = r->ss;
     } else {
         // This was a kernel task. The CPU did not change stacks.
-        // The task's stack pointer is the kernel stack pointer at the time of the
-        // interrupt. This value is what ESP was *before* our assembly stubs
-        // started pushing registers. It is located on the stack right after
-        // the registers_t struct that `r` points to.
-        current_task->cpu_state.useresp = (uint32_t)r + sizeof(registers_t);
+        // The task's stack pointer is the one saved by PUSHA, which is in r->esp.
+        current_task->cpu_state.useresp = r->esp;
         current_task->cpu_state.ss = 0x10; // Kernel Data Segment
     }
 
