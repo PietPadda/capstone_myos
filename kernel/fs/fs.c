@@ -20,9 +20,24 @@ void init_fs() {
     read_disk_sector(0, buffer);
     bpb = (fat12_bpb_t*)buffer;
 
-    // Read the FAT into memory
+    // Calculate the exact size of the FAT and how many 4KB frames we need.
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
-    fat_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM. Assume FAT fits in 4KB for now.
+    uint32_t fat_frames_needed = fat_size_bytes / PMM_FRAME_SIZE;
+    if (fat_size_bytes % PMM_FRAME_SIZE != 0) {
+        fat_frames_needed++;
+    }
+
+    // Allocate a contiguous block of frames for the FAT.
+    // NOTE: A more robust PMM would have a `pmm_alloc_frames(count)` function.
+    // For now, we'll allocate them one by one. This assumes they are contiguous,
+    // which they will be at this early stage of boot.
+
+    fat_buffer = (uint8_t*)pmm_alloc_frame(); // First frame
+    for (uint32_t i = 1; i < fat_frames_needed; i++) {
+        pmm_alloc_frame(); // Allocate subsequent frames to reserve the space
+    }
+
+    // Read the FAT into our correctly-sized memory region
     for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
         read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
     }
