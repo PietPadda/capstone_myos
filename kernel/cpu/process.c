@@ -119,8 +119,14 @@ int exec_program(int argc, char* argv[]) {
     // error handling
     if (argc == 0) {
         print_string("run: Missing filename.\n");
-         return -1;
+        return -1;
     }
+
+    // --- START CRITICAL SECTION ---
+    // We disable interrupts here because the following code is not re-entrant
+    // and modifies shared kernel state (memory, process table). A timer
+    // interrupt firing here would corrupt the state of the shell.
+    __asm__ __volatile__("cli");
 
     const char* filename = argv[0];
     qemu_debug_string("PROCESS: Filename is -> ");
@@ -137,6 +143,7 @@ int exec_program(int argc, char* argv[]) {
         qemu_debug_string("PROCESS: file_entry is NULL.\n");
         print_string("run: File not found: ");
         print_string(filename);
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
     qemu_debug_string("PROCESS: file_entry is VALID.\n");
@@ -149,6 +156,7 @@ int exec_program(int argc, char* argv[]) {
     // error handling
     if (!file_buffer) {
         print_string("run: Not enough memory to load program.\n");
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
 
@@ -159,6 +167,7 @@ int exec_program(int argc, char* argv[]) {
     if (header->magic != ELF_MAGIC) {
         print_string("run: Not an ELF executable.\n");
         free(file_buffer);
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
     qemu_debug_string("PROCESS: ELF loaded successfully.\n");
@@ -172,6 +181,7 @@ int exec_program(int argc, char* argv[]) {
     if (!new_dir) {
         print_string("run: Could not create address space.\n");
         free(file_buffer);
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
     qemu_debug_string("PROCESS: Page directory cloned.\n");
@@ -204,6 +214,7 @@ int exec_program(int argc, char* argv[]) {
                     paging_free_directory(new_dir);
                     free(file_buffer);
                     print_string("run: Out of physical memory.\n");
+                    __asm__ __volatile__("sti"); // Re-enable interrupts before returning
                     return -1;
                 }
                 paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
@@ -235,6 +246,7 @@ int exec_program(int argc, char* argv[]) {
 
         // error handling.
         if (!phys_frame) { 
+            __asm__ __volatile__("sti"); // Re-enable interrupts before returning
             return -1; }
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
     }
@@ -300,6 +312,7 @@ int exec_program(int argc, char* argv[]) {
         print_string("run: No free processes left.\n");
         paging_free_directory(new_dir); // Clean up the created directory
         free(file_buffer);
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1; // Return -1 on failure
     }
 
@@ -327,6 +340,12 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("\n  CR3: "); qemu_debug_hex(new_task->cpu_state.cr3);
     qemu_debug_string("\n");
     free(file_buffer);
+
+    // --- END CRITICAL SECTION ---
+    // The new task is safely in the process table. We can now re-enable
+    // interrupts. The next timer tick will correctly schedule this new process.
+    __asm__ __volatile__("sti");
+
     return new_pid; // Return the new PID to the caller (the shell)
 }
 
