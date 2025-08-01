@@ -178,6 +178,12 @@ int exec_program(int argc, char* argv[]) {
     
     // 2. Temporarily switch into the new address space to map the program.
     page_directory_t* old_dir = (page_directory_t*)current_task->cpu_state.cr3;
+
+    qemu_debug_string("PROCESS: State of current task (shell) before CR3 switch:\n");
+    // We need to cast our cpu_state_t to registers_t for the debug function.
+    // This is a bit of a hack, but works because the register layouts overlap.
+    qemu_debug_regs((registers_t*)&current_task->cpu_state);
+    
     qemu_debug_string("PROCESS: Temporarily switching to new address space to map pages...\n");
     paging_switch_directory(new_dir);
 
