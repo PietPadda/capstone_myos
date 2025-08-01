@@ -45,14 +45,23 @@ void init_fs() {
     }
 }
 
+// Reads a 12-bit FAT entry from the in-memory FAT buffer.
 uint16_t fs_get_fat_entry(uint16_t cluster) {
-    uint32_t fat_offset = cluster + (cluster / 2);
-    uint16_t* fat16 = (uint16_t*)&fat_buffer[fat_offset];
+    // Each FAT12 entry is 1.5 bytes, so we multiply by 1.5 (or 3/2) to get the byte offset.
+    uint32_t fat_offset = (cluster * 3) / 2;
+
+    // Read the two bytes at the calculated offset. This is always aligned.
+    uint16_t entry = *(uint16_t*)&fat_buffer[fat_offset];
     
+    // The logic depends on whether the cluster number is even or odd.
     if (cluster % 2 == 0) {
-        return *fat16 & 0x0FFF; // Even cluster
+        // For an even cluster, we want the lower 12 bits of the 16-bit value.
+        // Example: Byte1=AB, Byte2=CD -> We want 0xCAB
+        return entry & 0x0FFF;
     } else {
-        return *fat16 >> 4;     // Odd cluster
+        // For an odd cluster, we want the upper 12 bits.
+        // Example: Byte1=AB, Byte2=CD -> We want 0xDCB
+        return entry >> 4;
     }
 }
 
