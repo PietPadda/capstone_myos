@@ -3,7 +3,8 @@
 #include <kernel/debug.h>
 #include <kernel/io.h> // for port_byte_out
 #include <kernel/types.h>
-#include <kernel/exceptions.h>
+#include <kernel/exceptions.h>  // for registers_t
+#include <kernel/cpu/process.h> // for cpu_state_t
 
 // Sends a null-terminated string to the QEMU debug console
 void qemu_debug_string(const char* str) {
@@ -68,5 +69,25 @@ void qemu_debug_regs(registers_t *r) {
     qemu_debug_string("ESP: "); qemu_debug_hex(r->esp);
     qemu_debug_string("  EBP: "); qemu_debug_hex(r->ebp);
     qemu_debug_string("  UESP: "); qemu_debug_hex(r->useresp);
+    qemu_debug_string("\n");
+}
+
+// Dumps the state of all CPU registers from a cpu_state_t struct.
+void qemu_debug_cpu_state(cpu_state_t *s) {
+    qemu_debug_string("-- CPU STATE DUMP --\n");
+    qemu_debug_string("EAX: "); qemu_debug_hex(s->eax); qemu_debug_string("  EBX: "); qemu_debug_hex(s->ebx);
+    qemu_debug_string("  ECX: "); qemu_debug_hex(s->ecx); qemu_debug_string("\nEDX: "); qemu_debug_hex(s->edx);
+    qemu_debug_string("  ESI: "); qemu_debug_hex(s->esi); qemu_debug_string("  EDI: "); qemu_debug_hex(s->edi);
+    qemu_debug_string("\n-- SEGMENT DUMP --\n");
+    qemu_debug_string("CS:  "); qemu_debug_hex(s->cs);  qemu_debug_string("  SS:  "); qemu_debug_hex(s->ss);
+    qemu_debug_string("\n-- CONTROL DUMP --\n");
+    qemu_debug_string("EIP: "); qemu_debug_hex(s->eip);
+    qemu_debug_string("  EFLAGS: "); qemu_debug_hex(s->eflags);
+    qemu_debug_string("\n-- STACK DUMP --\n");
+    qemu_debug_string("ESP: "); qemu_debug_hex(s->esp);
+    qemu_debug_string("  EBP: "); qemu_debug_hex(s->ebp);
+    qemu_debug_string("  UESP: "); qemu_debug_hex(s->useresp);
+    qemu_debug_string("\n-- PAGING DUMP --\n");
+    qemu_debug_string("CR3: "); qemu_debug_hex(s->cr3);
     qemu_debug_string("\n");
 }

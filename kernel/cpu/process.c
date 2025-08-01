@@ -180,12 +180,12 @@ int exec_program(int argc, char* argv[]) {
     page_directory_t* old_dir = (page_directory_t*)current_task->cpu_state.cr3;
 
     qemu_debug_string("PROCESS: State of current task (shell) before CR3 switch:\n");
-    // We need to cast our cpu_state_t to registers_t for the debug function.
-    // This is a bit of a hack, but works because the register layouts overlap.
-    qemu_debug_regs((registers_t*)&current_task->cpu_state);
-    
+    // Use our new, correct debug function.
+    qemu_debug_cpu_state(&current_task->cpu_state); 
+
     qemu_debug_string("PROCESS: Temporarily switching to new address space to map pages...\n");
     paging_switch_directory(new_dir);
+    qemu_debug_string("PROCESS: CR3 switch complete. Now mapping pages.\n");
 
     // 3. Map the program's code and data segments from the ELF file.
     Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
