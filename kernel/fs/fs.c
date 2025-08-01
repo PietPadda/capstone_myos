@@ -99,16 +99,27 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 extern uint8_t dma_buffer[];
 
 void* fs_read_file(fat_dir_entry_t* entry) {
+    qemu_debug_string("FS: Entered fs_read_file.\n");
     uint32_t size = entry->file_size;
+    qemu_debug_string("FS: File size is ");
+    qemu_debug_hex(size);
+    qemu_debug_string(" bytes.\n");
 
     // Handle empty files
-    if (size == 0) return malloc(1); 
+    if (size == 0) {
+        qemu_debug_string("FS: File is empty, returning dummy buffer.\n");
+        return malloc(1); 
+    }
 
     // Allocate a single, contiguous buffer from the kernel's heap.
     uint8_t* file_buffer = (uint8_t*)malloc(size);
+    qemu_debug_string("FS: malloc requested, file_buffer is at: ");
+    qemu_debug_hex((uint32_t)file_buffer);
+    qemu_debug_string("\n");
 
     // error check
     if (!file_buffer) {
+        qemu_debug_string("FS: malloc FAILED.\n");
         return NULL; // Out of memory
     }
 
@@ -118,6 +129,10 @@ void* fs_read_file(fat_dir_entry_t* entry) {
 
     // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
+        qemu_debug_string("FS: Reading cluster #");
+        qemu_debug_hex(current_cluster);
+        qemu_debug_string("...\n");
+
         // Read a cluster into our safe, static DMA buffer.
         read_disk_sector(data_area_start_sector + (current_cluster - 2), dma_buffer);
 
@@ -131,5 +146,6 @@ void* fs_read_file(fat_dir_entry_t* entry) {
         current_pos += to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
+    qemu_debug_string("FS: Finished reading all clusters.\n");
     return file_buffer;
 }
