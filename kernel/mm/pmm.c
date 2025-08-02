@@ -44,18 +44,15 @@ void pmm_init(uint32_t mem_size_bytes) {
     // The 'kernel_end' symbol is provided by our linker script.
     pmm_bitmap = (uint32_t*)&kernel_end;
 
-    // Initially, mark all frames as free (set all bits to 0).
+    // Mark all frames as initially available.
     memset(pmm_bitmap, 0, pmm_bitmap_size);
 
-    // Calculate the total number of frames to reserve from address 0 up to
-    // the end of our PMM bitmap.
-    uint32_t reserved_end_address = (uint32_t)&kernel_end + pmm_bitmap_size;
-    uint32_t reserved_frames = reserved_end_address / PMM_FRAME_SIZE;
-    if (reserved_end_address  % PMM_FRAME_SIZE != 0) {
-        reserved_frames++;
-    }
+    // Calculate how many frames are used by the kernel itself, plus the PMM bitmap.
+    // This is the highest memory address that is off-limits.
+    uint32_t reserved_area_end = (uint32_t)&kernel_end + pmm_bitmap_size;
+    uint32_t reserved_frames = (reserved_area_end + PMM_FRAME_SIZE - 1) / PMM_FRAME_SIZE;
 
-    // Mark the frames used by the kernel and the bitmap as "in use".
+    // Mark all of these frames as "used" so we never allocate them.
     for (uint32_t i = 0; i < reserved_frames; i++) {
         pmm_set_bit(i);
     }
