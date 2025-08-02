@@ -174,7 +174,7 @@ void paging_free_directory(page_directory_t* dir_phys) {
 
 // Finds the Page Table Entry (PTE) for a given virtual address.
 // If a page table doesn't exist and `create` is true, it will be allocated.
-pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
+pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create, uint32_t flags) {
     // The virtual address is split into a 10-bit directory index and a 10-bit table index.
     uint32_t pd_idx = virt_addr >> 22;
     uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
@@ -201,8 +201,8 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
              __asm__ __volatile__("invlpg (%0)" : : "b"(table_virt));
 
 
-            // Map the new table into the active directory with USER flag
-            CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
+            // We only care about the top-level flags (USER, RW, PRESENT) for the PDE.
+            CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | (flags & 0x7);
 
             // Invalidate the TLB for the page table's recursive mapping address
             __asm__ __volatile__("invlpg (%0)" : : "b"(&CURRENT_PAGE_TABLES[pd_idx]) : "memory");
@@ -221,8 +221,8 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create) {
 
 // Maps a virtual address to a physical address in the given page directory.
 void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_addr, uint32_t flags) {
-    // Get the page table entry for the virtual address, creating tables if necessary.
-    pte_t* pte = paging_get_page(dir, virt_addr, true);
+    // Pass the flags through to the creation logic.
+    pte_t* pte = paging_get_page(dir, virt_addr, true, flags);
     if (pte) {
         // Set the entry to point to the physical frame with the given flags.
         *pte = phys_addr | flags;
