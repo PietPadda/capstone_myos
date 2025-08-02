@@ -203,7 +203,7 @@ void process_command() {
             print_hex(buffer[i]);
             print_char(' ');
         }
-        // Note: We don't free the buffer because we haven't written free() yet!
+        free(buffer); // Free the allocated buffer to prevent a leak
 
     // sleep command
     } else if (strcmp(argv[0], "sleep") == 0) {
