@@ -5,6 +5,9 @@
 
 #include <kernel/types.h>
 
+// Expose the bitmap size for heap calculation
+extern uint32_t pmm_bitmap_size;
+
 #define PMM_FRAME_SIZE 4096 // We'll use 4KB frames
 
 // Initializes the physical memory manager.

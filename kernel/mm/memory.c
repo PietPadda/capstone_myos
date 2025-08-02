@@ -6,6 +6,7 @@
 
 // This symbol is defined by the linker script
 extern uint32_t kernel_end;
+extern uint32_t pmm_bitmap_size; // Make pmm_bitmap_size visible
 
 // Define the header for each memory block
 typedef struct block_header {
@@ -20,9 +21,14 @@ static uint32_t heap_top;
 static block_header_t* free_list_head = NULL;
 
 void init_memory() {
-    // The heap now starts right after the PMM's bitmap, not at kernel_end.
-    heap_top = (uint32_t)pmm_get_free_addr();
-    // free_list_head is now correctly zeroed by the .bss clearing code
+    // The heap starts right after the PMM's bitmap.
+    // We calculate this based on the kernel_end symbol from the linker.
+    heap_top = (uint32_t)&kernel_end + pmm_bitmap_size;
+
+    // Align the heap_top to the next page boundary for safety.
+    if (heap_top % PMM_FRAME_SIZE != 0) {
+        heap_top = (heap_top / PMM_FRAME_SIZE + 1) * PMM_FRAME_SIZE;
+    }
 }
 
 void* malloc(uint32_t size) {

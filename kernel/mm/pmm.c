@@ -9,9 +9,9 @@
 extern uint32_t kernel_end;
 
 // A bitmap for tracking free physical memory frames.
-static uint32_t* pmm_bitmap = NULL; // points to array of bits
-static uint32_t pmm_total_frames = 0; // no of 4kb frames to manage
-static uint32_t pmm_bitmap_size = 0;
+uint32_t* pmm_bitmap = NULL; // points to array of bits
+uint32_t pmm_total_frames = 0; // no of 4kb frames to manage
+uint32_t pmm_bitmap_size = 0;
 
 // Helper function to set a bit in the bitmap (mark a frame as used).
 static inline void pmm_set_bit(uint32_t frame_idx) {
