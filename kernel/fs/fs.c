@@ -159,6 +159,10 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 }
 
 void* fs_read_file(fat_dir_entry_t* entry) {
+    // --- START CRITICAL SECTION ---
+    // Disable interrupts to prevent a context switch during this non-re-entrant function.
+    __asm__ __volatile__("cli");
+
     qemu_debug_string("FS: Entered fs_read_file.\n");
     uint32_t size = entry->file_size;
     qemu_debug_string("FS: File size is ");
@@ -168,6 +172,7 @@ void* fs_read_file(fat_dir_entry_t* entry) {
     // Handle empty files
     if (size == 0) {
         qemu_debug_string("FS: File is empty, returning dummy buffer.\n");
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return malloc(1); 
     }
 
@@ -180,6 +185,7 @@ void* fs_read_file(fat_dir_entry_t* entry) {
     // error check
     if (!file_buffer) {
         qemu_debug_string("FS: malloc FAILED.\n");
+        __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return NULL; // Out of memory
     }
 
@@ -206,6 +212,9 @@ void* fs_read_file(fat_dir_entry_t* entry) {
         current_pos += to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
+
+    // --- END CRITICAL SECTION ---
+    __asm__ __volatile__("sti"); // Re-enable interrupts before returning
     qemu_debug_string("FS: Finished reading all clusters.\n");
     return file_buffer;
 }
