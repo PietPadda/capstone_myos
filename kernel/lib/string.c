@@ -2,6 +2,7 @@
 
 #include <kernel/string.h>
 #include <kernel/types.h>
+#include <kernel/debug.h> // qemu_debug_* functions
 
 int strcmp(const char* str1, const char* str2) {
     while (*str1 && (*str1 == *str2)) {
@@ -61,6 +62,33 @@ void* memcpy(void* dest, const void* src, size_t n) {
     while (n--) {
         *d++ = *s++;
     }
+    return dest;
+}
+
+// A byte-by-byte memcpy with debug output to find the exact faulting address.
+void* memcpy_debug(void* dest, const void* src, size_t n) {
+    unsigned char* d = dest;
+    const unsigned char* s = src;
+    
+    qemu_debug_string("memcpy_debug: START dest=");
+    qemu_debug_hex((uint32_t)dest);
+    qemu_debug_string(" src=");
+    qemu_debug_hex((uint32_t)src);
+    qemu_debug_string(" n=");
+    qemu_debug_hex(n);
+    qemu_debug_string("\n");
+
+    for (size_t i = 0; i < n; i++) {
+        d[i] = s[i];
+        // This is too slow to print every byte, let's print every 16 bytes
+        if (i > 0 && (i % 16 == 0)) {
+            qemu_debug_string("  -> copied ");
+            qemu_debug_hex(i);
+            qemu_debug_string(" bytes\n");
+        }
+    }
+
+    qemu_debug_string("memcpy_debug: END\n");
     return dest;
 }
 

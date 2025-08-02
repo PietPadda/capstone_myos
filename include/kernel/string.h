@@ -10,6 +10,7 @@ int atoi(const char* str);
 void* memset(void* buf, int c, size_t n);
 int memcmp(const void* s1, const void* s2, size_t n);
 void* memcpy(void* dest, const void* src, size_t n);
+void* memcpy_debug(void* dest, const void* src, size_t n);
 int toupper(int c);
 size_t strlen(const char* str);
 char* strncpy(char* dest, const char* src, size_t n);

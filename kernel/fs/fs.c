@@ -215,7 +215,9 @@ void* fs_read_file(fat_dir_entry_t* entry) {
         qemu_debug_hex(to_copy);
         qemu_debug_string(" bytes.\n");
         
-        memcpy(current_pos, dma_buffer, to_copy);
+         // Use our new debug version of memcpy
+        memcpy_debug(current_pos, dma_buffer, to_copy);
+        // memcpy(current_pos, dma_buffer, to_copy);
 
         qemu_debug_string("  -> Returned from memcpy.\n");
 
