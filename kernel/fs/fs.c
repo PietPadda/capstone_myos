@@ -7,6 +7,8 @@
 #include <kernel/io.h>
 #include <kernel/string.h> // For our new string functions
 #include <kernel/pmm.h>
+#include <kernel/paging.h>
+#include <kernel/debug.h>
 
 fat12_bpb_t* bpb; // make global
 static uint8_t* fat_buffer;
@@ -14,50 +16,60 @@ static uint32_t data_area_start_sector;
 uint8_t* root_directory_buffer; // global ie no static
 uint32_t root_directory_size; // global ie no static
 
+// This label is defined in dma_buffer.asm.
+extern uint8_t dma_buffer[];
+
 void init_fs() {
     // Read the BIOS Parameter Block (Sector 0)
-    uint8_t* buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM instead of malloc
-    read_disk_sector(0, buffer);
-    bpb = (fat12_bpb_t*)buffer;
+    // We can use a single, temporary frame for the BPB read since it's small.
+    uint8_t* temp_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM instead of malloc
+    read_disk_sector(0, temp_buffer);
+    bpb = (fat12_bpb_t*)temp_buffer;
 
-    // Calculate the exact size of the FAT and how many 4KB frames we need.
+    // --- FAT BUFFER SETUP ---
+    // 1. Calculate the size and number of pages needed for the FAT.
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
-    uint32_t fat_frames_needed = fat_size_bytes / PMM_FRAME_SIZE;
-    if (fat_size_bytes % PMM_FRAME_SIZE != 0) {
-        fat_frames_needed++;
+    uint32_t fat_pages_needed = (fat_size_bytes + PMM_FRAME_SIZE - 1) / PMM_FRAME_SIZE;
+
+    // 2. Define a virtual start address for our FAT buffer. Let's use 3MB,
+    // which is safely within our initial 4MB identity map.
+    uint32_t fat_virt_addr = 0x300000;
+    fat_buffer = (uint8_t*)fat_virt_addr;
+
+    // 3. Allocate physical pages and map them to our contiguous virtual space.
+    for (uint32_t i = 0; i < fat_pages_needed; i++) {
+        void* phys_frame = pmm_alloc_frame();
+        paging_map_page(kernel_directory, fat_virt_addr + (i * PMM_FRAME_SIZE), (uint32_t)phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
     }
-
-    // Allocate a contiguous block of frames for the FAT.
-    // NOTE: A more robust PMM would have a `pmm_alloc_frames(count)` function.
-    // For now, we'll allocate them one by one. This assumes they are contiguous,
-    // which they will be at this early stage of boot.
-
-    fat_buffer = (uint8_t*)pmm_alloc_frame(); // First frame
-    for (uint32_t i = 1; i < fat_frames_needed; i++) {
-        pmm_alloc_frame(); // Allocate subsequent frames to reserve the space
-    }
-
-    // Read the FAT into our correctly-sized memory region
+    
+    // 4. Now we can safely read the entire FAT into the virtual buffer.
     for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
         read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
     }
 
-    // Calculate the location and size of the root directory
+    // --- ROOT DIRECTORY BUFFER SETUP ---
     uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
     root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
-    uint32_t root_dir_size_sectors = root_directory_size / bpb->bytes_per_sector;
-    if (root_directory_size % bpb->bytes_per_sector > 0) {
-        root_dir_size_sectors++;
+    uint32_t root_dir_sectors = (root_directory_size + bpb->bytes_per_sector - 1) / bpb->bytes_per_sector;
+
+    // Define a virtual start address for the root directory buffer, after the FAT.
+    uint32_t root_dir_virt_addr = fat_virt_addr + (fat_pages_needed * PMM_FRAME_SIZE);
+    root_directory_buffer = (uint8_t*)root_dir_virt_addr;
+
+    // Allocate and map pages for the root directory.
+    for (uint32_t i = 0; i < (root_dir_sectors * 512 + PMM_FRAME_SIZE - 1) / PMM_FRAME_SIZE; i++) {
+        void* phys_frame = pmm_alloc_frame();
+        paging_map_page(kernel_directory, root_dir_virt_addr + (i * PMM_FRAME_SIZE), (uint32_t)phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
     }
 
-    // calc starting sector of data area
-    data_area_start_sector = root_dir_start_sector + root_dir_size_sectors;
-
-    // Read the entire root directory into a new buffer
-    root_directory_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM. Assume root dir fits in 4KB.
-    for (uint32_t i = 0; i < root_dir_size_sectors; i++) {
+    // Read the root directory into the new virtual buffer.
+    for (uint32_t i = 0; i < root_dir_sectors; i++) {
         read_disk_sector(root_dir_start_sector + i, root_directory_buffer + (i * 512));
     }
+
+    // --- CLEANUP ---
+    data_area_start_sector = root_dir_start_sector + root_dir_sectors;
+    pmm_free_frame(temp_buffer); // We can now free the temp buffer for the BPB.
 }
 
 // Reads a 12-bit FAT entry from the in-memory FAT buffer.
@@ -145,9 +157,6 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 
     return NULL; // File not found
 }
-
-// This label is defined in dma_buffer.asm.
-extern uint8_t dma_buffer[];
 
 void* fs_read_file(fat_dir_entry_t* entry) {
     qemu_debug_string("FS: Entered fs_read_file.\n");
