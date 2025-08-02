@@ -185,6 +185,7 @@ void* fs_read_file(fat_dir_entry_t* entry) {
         qemu_debug_string("FS: File is empty, returning dummy buffer.\n");
         return malloc(1); 
     }
+    qemu_debug_string("FS: All empty files handled.\n");
 
     // Allocate a single, contiguous buffer from the kernel's heap.
     uint8_t* file_buffer = (uint8_t*)malloc(size);

@@ -173,13 +173,17 @@ void process_command() {
             fat_dir_entry_t* file_entry = fs_find_file(argv[1]);
             if (file_entry) {
                 __asm__ __volatile__("cli"); // Disable interrupts
+                qemu_debug_string("SHELL: cat before calling fs_read_file...\n");
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
+                qemu_debug_string("SHELL: cat after called fs_read_file...\n");
                 if (buffer) {
                     for (uint32_t i = 0; i < file_entry->file_size; i++) {
                         print_char(buffer[i]);
                     }
                     // free the buffer to prev mem leaks
+                    qemu_debug_string("SHELL: cat before free buffer...\n");
                     free(buffer);
+                    qemu_debug_string("SHELL: cat after free buffer...\n");
                 }
                 __asm__ __volatile__("sti"); // Re-enable interrupts
             } else {
