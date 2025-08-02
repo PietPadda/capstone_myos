@@ -172,13 +172,16 @@ void process_command() {
         if (argc > 1) {
             fat_dir_entry_t* file_entry = fs_find_file(argv[1]);
             if (file_entry) {
+                __asm__ __volatile__("cli"); // Disable interrupts
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
                 if (buffer) {
                     for (uint32_t i = 0; i < file_entry->file_size; i++) {
                         print_char(buffer[i]);
                     }
-                    // NOTE: We don't free(buffer) yet since we haven't written free()
+                    // free the buffer to prev mem leaks
+                    free(buffer);
                 }
+                __asm__ __volatile__("sti"); // Re-enable interrupts
             } else {
                 print_string("File not found: ");
                 print_string(argv[1]);
