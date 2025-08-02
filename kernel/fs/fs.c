@@ -20,29 +20,36 @@ uint32_t root_directory_size; // global ie no static
 extern uint8_t dma_buffer[];
 
 void init_fs() {
-    // Read the BIOS Parameter Block (Sector 0)
-    // We can use a single, temporary frame for the BPB read since it's small.
-    uint8_t* temp_buffer = (uint8_t*)pmm_alloc_frame(); // Use PMM instead of malloc
+    // Read the BIOS Parameter Block (Sector 0) into a temporary buffer.
+    uint8_t* temp_buffer = (uint8_t*)pmm_alloc_frame();
     read_disk_sector(0, temp_buffer);
-    bpb = (fat12_bpb_t*)temp_buffer;
+
+    // Allocate a permanent, correctly-sized buffer for the BPB on the heap.
+    bpb = (fat12_bpb_t*)malloc(sizeof(fat12_bpb_t));
+
+    // Copy the BPB data from the temporary sector buffer to its new home.
+    memcpy(bpb, temp_buffer, sizeof(fat12_bpb_t));
+
+    // Now that we've copied the data, we can safely free the temporary buffer.
+    pmm_free_frame(temp_buffer);
 
     // --- FAT BUFFER SETUP ---
-    // 1. Calculate the size and number of pages needed for the FAT.
+    // Calculate the size and number of pages needed for the FAT.
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
     uint32_t fat_pages_needed = (fat_size_bytes + PMM_FRAME_SIZE - 1) / PMM_FRAME_SIZE;
 
-    // 2. Define a virtual start address for our FAT buffer. Let's use 3MB,
+    // Define a virtual start address for our FAT buffer. Let's use 3MB,
     // which is safely within our initial 4MB identity map.
     uint32_t fat_virt_addr = 0x300000;
     fat_buffer = (uint8_t*)fat_virt_addr;
 
-    // 3. Allocate physical pages and map them to our contiguous virtual space.
+    // Allocate physical pages and map them to our contiguous virtual space.
     for (uint32_t i = 0; i < fat_pages_needed; i++) {
         void* phys_frame = pmm_alloc_frame();
         paging_map_page(kernel_directory, fat_virt_addr + (i * PMM_FRAME_SIZE), (uint32_t)phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
     }
     
-    // 4. Now we can safely read the entire FAT into the virtual buffer.
+    // Now we can safely read the entire FAT into the virtual buffer.
     for (uint32_t i = 0; i < bpb->sectors_per_fat; i++) {
         read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
     }
@@ -69,7 +76,6 @@ void init_fs() {
 
     // --- CLEANUP ---
     data_area_start_sector = root_dir_start_sector + root_dir_sectors;
-    pmm_free_frame(temp_buffer); // We can now free the temp buffer for the BPB.
 }
 
 // Reads a 12-bit FAT entry from the in-memory FAT buffer.
