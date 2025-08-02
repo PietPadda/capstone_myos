@@ -90,7 +90,10 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     qemu_debug_string("PAGING: before zero out the new directory.\n");
     // Zero out the new directory.
     memset(new_dir_virt, 0, sizeof(page_directory_t));
-    qemu_debug_string("PAGING: after ero out the new directory.\n");
+    qemu_debug_string("PAGING: after zero out the new directory.\n");
+
+    // Copy the mapping for the first 4MB, which contains the kernel.
+    new_dir_virt->entries[0] = src_virt->entries[0];
 
     qemu_debug_string("PAGING: before copy kernel space entries.\n");
     // Copy kernel-space entries (upper 1GB, entries 768-1022).
@@ -195,9 +198,9 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
 }
 
 void paging_switch_directory(page_directory_t* dir) {
-    qemu_debug_string("PAGING: before loading page dir");
+    qemu_debug_string("PAGING: before loading page dir\n");
     load_page_directory(dir);
-    qemu_debug_string("PAGING: after loading page dir");
+    qemu_debug_string("PAGING: after loading page dir\n");
 }
 
 // Dumps debug information about the PDE and PTE for a given virtual address.
