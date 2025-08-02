@@ -56,7 +56,7 @@ void init_fs() {
 
     // Verify initial mapping
     qemu_debug_string("INIT_FS: Post-map check of fat_buffer:\n");
-    paging_dump_entry_for_addr((uint32_t)fat_buffer);
+    //paging_dump_entry_for_addr((uint32_t)fat_buffer);
 
     // --- ROOT DIRECTORY BUFFER SETUP ---
     uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
@@ -89,7 +89,7 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
 
     // Verify mapping at time of use
     qemu_debug_string("FS_GET_FAT_ENTRY: Pre-access check:\n");
-    paging_dump_entry_for_addr((uint32_t)fat_buffer + fat_offset);
+    //paging_dump_entry_for_addr((uint32_t)fat_buffer + fat_offset);
 
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
 

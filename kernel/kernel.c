@@ -95,12 +95,11 @@ void kmain() {
     tss_install(); 
     qemu_debug_string("tss_inst ");
 
-    // NOW, initialize the general-purpose heap allocator.
-    // It will start using memory AFTER the frames used by Paging and FS.
+    // Initialize the general-purpose heap allocator FIRST.
     init_memory(); 
     qemu_debug_string("mem_init ");
-
-    // Initialize the filesystem driver, which also allocates frames from the PMM.
+ 
+    // Now that malloc() is safe to use, initialize the filesystem driver.
     init_fs();
     qemu_debug_string("fs_init ");
 
