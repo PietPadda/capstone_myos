@@ -86,7 +86,8 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     // We'll use entry 1022 for this.
     pde_t* pde_new = &CURRENT_PAGE_DIR->entries[1022];
     uint32_t temp_vaddr_new = (uint32_t)&CURRENT_PAGE_TABLES[1022];
-    *pde_new = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    // Add the PAGING_FLAG_USER to ensure correct permissions are inherited.
+    *pde_new = (pde_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_new));
     page_directory_t* new_dir_virt = (page_directory_t*)temp_vaddr_new;
     qemu_debug_string("PAGING: new_dir temporarily mapped.\n");
@@ -95,7 +96,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     // We'll use entry 1021 for this.
     pde_t* pde_src = &CURRENT_PAGE_DIR->entries[1021];
     uint32_t temp_vaddr_src = (uint32_t)&CURRENT_PAGE_TABLES[1021];
-    *pde_src = (pde_t)src_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
+    *pde_src = (pde_t)src_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER;
      __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr_src));
     page_directory_t* src_virt = (page_directory_t*)temp_vaddr_src;
     qemu_debug_string("PAGING: src_dir temporarily mapped.\n");
