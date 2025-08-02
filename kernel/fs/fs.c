@@ -54,6 +54,10 @@ void init_fs() {
         read_disk_sector(bpb->reserved_sectors + i, fat_buffer + (i * bpb->bytes_per_sector));
     }
 
+    // Verify initial mapping
+    qemu_debug_string("INIT_FS: Post-map check of fat_buffer:\n");
+    paging_dump_entry_for_addr((uint32_t)fat_buffer);
+
     // --- ROOT DIRECTORY BUFFER SETUP ---
     uint32_t root_dir_start_sector = bpb->reserved_sectors + (bpb->num_fats * bpb->sectors_per_fat);
     root_directory_size = (bpb->root_dir_entries * sizeof(fat_dir_entry_t));
@@ -82,6 +86,11 @@ void init_fs() {
 uint16_t fs_get_fat_entry(uint16_t cluster) {
     // Each FAT12 entry is 1.5 bytes, so we multiply by 1.5 (or 3/2) to get the byte offset.
     uint32_t fat_offset = (cluster * 3) / 2;
+
+    // Verify mapping at time of use
+    qemu_debug_string("FS_GET_FAT_ENTRY: Pre-access check:\n");
+    paging_dump_entry_for_addr((uint32_t)fat_buffer + fat_offset);
+
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
 
     // --- Defensive Bounds Check ---

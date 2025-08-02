@@ -234,3 +234,44 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
 void paging_switch_directory(page_directory_t* dir) {
     load_page_directory(dir);
 }
+
+// Dumps debug information about the PDE and PTE for a given virtual address.
+void paging_dump_entry_for_addr(uint32_t virt_addr) {
+    // Disable interrupts to ensure the paging structures aren't changed while we read them.
+    __asm__ __volatile__("cli");
+
+    qemu_debug_string("-- PAGING DUMP for VA: ");
+    qemu_debug_hex(virt_addr);
+    qemu_debug_string(" --\n");
+
+    uint32_t pd_idx = virt_addr >> 22;
+    uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
+
+    pde_t pde = CURRENT_PAGE_DIR->entries[pd_idx];
+
+    qemu_debug_string("  PDE index: ");
+    qemu_debug_hex(pd_idx);
+    qemu_debug_string("   PDE value: ");
+    qemu_debug_hex(pde);
+    qemu_debug_string(" [");
+    if (pde & PAGING_FLAG_PRESENT) qemu_debug_string("P ");
+    if (pde & PAGING_FLAG_RW) qemu_debug_string("RW ");
+    if (pde & PAGING_FLAG_USER) qemu_debug_string("U ");
+    qemu_debug_string("]\n");
+
+    if (pde & PAGING_FLAG_PRESENT) {
+        pte_t pte = CURRENT_PAGE_TABLES[pd_idx].entries[pt_idx];
+        qemu_debug_string("  PTE index: ");
+        qemu_debug_hex(pt_idx);
+        qemu_debug_string("   PTE value: ");
+        qemu_debug_hex(pte);
+        qemu_debug_string(" [");
+        if (pte & PAGING_FLAG_PRESENT) qemu_debug_string("P ");
+        if (pte & PAGING_FLAG_RW) qemu_debug_string("RW ");
+        if (pte & PAGING_FLAG_USER) qemu_debug_string("U ");
+        qemu_debug_string("] -> maps to physical: ");
+        qemu_debug_hex(pte & ~0xFFF);
+        qemu_debug_string("\n");
+    }
+    __asm__ __volatile__("sti");
+}

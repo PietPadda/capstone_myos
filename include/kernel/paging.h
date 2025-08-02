@@ -50,4 +50,7 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create);
 // Switches the current page directory.
 void paging_switch_directory(page_directory_t* dir);
 
+// Dumps debug info for a given virtual address's mapping.
+void paging_dump_entry_for_addr(uint32_t virt_addr);
+
 #endif
