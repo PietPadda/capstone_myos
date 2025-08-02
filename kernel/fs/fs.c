@@ -200,14 +200,24 @@ void* fs_read_file(fat_dir_entry_t* entry) {
         qemu_debug_string("...\n");
 
         // Read a cluster into our safe, static DMA buffer.
+        qemu_debug_string("  -> Calling read_disk_sector...\n");
         read_disk_sector(data_area_start_sector + (current_cluster - 2), dma_buffer);
+        qemu_debug_string("  -> Returned from read_disk_sector.\n");
 
         // Figure out how much of this cluster to copy.
         uint32_t remaining = size - (current_pos - file_buffer);
         uint32_t to_copy = (remaining > bytes_per_cluster) ? bytes_per_cluster : remaining;
 
         // Copy the data from the dma buffer to our main file buffer.
+        qemu_debug_string("  -> Calling memcpy to dest: ");
+        qemu_debug_hex((uint32_t)current_pos);
+        qemu_debug_string(" for ");
+        qemu_debug_hex(to_copy);
+        qemu_debug_string(" bytes.\n");
+        
         memcpy(current_pos, dma_buffer, to_copy);
+
+        qemu_debug_string("  -> Returned from memcpy.\n");
 
         current_pos += to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
