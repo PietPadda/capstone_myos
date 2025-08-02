@@ -80,14 +80,7 @@ void kmain() {
     qemu_debug_hex((uint32_t)frame3);
     qemu_debug_string(" (should be same as frame 1)\n");
 
-    // initiate dynamic mem allocation
-    // Modules like TSS and FS depend on malloc() being ready
-    // Initialize our old heap allocator AFTER the PMM.
-    init_memory(); 
-    qemu_debug_string("mem_init ");
-
-    // Initialize and enable paging
-    // Must happen after PPM and Dynamic Heap
+    // Initialize and enable paging, which allocates frames from the PMM.
     paging_init();
     qemu_debug_string("paging_init ");
 
@@ -101,6 +94,15 @@ void kmain() {
     // Install the TSS right after the GDT
     tss_install(); 
     qemu_debug_string("tss_inst ");
+
+    // Initialize the filesystem driver, which also allocates frames from the PMM.
+    init_fs();
+    qemu_debug_string("fs_init ");
+
+    // NOW, initialize the general-purpose heap allocator.
+    // It will start using memory AFTER the frames used by Paging and FS.
+    init_memory(); 
+    qemu_debug_string("mem_init ");
 
     // Initialize the process table BEFORE syscalls and interrupts
     process_init(); // Sets up idle_task and shell_task
@@ -121,10 +123,6 @@ void kmain() {
     // Install the timer driver.
     timer_install(); // Install our new timer driver
     qemu_debug_string("pit_inst ");
-
-    // Initialize the filesystem driver
-    init_fs();
-    qemu_debug_string("fs_init ");
 
     // clear the bios text
     delay_ms(800); // Use our blocking delay before the scheduler is active.
