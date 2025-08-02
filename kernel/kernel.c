@@ -95,14 +95,14 @@ void kmain() {
     tss_install(); 
     qemu_debug_string("tss_inst ");
 
-    // Initialize the filesystem driver, which also allocates frames from the PMM.
-    init_fs();
-    qemu_debug_string("fs_init ");
-
     // NOW, initialize the general-purpose heap allocator.
     // It will start using memory AFTER the frames used by Paging and FS.
     init_memory(); 
     qemu_debug_string("mem_init ");
+
+    // Initialize the filesystem driver, which also allocates frames from the PMM.
+    init_fs();
+    qemu_debug_string("fs_init ");
 
     // Initialize the process table BEFORE syscalls and interrupts
     process_init(); // Sets up idle_task and shell_task

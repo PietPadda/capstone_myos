@@ -40,8 +40,8 @@ void idt_set_gate(uint8_t num, uint32_t base, uint16_t selector, uint8_t flags) 
     idt_entries[num].base_high   = (base >> 16) & 0xFFFF;
     idt_entries[num].selector    = selector;
     idt_entries[num].always0     = 0;
-    // We must uncomment the OR below when we add the interrupt handlers.
-    idt_entries[num].flags       = flags /* | 0x60 */;
+    // Set the flags for the IDT entry
+    idt_entries[num].flags       = flags;
 }
 
 // Initializes the IDT and loads it.

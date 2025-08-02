@@ -23,7 +23,7 @@ STAGE1_OBJ := $(BUILD_DIR)/boot/stage1.bin
 STAGE2_OBJ := $(BUILD_DIR)/boot/stage2.bin
 KERNEL_C_OBJ   := $(patsubst %.c,$(BUILD_DIR)/%.o,$(KERNEL_C_SRC))
 KERNEL_ASM_OBJ := $(patsubst %.asm,$(BUILD_DIR)/%.o,$(KERNEL_ASM_SRC))
-ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(filter-out $(BUILD_DIR)/kernel/cpu/gdt_load.o, $(KERNEL_ASM_OBJ))
+ALL_KERNEL_OBJS := $(KERNEL_C_OBJ) $(KERNEL_ASM_OBJ)
 # The final ELF file for the user program, not a flat binary
 USER_PROGRAM_C_OBJS := $(patsubst userspace/programs/%.c,$(BUILD_DIR)/userspace/programs/%.o,$(USER_PROGRAM_C_SRC))
 USER_PROGRAM_ASM_OBJS := $(patsubst userspace/%.asm,$(BUILD_DIR)/userspace/%.o,$(USER_PROGRAM_ASM_SRC))

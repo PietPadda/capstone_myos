@@ -3,6 +3,9 @@
 #include <kernel/gdt.h>
 #include <kernel/types.h>
 
+// Tell the C compiler that our assembly function exists elsewhere.
+extern void gdt_flush(struct gdt_ptr_struct* gdt_ptr);
+
 // GDT entry structure
 struct gdt_entry_struct {
     uint16_t limit_low;
@@ -23,6 +26,8 @@ struct gdt_ptr_struct {
 static struct gdt_entry_struct gdt_entries[6];
 static struct gdt_ptr_struct   gdt_ptr;
 
+// Replaced inline with assembly version
+/*
 // Assembly inline function to load the GDT
 static inline void gdt_flush_inline(struct gdt_ptr_struct* gdt_ptr) {
     __asm__ __volatile__(
@@ -36,6 +41,7 @@ static inline void gdt_flush_inline(struct gdt_ptr_struct* gdt_ptr) {
         ".flush:\n\t"
         : : "r"(gdt_ptr) : "ax");
 }
+*/
 
 // Helper function to create a GDT entry
 void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {
@@ -64,6 +70,6 @@ void gdt_install() {
 
     // The TSS entry will be set up by tss_install()
 
-    // Load our new GDT
-    gdt_flush_inline(&gdt_ptr);
+    // Load our new GDT using the safe assembly function.
+    gdt_flush(&gdt_ptr);
 }
