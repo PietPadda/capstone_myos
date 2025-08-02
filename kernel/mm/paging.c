@@ -90,7 +90,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     // Zero out the new directory.
     memset(new_dir_virt, 0, sizeof(page_directory_t));
 
-    // Copy kernel-space entries (upper 1GB).
+    // Copy kernel-space entries (upper 1GB, entries 768-1022).
     for (int i = 768; i < 1023; i++) {
         if (src_virt->entries[i] & PAGING_FLAG_PRESENT) {
             new_dir_virt->entries[i] = src_virt->entries[i];
@@ -108,42 +108,26 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
 
 // Frees all user-space pages and page tables for a given page directory.
 void paging_free_directory(page_directory_t* dir_phys) {
-    // err check
+   // err check
     if (!dir_phys) return;
 
-    // Map the directory to be freed so we can read its entries.
-    pde_t* pde = &CURRENT_PAGE_DIR->entries[1022];
-    uint32_t temp_vaddr = (uint32_t)&CURRENT_PAGE_TABLES[1022];
-    *pde = (pde_t)dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-     __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
-    page_directory_t* dir_virt = (page_directory_t*)temp_vaddr;
-    
-    // Iterate through all page directory entries (0-767)
-    for (int i = 0; i < 768; i++) { // Iterate user-space PDEs
+    page_directory_t* dir_virt = dir_phys;
+
+    // Free all user-space pages and page tables (entries 0-767).
+    for (int i = 0; i < 768; i++) {
         if (dir_virt->entries[i] & PAGING_FLAG_PRESENT) {
             page_table_t* pt_phys = (page_table_t*)(dir_virt->entries[i] & ~0xFFF);
-            
-            // Temporarily map the page table to free its frames
-            pde_t* pde2 = &CURRENT_PAGE_DIR->entries[1021];
-            uint32_t temp_vaddr2 = (uint32_t)&CURRENT_PAGE_TABLES[1021];
-            *pde2 = (pde_t)pt_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr2));
-            page_table_t* pt_virt = (page_table_t*)temp_vaddr2;
+            page_table_t* pt_virt = pt_phys;
 
             for (int j = 0; j < 1024; j++) {
                 if (pt_virt->entries[j] & PAGING_FLAG_PRESENT) {
                     pmm_free_frame((void*)(pt_virt->entries[j] & ~0xFFF));
                 }
             }
-            *pde2 = 0; // Unmap page table
-            __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr2));
             pmm_free_frame(pt_phys);
         }
     }
-
-    // Unmap the page directory itself before freeing it.
-    *pde = 0;
-    __asm__ __volatile__("invlpg (%0)" : : "b"(temp_vaddr));
+    // Finally, free the page directory frame itself.
     pmm_free_frame(dir_phys);
 }
 
