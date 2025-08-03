@@ -84,19 +84,11 @@ task_switch:
     push dword [ebp + 8]
     call schedule
     add esp, 4      ; Clean up argument
-
-    ; EAX now holds the pointer to the new task's task_struct_t.
-    ; First, get the address of the new page directory and load it into CR3.
-    ; The page_directory pointer is at offset 48 in the task_struct_t.
-    mov ebx, [eax + 48]     ; ebx = new_task->page_directory
-    mov cr3, ebx
     
-    ; Now, get the pointer to the cpu_state_t struct.
-    ; The cpu_state struct is at offset 52 in the task_struct_t.
-    mov ecx, eax
-    add ecx, 52             ; ecx = &new_task->cpu_state
+    ; Immediately save the return value from schedule (in EAX) into a safe register.
+    mov ecx, eax        ; ecx now holds the pointer to the new task's state.
 
-    ; Send End-of-Interrupt signals
+    ; Now we can safely use EAX for other things, like sending the EOI.
     mov al, 0x20
     out 0xA0, al
     out 0x20, al
@@ -139,6 +131,11 @@ task_switch:
     mov [ebx + 68], edx  ; r->useresp
     mov edx, [ecx + 44]  ; new_task->cpu_state.ss
     mov [ebx + 72], edx  ; r->ss
+
+    ; --- THIS IS THE MAGIC ---
+    ; Load the physical address of the new task's page directory into CR3.
+    mov edx, [ecx + 48]  ; new_task->cpu_state.cr3
+    mov cr3, edx
 
     ; We are done. Restore our stack frame and return to irq_common_stub.
     mov esp, ebp

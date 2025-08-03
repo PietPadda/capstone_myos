@@ -32,3 +32,4 @@ end
 
 # Add a final message to the user
 printf "--- .gdbinit setup complete. Type 'c' to boot the OS. ---\n"
+

@@ -416,7 +416,7 @@ void process_init() {
 }
 
 // This is our new, more intelligent round-robin scheduler.
-task_struct_t* schedule(registers_t *r) {
+cpu_state_t* schedule(registers_t *r) {
     qemu_debug_string("schedule: entered.\n");
 
     // This check is a safeguard against catastrophic failure.
@@ -504,6 +504,7 @@ task_struct_t* schedule(registers_t *r) {
     uint32_t kernel_stack_top = (uint32_t)current_task->kernel_stack + PMM_FRAME_SIZE;
     tss_entry.esp0 = kernel_stack_top;
 
-    // Change the return statements to return the whole task struct pointer
-    return &current_task; // Instead of &current_task->cpu_state
+    // Return a pointer to the NEW task's saved state
+    // The assembly code will use this to load the new context.
+    return &current_task->cpu_state;
 }
