@@ -11,6 +11,10 @@
 #define MAX_PROCESSES 16 // Maximum number of processes in the system
 #define PROCESS_NAME_LEN 32 // Max length of a process name
 
+#define USER_STACK_PAGES  4                                 // and be 16KB (4 pages) in size
+#define USER_STACK_SIZE (USER_STACK_PAGES * PMM_FRAME_SIZE) // 16KB
+#define USER_STACK_TOP    0xE0000000                        // User stacks will start at 3.5GB
+
 // Enum for process states
 typedef enum {
     TASK_STATE_UNUSED,    // This entry in the table is free

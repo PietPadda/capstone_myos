@@ -104,10 +104,6 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
     );
 }
 
-#define USER_STACK_SIZE 4096         // 4KB stack for user programs
-#define USER_STACK_TOP    0xE0000000 // User stacks will start at 3.5GB
-#define USER_STACK_PAGES  4          // and be 16KB (4 pages) in size
-
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process in its own address space.
 int exec_program(int argc, char* argv[]) {
@@ -248,10 +244,10 @@ int exec_program(int argc, char* argv[]) {
     }
 
     // Map the user stack at a high virtual address.
-    for (int i = 0; i < USER_STACK_PAGES; i++) {
+    for (uint32_t  i = 0; i < USER_STACK_PAGES; i++) {
         // Correctly calculate the virtual address for each stack page, moving downwards.
         // The first page (i=0) will contain USER_STACK_TOP itself.
-        uint32_t virt_addr = (USER_STACK_TOP - USER_STACK_SIZE) + (i * PMM_FRAME_SIZE);
+        uint32_t virt_addr = USER_STACK_TOP - (USER_STACK_PAGES - i) * PMM_FRAME_SIZE;
         uint32_t phys_frame = (uint32_t)pmm_alloc_frame();
 
         // error handling.
