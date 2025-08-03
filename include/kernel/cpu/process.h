@@ -26,25 +26,24 @@ typedef enum {
 
 // This struct contains ONLY the registers we need to save for a task switch.
 typedef struct {
-    // Pushed by 'pusha' - 8 registers * 4 bytes each = 32 bytes total
+    // Pushed by 'pusha' - 7 registers * 4 bytes each = 28 bytes total (starting from 0)
     uint32_t edi;     // Offset 0
     uint32_t esi;     // Offset 4
     uint32_t ebp;     // Offset 8
-    uint32_t esp;     // Offset 12 (Kernel ESP at time of switch)
-    uint32_t ebx;     // Offset 16
-    uint32_t edx;     // Offset 20
-    uint32_t ecx;     // Offset 24
-    uint32_t eax;     // Offset 28
+    uint32_t ebx;     // Offset 12
+    uint32_t edx;     // Offset 16
+    uint32_t ecx;     // Offset 20
+    uint32_t eax;     // Offset 24
 
-    // Pushed by CPU/IRET frame - 5 registers * 4 bytes each = 20 bytes total
-    uint32_t eip;     // Offset 32
-    uint32_t cs;      // Offset 36
-    uint32_t eflags;  // Offset 40
-    uint32_t useresp; // Offset 44 (The task's actual stack pointer)
-    uint32_t ss;      // Offset 48
+    // Pushed by CPU/IRET frame - 5 registers * 4 bytes each = 20 bytes total (starting from 24)
+    uint32_t eip;     // Offset 28
+    uint32_t cs;      // Offset 32
+    uint32_t eflags;  // Offset 36
+    uint32_t esp;     // Offset 40 (The task's actual stack pointer)
+    uint32_t ss;      // Offset 44
 
     // Page directory physical address
-    uint32_t cr3; // Offset 52
+    uint32_t cr3; // Offset 48
 } __attribute__((packed)) cpu_state_t;
 
 // The Process Control Block (PCB)

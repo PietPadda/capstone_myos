@@ -339,7 +339,7 @@ int exec_program(int argc, char* argv[]) {
     // Set up the initial CPU state for the new process.
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
     new_task->cpu_state.eip = (uint32_t)header->entry;
-    new_task->cpu_state.useresp = user_stack_top; // Use the final calculated stack top
+    new_task->cpu_state.esp = user_stack_top; // Use the final calculated stack top
     new_task->cpu_state.cs = 0x1B;  // User Code Segment
     new_task->cpu_state.ss = 0x23;  // User Data Segment
     new_task->cpu_state.eflags = 0x202; // Interrupts enabled
@@ -449,12 +449,12 @@ cpu_state_t* schedule(registers_t *r) {
     // The user code segment selector is 0x1B (index 3, RPL 3).
     if (r->cs == 0x1B) { // The kernel code segment selector is 0x08.
         // This was a user task. The CPU pushed useresp and ss.
-        current_task->cpu_state.useresp = r->useresp;
+        current_task->cpu_state.esp = r->useresp;
         current_task->cpu_state.ss = r->ss;
     } else {
         // This was a kernel task. The CPU did not change stacks.
         // The task's stack pointer is the one saved by PUSHA, which is in r->esp.
-        current_task->cpu_state.useresp = r->esp;
+        current_task->cpu_state.esp = r->esp;
         current_task->cpu_state.ss = 0x10; // Kernel Data Segment
     }
 

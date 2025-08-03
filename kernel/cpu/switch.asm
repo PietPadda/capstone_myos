@@ -20,7 +20,7 @@ start_multitasking:
     mov ebx, [esp + 4]
 
     ; Load the new task's page directory
-    mov eax, [ebx + 52] ; cpu_state.cr3 is at offset 52
+    mov eax, [ebx + 48] ; cpu_state.cr3 is at offset 48
     mov cr3, eax
     
     ; We are about to jump to a new task, so we can disable interrupts.
@@ -28,13 +28,13 @@ start_multitasking:
     cli
 
     ; Switch to the new task's stack.
-    mov esp, [ebx + 44]  ; cpu_state_t.useresp is at offset 44
+    mov esp, [ebx + 40]  ; cpu_state_t.esp is at offset 40
 
     ; Push the IRET frame onto the new stack in the correct order for IRET.
     ; IRET pops EIP, CS, EFLAGS. So we must push them in reverse order.
-    push dword [ebx + 40]   ; EFLAGS
-    push dword [ebx + 36]   ; CS
-    push dword [ebx + 32]   ; EIP
+    push dword [ebx + 36]   ; EFLAGS
+    push dword [ebx + 32]   ; CS
+    push dword [ebx + 28]   ; EIP
 
     ; Load all general-purpose registers from the cpu_state_t struct.
     ; We load them *before* the IRET so the new task starts with the correct state.
@@ -42,12 +42,12 @@ start_multitasking:
     mov esi, [ebx + 4]
     mov ebp, [ebx + 8]
     ; We skip ESP because we've already loaded it.
-    mov edx, [ebx + 20]
-    mov ecx, [ebx + 24]
-    mov eax, [ebx + 28]
+    mov edx, [ebx + 16]
+    mov ecx, [ebx + 20]
+    mov eax, [ebx + 24]
     
     ; Load EBX last since we were using it as our pointer.
-    mov ebx, [ebx + 16]
+    mov ebx, [ebx + 12]
 
     ; Use IRET to jump to the new task. This is the magic step.
     iret
@@ -92,35 +92,36 @@ task_switch:
     mov [ebx + 20], edx
     mov edx, [ecx + 8]   ; ebp
     mov [ebx + 24], edx
-    mov edx, [ecx + 44]  ; useresp (the new task's stack pointer)
-    mov [ebx + 28], edx  ; This updates the esp that popa will see
-    mov edx, [ecx + 16]  ; ebx
+    ; NOTE: We do not restore ESP from the struct. `popa` handles it, and
+    ; the `iret` frame has its own stack pointer.
+
+    mov edx, [ecx + 12]  ; ebx
     mov [ebx + 32], edx
-    mov edx, [ecx + 20]  ; edx
+    mov edx, [ecx + 16]  ; edx
     mov [ebx + 36], edx
-    mov edx, [ecx + 24]  ; ecx
+    mov edx, [ecx + 20]  ; ecx
     mov [ebx + 40], edx
-    mov edx, [ecx + 28]  ; eax
+    mov edx, [ecx + 24]  ; eax
     mov [ebx + 44], edx
     
     ; Update the IRET frame on the stack
-    mov edx, [ecx + 32]  ; eip
+    mov edx, [ecx + 28]  ; eip
     mov [ebx + 56], edx
-    mov edx, [ecx + 36]  ; cs
+    mov edx, [ecx + 32]  ; cs
     mov [ebx + 60], edx
-    mov edx, [ecx + 40]  ; eflags
+    mov edx, [ecx + 36]  ; eflags
     mov [ebx + 64], edx
 
     ; We must also update the user stack pointer and segment for the IRET.
     ; These are at offsets 68 and 72 in the registers_t struct.
-    mov edx, [ecx + 44]  ; new_task->cpu_state.useresp
+    mov edx, [ecx + 40]  ; new_task->cpu_state.esp
     mov [ebx + 68], edx  ; r->useresp
-    mov edx, [ecx + 48]  ; new_task->cpu_state.ss
+    mov edx, [ecx + 44]  ; new_task->cpu_state.ss
     mov [ebx + 72], edx  ; r->ss
 
     ; --- THIS IS THE MAGIC ---
     ; Load the physical address of the new task's page directory into CR3.
-    mov edx, [ecx + 52]  ; new_task->cpu_state.cr3 is at offset 52
+    mov edx, [ecx + 48]  ; new_task->cpu_state.cr3
     mov cr3, edx
 
     ; We are done. Restore our stack frame and return to irq_common_stub.
