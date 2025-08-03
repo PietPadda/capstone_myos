@@ -6,6 +6,10 @@
 #include <kernel/string.h> // For memset
 #include <kernel/debug.h>
 
+// A virtual address in the kernel's space that we reserve for temporary mappings.
+// This must be an address that we know is not used for anything else.
+#define TEMP_PAGETABLE_ADDR 0xFFBFF000
+
 // our assembly functions
 extern void load_page_directory(page_directory_t* dir);
 extern void enable_paging();
@@ -120,9 +124,9 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
 
 // This is the final, correct version.
 // It frees the page tables and pages of the CURRENTLY ACTIVE directory.
-void paging_free_directory(page_directory_t* dir) {
+void paging_free_directory(page_directory_t* dir_phys) {
    // err check
-    if (!dir) return;
+    if (!dir_phys) return;
 
     // We can only safely free the active page directory because we need to
     // use its recursive mapping to read its page tables.
@@ -131,23 +135,35 @@ void paging_free_directory(page_directory_t* dir) {
     // We start at 1 because entry 0 maps the kernel's low memory, which is shared
     // and should never be freed by a user process.
     for (int i = 0; i < 768; i++) {
-        // We use CURRENT_PAGE_DIR because we are freeing the active directory.
-        if (CURRENT_PAGE_DIR->entries[i] & PAGING_FLAG_PRESENT) {
-            // Get the virtual address of the page table via our recursive map
-            page_table_t* pt = &CURRENT_PAGE_TABLES[i];
+        pde_t pde = dir_phys->entries[i];
 
-            // Free all the physical frames that this table points to.
+        if (pde & PAGING_FLAG_PRESENT) {
+            // Get the PHYSICAL address of the page table from the directory entry.
+            page_table_t* pt_phys = (page_table_t*)(pde & ~0xFFF);
+
+            // To safely read the contents of this page table, we must temporarily
+            // map it into our CURRENT (kernel) address space.
+            paging_map_page(kernel_directory, TEMP_PAGETABLE_ADDR, (uint32_t)pt_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+
+            // Now we can access the page table through a safe virtual pointer.
+            page_table_t* pt_virt = (page_table_t*)TEMP_PAGETABLE_ADDR;
+
+            // Iterate through the page table and free every physical frame it points to.
             for (int j = 0; j < 1024; j++) {
-                if (pt->entries[j] & PAGING_FLAG_PRESENT) {
-                    pmm_free_frame((void*)(pt->entries[j] & ~0xFFF));
+                if (pt_virt->entries[j] & PAGING_FLAG_PRESENT) {
+                    pmm_free_frame((void*)(pt_virt->entries[j] & ~0xFFF));
                 }
             }
-            // Free the page table frame itself.
-            pmm_free_frame((void*)(CURRENT_PAGE_DIR->entries[i] & ~0xFFF));
+
+            // After we're done with this page table, unmap it from our temporary slot.
+            paging_map_page(kernel_directory, TEMP_PAGETABLE_ADDR, 0, 0);
+
+            // And finally, free the physical frame that held the page table itself.
+            pmm_free_frame(pt_phys);
         }
     }
-    // Finally, free the page directory frame itself.
-    pmm_free_frame(dir);
+    // Finally, free the physical frame that held the page directory.
+    pmm_free_frame(dir_phys);
     
     // IMPORTANT: The caller (sys_exit) is now responsible for immediately
     // switching to a new, valid page directory because the one we were just

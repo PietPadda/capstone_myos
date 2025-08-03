@@ -43,6 +43,7 @@ static void sys_getchar(registers_t *r) {
 
 // Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
+    __asm__ __volatile__("cli"); // Disable interrupts during this critical operation
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
 
     // Keep a pointer to the task we are exiting.
@@ -53,24 +54,26 @@ static void sys_exit(registers_t *r) {
         process_table[1].state = TASK_STATE_RUNNING;
     }
 
-    // Clean up the exited task completely, fixing the resource leak.
+    // Switch to the kernel's main page directory. This is our safe place.
+    paging_switch_directory(kernel_directory);
+
+    // Now, from the safety of the kernel's address space, call our new
+    // robust function to free the memory of the (now inactive) user process.
     if (task_to_exit) {
         qemu_debug_string("SYSCALL: Freeing memory for PID ");
         qemu_debug_hex(task_to_exit->pid);
         qemu_debug_string("...\n");
-
-        // The old address space is gone. Switch to the kernel's main directory
-        // to provide a safe context before we continue.
-        paging_switch_directory(kernel_directory);
-        
-        // Mark the slot as free for reuse
-        task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
-        memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
+        paging_free_directory(task_to_exit->page_directory);
     }
+
+    // Mark the slot as free for reuse
+    task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
+    memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
 
     qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
     // Now it's safe to call the scheduler to switch to the next task (the shell).
     // Force a context switch. The scheduler will now see the shell is runnable.
+    __asm__ __volatile__("sti"); // Re-enable interrupts
     __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
 }
 
