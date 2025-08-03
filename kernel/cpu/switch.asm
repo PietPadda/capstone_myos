@@ -5,6 +5,7 @@ bits 32
 ; Externally defined C functions we will call
 extern schedule
 extern qemu_debug_string ; Make our debug function visible
+extern tss_entry ; Expose TSS in memory to assembly
 
 ; A string to print from assembly
 switch_msg: db 'task_switch: Entered assembly function.', 0
@@ -18,6 +19,15 @@ global task_switch
 start_multitasking:
     ; Get the pointer to the cpu_state_t struct from the stack.
     mov ebx, [esp + 4]
+
+    ; Update the TSS to point to this new task's kernel stack.
+    ; The kernel_stack pointer is part of the task_struct_t, not the cpu_state_t.
+    ; We need to calculate its offset from the cpu_state_t pointer.
+    ; In task_struct_t: `cpu_state` is at offset 60. `kernel_stack` is at offset 52.
+    ; So, kernel_stack is at [ebx - 8].
+    mov eax, [ebx - 8]      ; eax = new_task->kernel_stack
+    add eax, 4096           ; eax = top of the 4K kernel stack
+    mov [tss_entry + 4], eax ; tss_entry.esp0 = eax
 
     ; Load the new task's page directory
     mov eax, [ebx + 48] ; cpu_state.cr3 is at offset 48
