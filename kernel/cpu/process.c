@@ -483,6 +483,13 @@ cpu_state_t* schedule(registers_t *r) {
             qemu_debug_string("schedule: Switching to PID ");
             qemu_debug_hex(current_task->pid);
             qemu_debug_string(".\n");
+            qemu_debug_string("schedule: switched to new task\n");
+
+            // CRITICAL: Update the TSS to point to this new task's kernel stack.
+            uint32_t kernel_stack_top = (uint32_t)current_task->kernel_stack + PMM_FRAME_SIZE;
+            tss_entry.esp0 = kernel_stack_top;
+
+            qemu_debug_string("schedule: before return to new task\n");
             return &current_task->cpu_state;
         }
     }
@@ -494,6 +501,10 @@ cpu_state_t* schedule(registers_t *r) {
     qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
     qemu_debug_hex(current_task->pid);
     qemu_debug_string(".\n");
+
+    // CRITICAL: Update the TSS for the idle task as well.
+    uint32_t kernel_stack_top = (uint32_t)current_task->kernel_stack + PMM_FRAME_SIZE;
+    tss_entry.esp0 = kernel_stack_top;
 
     // Return a pointer to the NEW task's saved state
     // The assembly code will use this to load the new context.

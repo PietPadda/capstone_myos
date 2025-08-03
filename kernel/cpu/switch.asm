@@ -5,7 +5,6 @@ bits 32
 ; Externally defined C functions we will call
 extern schedule
 extern qemu_debug_string ; Make our debug function visible
-extern tss_entry ; We need access to the TSS entry to update it
 
 ; A string to print from assembly
 switch_msg: db 'task_switch: Entered assembly function.', 0
@@ -80,16 +79,6 @@ task_switch:
     mov al, 0x20
     out 0xA0, al
     out 0x20, al
-
-    ; --- CRITICAL: Update the TSS ---
-    ; We must tell the CPU where the kernel stack for the NEW task is.
-    ; The cpu_state_t struct is at the start of the task_struct_t.
-    ; The kernel_stack pointer is at offset 44 in task_struct_t
-    ; Let's calculate: pid(4)+state(4)+name(32)+user_stack(4) = 44
-    mov eax, [ecx + 44] ; eax = new_task->kernel_stack (physical address)
-    add eax, 4096       ; Point to the TOP of the stack (it grows down)
-    ; The esp0 field is at offset 4 in the tss_entry struct.
-    mov [tss_entry + 4], eax
 
     ; Get the pointer to the on-stack registers_t ('r')
     mov ebx, [ebp + 8]
