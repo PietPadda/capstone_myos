@@ -9,6 +9,7 @@
 // A virtual address in the kernel's space that we reserve for temporary mappings.
 // This must be an address that we know is not used for anything else.
 #define TEMP_PAGETABLE_ADDR 0xFFBFF000
+#define TEMP_PAGEDIR_ADDR   0xFFBFE000 // A different, unused virtual page
 
 // our assembly functions
 extern void load_page_directory(page_directory_t* dir);
@@ -79,22 +80,22 @@ void paging_init() {
 page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     qemu_debug_string("PAGING: clone_directory started.\n");
     page_directory_t* new_dir_phys = (page_directory_t*)pmm_alloc_frame();
+
+    // error checking
     if (!new_dir_phys) {
         qemu_debug_string("PAGING: PANIC! No frame for new directory.\n");
         return NULL;
     }
     qemu_debug_string("PAGING: new_dir_phys allocated.\n");
 
-    // We can safely write to new_dir_phys because it's in identity-mapped low memory.
-    page_directory_t* new_dir_virt = new_dir_phys;
+    // Temporarily map the new directory so we can write to it safely.
+    paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, (uint32_t)new_dir_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
 
+    // We can safely write to new_dir_phys because it's in identity-mapped low memory.
+    page_directory_t* new_dir_virt = (page_directory_t*)TEMP_PAGEDIR_ADDR;
     qemu_debug_string("PAGING: before zero out the new directory.\n");
+
     // Zero out the new directory.
-    qemu_debug_string("new dir virt: ");
-    qemu_debug_hex(new_dir_virt);
-    qemu_debug_string("\nsizeof(page_directory_t): ");
-    qemu_debug_hex(sizeof(page_directory_t));
-    qemu_debug_string("\nnow, memset directly after\n");
     memset(new_dir_virt, 0, sizeof(page_directory_t));
     qemu_debug_string("PAGING: after zero out the new directory.\n");
 
@@ -118,6 +119,9 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     new_dir_virt->entries[1023] = (uint32_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
     qemu_debug_string("PAGING: Recursive mapping set for new directory.\n");
 
+        // Unmap the temporary page.
+    paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, 0, 0);
+
     qemu_debug_string("PAGING: clone_directory finished successfully.\n");
     return new_dir_phys;
 }
@@ -128,13 +132,15 @@ void paging_free_directory(page_directory_t* dir_phys) {
    // err check
     if (!dir_phys) return;
 
-    // We can only safely free the active page directory because we need to
-    // use its recursive mapping to read its page tables.
+    // Temporarily map the directory we want to free into our current address space.
+    paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, (uint32_t)dir_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+    page_directory_t* dir_virt = (page_directory_t*)TEMP_PAGEDIR_ADDR;
     
     // Free all user-space pages and page tables (entries 1 to 767).
     // We start at 1 because entry 0 maps the kernel's low memory, which is shared
     // and should never be freed by a user process.
     for (int i = 0; i < 768; i++) {
+        // Access the PDE using the safe VIRTUAL address.
         pde_t pde = dir_phys->entries[i];
 
         if (pde & PAGING_FLAG_PRESENT) {
@@ -162,6 +168,10 @@ void paging_free_directory(page_directory_t* dir_phys) {
             pmm_free_frame(pt_phys);
         }
     }
+
+    // Unmap the directory itself.
+    paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, 0, 0);
+
     // Finally, free the physical frame that held the page directory.
     pmm_free_frame(dir_phys);
     
