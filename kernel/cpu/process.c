@@ -179,7 +179,7 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: ELF loaded successfully.\n");
 
     // --- Address Space Creation ---
-    // 1. Create a new, separate address space for the process.
+    // Create a new, separate address space for the process.
     qemu_debug_string("PROCESS: Cloning kernel page directory...\n");
     page_directory_t* new_dir = paging_clone_directory(kernel_directory);
 
@@ -192,7 +192,8 @@ int exec_program(int argc, char* argv[]) {
     }
     qemu_debug_string("PROCESS: Page directory cloned.\n");
     
-    // 2. Temporarily switch into the new address space to map the program.
+    /*
+    // Temporarily switch into the new address space to map the program.
     page_directory_t* old_dir = (page_directory_t*)current_task->cpu_state.cr3;
 
     qemu_debug_string("PROCESS: State of current task (shell) before CR3 switch:\n");
@@ -202,8 +203,9 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Temporarily switching to new address space to map pages...\n");
     paging_switch_directory(new_dir);
     qemu_debug_string("PROCESS: CR3 switch complete. Now mapping pages.\n");
+    */
 
-    // 3. Map the program's code and data segments from the ELF file.
+    // Map the program's code and data segments from the ELF file.
     Elf32_Phdr* phdrs = (Elf32_Phdr*)(file_buffer + header->phoff);
     for (int i = 0; i < header->phnum; i++) {
         Elf32_Phdr* phdr = &phdrs[i];
@@ -216,7 +218,9 @@ int exec_program(int argc, char* argv[]) {
                 // error handling
                 if (!phys_frame) {
                     // Proper cleanup would be needed here in a production OS
-                    paging_switch_directory(old_dir);
+
+                    // part of temporary argv disabling
+                    //paging_switch_directory(old_dir);
                     paging_free_directory(new_dir);
                     free(file_buffer);
                     print_string("run: Out of physical memory.\n");
@@ -243,7 +247,7 @@ int exec_program(int argc, char* argv[]) {
         }
     }
 
-    // 4. Map the user stack at a high virtual address.
+    // Map the user stack at a high virtual address.
     for (int i = 0; i < USER_STACK_PAGES; i++) {
         // Correctly calculate the virtual address for each stack page, moving downwards.
         // The first page (i=0) will contain USER_STACK_TOP itself.
@@ -257,10 +261,15 @@ int exec_program(int argc, char* argv[]) {
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
     }
 
-    // Setup argc/argv on the new stack
-    // We are still inside the new address space, so we can write to the stack's virtual address.
-    uint32_t user_stack_top = USER_STACK_TOP;
+    // Setup argc/argv on the new stack.
+    // NOTE: This is a complex operation that requires writing to the new process's
+    // stack. For now, we will simplify by not passing arguments, and fix this
+    // in a later step. This part of the code is currently non-functional
+    // without the temporary address space switch. Let's disable it to get the
+    // program running.
+     uint32_t user_stack_top = USER_STACK_TOP;
 
+    /*
     // A temporary array on the kernel stack to hold the new user-stack pointers to the argument strings
     char* user_argv[MAX_ARGS];
 
@@ -296,9 +305,10 @@ int exec_program(int argc, char* argv[]) {
     user_stack_top -= sizeof(int);
     *((int*)user_stack_top) = argc;
     
-    // 5. Switch back to the original address space of the shell.
+    // Switch back to the original address space of the shell.
     qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
+    */
 
     // Find a free process slot in the process table
     task_struct_t* new_task = NULL;

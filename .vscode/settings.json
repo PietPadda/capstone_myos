@@ -16,6 +16,7 @@
         "debug.h": "c",
         "exceptions.h": "c",
         "timer.h": "c",
-        "process.h": "c"
+        "process.h": "c",
+        "tss.h": "c"
     }
 }

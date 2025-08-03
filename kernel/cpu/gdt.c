@@ -3,9 +3,6 @@
 #include <kernel/gdt.h>
 #include <kernel/types.h>
 
-// Tell the C compiler that our assembly function exists elsewhere.
-extern void gdt_flush(struct gdt_ptr_struct* gdt_ptr);
-
 // GDT entry structure
 struct gdt_entry_struct {
     uint16_t limit_low;
@@ -16,32 +13,9 @@ struct gdt_entry_struct {
     uint8_t  base_high;
 } __attribute__((packed));
 
-// GDT pointer structure
-struct gdt_ptr_struct {
-    uint16_t limit;
-    uint32_t base;
-} __attribute__((packed));
-
 // Our GDT will now have 6 entries
 static struct gdt_entry_struct gdt_entries[6];
 static struct gdt_ptr_struct   gdt_ptr;
-
-// Replaced inline with assembly version
-/*
-// Assembly inline function to load the GDT
-static inline void gdt_flush_inline(struct gdt_ptr_struct* gdt_ptr) {
-    __asm__ __volatile__(
-        "lgdt (%0)\n\t"
-        "mov $0x10, %%ax\n\t" // 0x10 is our kernel data segment selector
-        "mov %%ax, %%ds\n\t"
-        "mov %%ax, %%es\n\t"
-        "mov %%ax, %%fs\n\t"
-        "mov %%ax, %%gs\n\t"
-        "ljmp $0x08, $.flush\n\t" // 0x08 is the code segment selector
-        ".flush:\n\t"
-        : : "r"(gdt_ptr) : "ax");
-}
-*/
 
 // Helper function to create a GDT entry
 void gdt_set_gate(int32_t num, uint32_t base, uint32_t limit, uint8_t access, uint8_t gran) {

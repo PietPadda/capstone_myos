@@ -5,6 +5,15 @@
 
 #include <kernel/types.h>
 
+// GDT pointer structure
+struct gdt_ptr_struct {
+    uint16_t limit;
+    uint32_t base;
+} __attribute__((packed));
+
+// Tell the C compiler that our assembly function exists elsewhere.
+extern void gdt_flush(struct gdt_ptr_struct* gdt_ptr);
+
 // This function initializes the kernel's GDT.
 void gdt_install();
 
