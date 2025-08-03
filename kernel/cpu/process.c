@@ -179,11 +179,6 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Cloning kernel page directory...\n");
     page_directory_t* new_dir = paging_clone_directory(kernel_directory);
 
-    // --- TEMPORARILY SWITCH TO THE NEW ADDRESS SPACE ---
-    page_directory_t* old_dir;
-    __asm__ __volatile__("mov %%cr3, %0" : "=r"(old_dir));
-    paging_switch_directory(new_dir);
-
     // error handling
     if (!new_dir) {
         print_string("run: Could not create address space.\n");
@@ -310,9 +305,6 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
     */
-
-    // --- SWITCH BACK TO THE ORIGINAL ADDRESS SPACE ---
-    paging_switch_directory(old_dir);
 
     // Find a free process slot in the process table
     task_struct_t* new_task = NULL;

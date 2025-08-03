@@ -137,46 +137,40 @@ void paging_free_directory(page_directory_t* dir_phys) {
     pmm_free_frame(dir_phys);
 }
 
-// Finds the Page Table Entry (PTE) for a given virtual address.
-// If a page table doesn't exist and `create` is true, it will be allocated.
+// This is the corrected function to get a page table entry.
+// It now correctly uses the 'dir' argument instead of relying on the active directory.
 pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create, uint32_t flags) {
-    // The virtual address is split into a 10-bit directory index and a 10-bit table index.
     uint32_t pd_idx = virt_addr >> 22;
     uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
 
-    // We operate on the CURRENTLY ACTIVE page directory, which `exec_program`
-    // has already switched to. We use the magic virtual address for this.
-    if (!(CURRENT_PAGE_DIR->entries[pd_idx] & PAGING_FLAG_PRESENT)) {
-        if (create) {
-            // The page table doesn't exist, so we allocate a new physical frame for it.
-            uint32_t new_table_phys = (uint32_t)pmm_alloc_frame();
+    // Use the passed-in directory's physical address as a virtual address.
+    // This works because all our allocated frames are in the identity-mapped first 4MB.
+    pde_t* pde = &dir->entries[pd_idx];
 
-            // err check
+    if (!(*pde & PAGING_FLAG_PRESENT)) {
+        if (create) {
+            // Page table doesn't exist, so allocate a new physical frame for it.
+            page_table_t* new_table_phys = (page_table_t*)pmm_alloc_frame();
             if (!new_table_phys) {
                 return NULL; // Out of memory
             }
             
-            // Zero out the new page table. We can use its physical address directly
-            // because it's in the identity-mapped low memory region.
-            memset((void*)new_table_phys, 0, sizeof(page_table_t));
+            // Zero out the new page table using its physical (and virtual) address.
+            memset(new_table_phys, 0, sizeof(page_table_t));
 
-            // We only care about the top-level flags (USER, RW, PRESENT) for the PDE.
-            CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | (flags & 0x7);
-
-            // Invalidate the TLB for the page table's recursive mapping address
-            __asm__ __volatile__("invlpg (%0)" : : "b"(&CURRENT_PAGE_TABLES[pd_idx]) : "memory");
+            // Set the page directory entry to point to our new table.
+            *pde = (pde_t)new_table_phys | (flags & 0x7);
         } else {
-            return NULL; // Page table doesn't exist and we're not allowed to create it.
+            return NULL; // Page table doesn't exist and we shouldn't create it.
         }
     }
 
-    // Now, we can safely access the page table via our recursive mapping "window".
-    page_table_t* table = &CURRENT_PAGE_TABLES[pd_idx];
+    // Get the physical address of the page table from the PDE.
+    page_table_t* table_phys = (page_table_t*)(*pde & ~0xFFF);
     
-    // Return a pointer to the actual Page Table Entry.
-    return &table->entries[pt_idx];
+    // Return a pointer to the correct Page Table Entry using the table's direct address.
+    return &table_phys->entries[pt_idx];
 }
-
 
 // Maps a virtual address to a physical address in the given page directory.
 void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_addr, uint32_t flags) {
@@ -186,7 +180,8 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
         // Set the entry to point to the physical frame with the given flags.
         *pte = phys_addr | flags;
 
-        // Invalidate the TLB entry for this virtual address to ensure the change takes effect.
+        // Invalidate the TLB entry for this virtual address to ensure the change takes effect
+        // if the directory we are modifying happens to be the active one.
         __asm__ __volatile__("invlpg (%0)" : : "b"(virt_addr) : "memory");
     }
 }
