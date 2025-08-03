@@ -30,8 +30,11 @@ start_multitasking:
     ; Switch to the new task's stack.
     mov esp, [ebx + 40]  ; cpu_state_t.esp is at offset 40
 
-    ; Push the IRET frame onto the new stack in the correct order for IRET.
-    ; IRET pops EIP, CS, EFLAGS. So we must push them in reverse order.
+    ; Push the IRET frame onto the new stack in the correct order.
+    ; For a privilege change, IRET pops EIP, CS, EFLAGS, ESP, and SS.
+    ; We push them in the reverse order.
+    push dword [ebx + 44]   ; SS
+    push dword [ebx + 40]   ; ESP
     push dword [ebx + 36]   ; EFLAGS
     push dword [ebx + 32]   ; CS
     push dword [ebx + 28]   ; EIP
