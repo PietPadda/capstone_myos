@@ -87,14 +87,14 @@ task_switch:
 
     ; EAX now holds the pointer to the new task's task_struct_t.
     ; First, get the address of the new page directory and load it into CR3.
-    ; The page_directory pointer is at offset 56 in the task_struct_t.
-    mov ebx, [eax + 56]     ; ebx = new_task->page_directory
+    ; The page_directory pointer is at offset 48 in the task_struct_t.
+    mov ebx, [eax + 48]     ; ebx = new_task->page_directory
     mov cr3, ebx
     
     ; Now, get the pointer to the cpu_state_t struct.
-    ; The cpu_state struct is at offset 60 in the task_struct_t.
+    ; The cpu_state struct is at offset 52 in the task_struct_t.
     mov ecx, eax
-    add ecx, 60             ; ecx = &new_task->cpu_state
+    add ecx, 52             ; ecx = &new_task->cpu_state
 
     ; Send End-of-Interrupt signals
     mov al, 0x20

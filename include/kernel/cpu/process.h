@@ -48,12 +48,12 @@ typedef struct {
 
 // The Process Control Block (PCB)
 typedef struct {
-    int pid;                            // Process ID
-    task_state_t state;                 // The current state of the process
-    char name[PROCESS_NAME_LEN];        // The process name
-    void* user_stack;                   // Pointer to the user-mode stack
-    void* kernel_stack;                 // Pointer to the kernel-mode stack
-    page_directory_t* page_directory;   // Virtual address of the page directory
+    int pid;                            // Process ID (4B)
+    task_state_t state;                 // The current state of the process (4B)
+    char name[PROCESS_NAME_LEN];        // The process name (32B)
+    void* user_stack;                   // Pointer to the user-mode stack (4B)
+    void* kernel_stack;                 // Pointer to the kernel-mode stack (4B)
+    page_directory_t* page_directory;   // Virtual address of the page directory (4B)
     cpu_state_t cpu_state;              //store the task's registers
     uint32_t wakeup_time;               // Tick count at which to wake up
     // We will add more fields here later (e.g., registers, memory maps)
