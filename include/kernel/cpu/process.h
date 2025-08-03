@@ -53,6 +53,7 @@ typedef struct {
     task_state_t state;                 // The current state of the process
     char name[PROCESS_NAME_LEN];        // The process name
     void* user_stack;                   // Pointer to the user-mode stack
+    void* kernel_stack;                 // Pointer to the kernel-mode stack
     page_directory_t* page_directory;   // Virtual address of the page directory
     cpu_state_t cpu_state;              //store the task's registers
     uint32_t wakeup_time;               // Tick count at which to wake up

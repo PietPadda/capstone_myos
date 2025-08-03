@@ -333,6 +333,7 @@ int exec_program(int argc, char* argv[]) {
     new_task->state = TASK_STATE_RUNNING;
     strncpy(new_task->name, filename, PROCESS_NAME_LEN); // Use our new strncpy
     new_task->user_stack = (void*)USER_STACK_TOP;
+    new_task->kernel_stack = pmm_alloc_frame(); // Each process needs its own kernel stack.
     new_task->page_directory = new_dir; // Set the new address space
 
     // Set up the initial CPU state for the new process.
