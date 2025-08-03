@@ -18,10 +18,10 @@ b exec_program
 # Define a script that will run automatically when breakpoint 1 (exec_program) is hit
 commands 1
     # Info message for us
-    printf "--- exec_program hit! Arming final breakpoint at iret... ---\n"
+    printf "--- exec_program hit! Arming final breakpoint... ---\n"
     
-    # Set the real breakpoint to catch the context switch
-    b kernel/cpu/isr.asm:151
+    # Set the real breakpoint
+    b load_page_directory
     
     # Disable the temporary breakpoint so we don't hit it again
     disable 1
