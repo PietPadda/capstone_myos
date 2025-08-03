@@ -59,8 +59,9 @@ static void sys_exit(registers_t *r) {
         qemu_debug_hex(task_to_exit->pid);
         qemu_debug_string("...\n");
 
-        // Free the entire address space
-        paging_free_directory(task_to_exit->page_directory);
+        // The old address space is gone. Switch to the kernel's main directory
+        // to provide a safe context before we continue.
+        paging_switch_directory(kernel_directory);
         
         // Mark the slot as free for reuse
         task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
@@ -68,6 +69,7 @@ static void sys_exit(registers_t *r) {
     }
 
     qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
+    // Now it's safe to call the scheduler to switch to the next task (the shell).
     // Force a context switch. The scheduler will now see the shell is runnable.
     __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
 }

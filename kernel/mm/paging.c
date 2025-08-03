@@ -118,29 +118,40 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     return new_dir_phys;
 }
 
-// Frees all user-space pages and page tables for a given page directory.
-void paging_free_directory(page_directory_t* dir_phys) {
+// This is the final, correct version.
+// It frees the page tables and pages of the CURRENTLY ACTIVE directory.
+void paging_free_directory(page_directory_t* dir) {
    // err check
-    if (!dir_phys) return;
+    if (!dir) return;
 
-    page_directory_t* dir_virt = dir_phys;
-
-    // Free all user-space pages and page tables (entries 0-767).
+    // We can only safely free the active page directory because we need to
+    // use its recursive mapping to read its page tables.
+    
+    // Free all user-space pages and page tables (entries 1 to 767).
+    // We start at 1 because entry 0 maps the kernel's low memory, which is shared
+    // and should never be freed by a user process.
     for (int i = 0; i < 768; i++) {
-        if (dir_virt->entries[i] & PAGING_FLAG_PRESENT) {
-            page_table_t* pt_phys = (page_table_t*)(dir_virt->entries[i] & ~0xFFF);
-            page_table_t* pt_virt = pt_phys;
+        // We use CURRENT_PAGE_DIR because we are freeing the active directory.
+        if (CURRENT_PAGE_DIR->entries[i] & PAGING_FLAG_PRESENT) {
+            // Get the virtual address of the page table via our recursive map
+            page_table_t* pt = &CURRENT_PAGE_TABLES[i];
 
+            // Free all the physical frames that this table points to.
             for (int j = 0; j < 1024; j++) {
-                if (pt_virt->entries[j] & PAGING_FLAG_PRESENT) {
-                    pmm_free_frame((void*)(pt_virt->entries[j] & ~0xFFF));
+                if (pt->entries[j] & PAGING_FLAG_PRESENT) {
+                    pmm_free_frame((void*)(pt->entries[j] & ~0xFFF));
                 }
             }
-            pmm_free_frame(pt_phys);
+            // Free the page table frame itself.
+            pmm_free_frame((void*)(CURRENT_PAGE_DIR->entries[i] & ~0xFFF));
         }
     }
     // Finally, free the page directory frame itself.
-    pmm_free_frame(dir_phys);
+    pmm_free_frame(dir);
+    
+    // IMPORTANT: The caller (sys_exit) is now responsible for immediately
+    // switching to a new, valid page directory because the one we were just
+    // using is now gone.
 }
 
 // Revert to the original version that correctly uses recursive mapping for the active directory.
