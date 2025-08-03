@@ -184,6 +184,10 @@ int exec_program(int argc, char* argv[]) {
     page_directory_t* old_dir;
     __asm__ __volatile__("mov %%cr3, %0" : "=r"(old_dir));
 
+    // Switch the CPU to use the new process's page directory.
+    qemu_debug_string("PROCESS: Temporarily switching to new address space to map pages...\n");
+    paging_switch_directory(new_dir);
+
     // error handling
     if (!new_dir) {
         print_string("run: Could not create address space.\n");
