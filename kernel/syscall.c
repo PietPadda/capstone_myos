@@ -43,6 +43,28 @@ static void sys_getchar(registers_t *r) {
 
 // Syscall 3: Exit the current program and return to the shell.
 static void sys_exit(registers_t *r) {
+    // A temporary, "dummy" version of sys_exit for debugging.
+    // This function will leak memory, but it's safe.
+    qemu_debug_string("SYSCALL: Entering DEBUG sys_exit.\n");
+
+    task_struct_t* task_to_exit = current_task;
+
+    // Wake up the parent shell so we have somewhere to return to.
+    if (process_table[1].state == TASK_STATE_WAITING) {
+        process_table[1].state = TASK_STATE_RUNNING;
+    }
+
+    // Instead of freeing memory, just mark the task as a ZOMBIE.
+    // It's dead, but its resources are still allocated.
+    if (task_to_exit) {
+        task_to_exit->state = TASK_STATE_ZOMBIE;
+    }
+
+    qemu_debug_string("SYSCALL: Marked PID as ZOMBIE. Calling scheduler.\n");
+
+    // Manually trigger a context switch.
+    __asm__ __volatile__("int $0x20");
+    /*
     __asm__ __volatile__("cli"); // Disable interrupts during this critical operation
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
 
@@ -74,7 +96,7 @@ static void sys_exit(registers_t *r) {
     // Now it's safe to call the scheduler to switch to the next task (the shell).
     // Force a context switch. The scheduler will now see the shell is runnable.
     __asm__ __volatile__("sti"); // Re-enable interrupts
-    __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
+    __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler */
 }
 
 void syscall_install() {
