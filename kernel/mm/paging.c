@@ -156,15 +156,9 @@ pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create, u
                 return NULL; // Out of memory
             }
             
-            // Get a virtual pointer to the new physical table to clear it.
-            // We can do this by temporarily mapping it.
-            page_table_t* table_virt = (page_table_t*)0xFFBFF000; // Use a dedicated temp virtual address
-            CURRENT_PAGE_DIR->entries[1022] = new_table_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-            __asm__ __volatile__("invlpg (%0)" : : "b"(table_virt));
-            memset(table_virt, 0, sizeof(page_table_t));
-            CURRENT_PAGE_DIR->entries[1022] = 0; // Unmap
-             __asm__ __volatile__("invlpg (%0)" : : "b"(table_virt));
-
+            // Zero out the new page table. We can use its physical address directly
+            // because it's in the identity-mapped low memory region.
+            memset((void*)new_table_phys, 0, sizeof(page_table_t));
 
             // We only care about the top-level flags (USER, RW, PRESENT) for the PDE.
             CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | (flags & 0x7);
