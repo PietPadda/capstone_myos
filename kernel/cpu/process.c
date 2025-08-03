@@ -262,56 +262,47 @@ int exec_program(int argc, char* argv[]) {
         paging_map_page(new_dir, virt_addr, phys_frame, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_USER);
     }
 
-    // Setup argc/argv on the new stack.
-    // NOTE: This is a complex operation that requires writing to the new process's
-    // stack. For now, we will simplify by not passing arguments, and fix this
-    // in a later step. This part of the code is currently non-functional
-    // without the temporary address space switch. Let's disable it to get the
-    // program running.
-     uint32_t user_stack_top = USER_STACK_TOP;
+    // --- Setup argc/argv on the new user stack ---
+    uint32_t user_stack_ptr = USER_STACK_TOP;
 
-    /*
-    // A temporary array on the kernel stack to hold the new user-stack pointers to the argument strings
+    // A temporary array on the kernel stack to hold the new user-stack pointers
+    // to the argument strings.
     char* user_argv[MAX_ARGS];
 
     // First, copy the string data for each argument onto the top of the user stack.
-    // We iterate backwards to keep them in the correct order.
+    // We iterate backwards to keep them in the correct order on the stack.
     for (int i = argc - 1; i >= 0; i--) {
-        size_t len = strlen(argv[i]) + 1;
-        user_stack_top -= len;
-        memcpy((void*)user_stack_top, argv[i], len);
-        user_argv[i] = (char*)user_stack_top; // Store the new pointer
+        size_t len = strlen(argv[i]) + 1; // +1 for null terminator
+        user_stack_ptr -= len;
+        memcpy((void*)user_stack_ptr, argv[i], len);
+        user_argv[i] = (char*)user_stack_ptr; // Store the new pointer in user space
     }
 
-    // Align the stack to a 4-byte boundary before pushing pointers
-    user_stack_top &= ~0x3;
+    // Align the stack to a 4-byte boundary before pushing pointers/integers
+    user_stack_ptr &= ~0x3;
 
-    // Now, push the pointers to the strings (the argv array) onto the stack.
-    // We include one extra for the NULL terminator.
-    user_stack_top -= sizeof(char*) * (argc + 1);
-    char** argv_on_stack = (char**)user_stack_top;
+    // Now, push the pointers to the strings (the argv array itself) onto the stack.
+    // We push a NULL terminator at the end of the array as required by the C standard.
+    user_stack_ptr -= sizeof(char*) * (argc + 1);
+    char** argv_on_stack = (char**)user_stack_ptr;
     for (int i = 0; i < argc; i++) {
         argv_on_stack[i] = user_argv[i];
     }
-    argv_on_stack[argc] = NULL; // The list must be NULL-terminated
+    argv_on_stack[argc] = NULL; // The list must be NULL-terminated.
 
     // Finally, push the main arguments that user_entry.asm expects:
-    // the pointer to the argv array, and argc.
+    // the pointer to the argv array, and argc itself.
     
-    // Push argv pointer
-    user_stack_top -= sizeof(char**);
-    *((uint32_t*)user_stack_top) = (uint32_t)argv_on_stack;
+    // Push the pointer to the argv array
+    user_stack_ptr -= sizeof(char**);
+    *((uint32_t*)user_stack_ptr) = (uint32_t)argv_on_stack;
 
     // Push argc
-    user_stack_top -= sizeof(int);
-    *((int*)user_stack_top) = argc;
-    
-    // Switch back to the original address space of the shell.
-    qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
-    paging_switch_directory(old_dir);
-    */
+    user_stack_ptr -= sizeof(int);
+    *((int*)user_stack_ptr) = argc;
 
     // --- SWITCH BACK TO THE ORIGINAL ADDRESS SPACE ---
+    qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
 
     // Find a free process slot in the process table
@@ -347,7 +338,7 @@ int exec_program(int argc, char* argv[]) {
     // Set up the initial CPU state for the new process.
     memset(&new_task->cpu_state, 0, sizeof(cpu_state_t));
     new_task->cpu_state.eip = (uint32_t)header->entry;
-    new_task->cpu_state.esp = user_stack_top; // Use the final calculated stack top
+    new_task->cpu_state.esp = user_stack_ptr; // Use the final calculated stack pointer
     new_task->cpu_state.cs = 0x1B;  // User Code Segment
     new_task->cpu_state.ss = 0x23;  // User Data Segment
     new_task->cpu_state.eflags = 0x202; // Interrupts enabled
