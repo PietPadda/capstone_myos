@@ -349,7 +349,7 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: New task configured. Ready for scheduler.\n");
     qemu_debug_string("  PID: "); qemu_debug_hex(new_task->pid);
     qemu_debug_string("\n  EIP: "); qemu_debug_hex(new_task->cpu_state.eip);
-    qemu_debug_string("\n  ESP: "); qemu_debug_hex(new_task->cpu_state.useresp);
+    qemu_debug_string("\n  ESP: "); qemu_debug_hex(new_task->cpu_state.esp);
     qemu_debug_string("\n  CR3: "); qemu_debug_hex(new_task->cpu_state.cr3);
     qemu_debug_string("\n");
     free(file_buffer);
@@ -386,7 +386,6 @@ void process_init() {
     process_table[0].cpu_state.eflags = 0x202; // Interrupts enabled
     // Set BOTH stack pointers for this kernel task
     process_table[0].cpu_state.esp = (uint32_t)stack_a + 4096;
-    process_table[0].cpu_state.useresp = (uint32_t)stack_a + 4096;
 
     process_table[0].cpu_state.cr3 = (uint32_t)kernel_directory; // Set the physical address for CR3
 
@@ -409,7 +408,6 @@ void process_init() {
     
     // Set BOTH stack pointers for this kernel task
     process_table[1].cpu_state.esp = (uint32_t)stack_b + 4096;
-    process_table[1].cpu_state.useresp = (uint32_t)stack_b + 4096;
 
     process_table[1].cpu_state.cr3 = (uint32_t)kernel_directory; // Set the physical address for CR3
 

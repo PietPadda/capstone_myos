@@ -86,7 +86,6 @@ void qemu_debug_cpu_state(cpu_state_t *s) {
     qemu_debug_string("\n-- STACK DUMP --\n");
     qemu_debug_string("ESP: "); qemu_debug_hex(s->esp);
     qemu_debug_string("  EBP: "); qemu_debug_hex(s->ebp);
-    qemu_debug_string("  UESP: "); qemu_debug_hex(s->useresp);
     qemu_debug_string("\n-- PAGING DUMP --\n");
     qemu_debug_string("CR3: "); qemu_debug_hex(s->cr3);
     qemu_debug_string("\n");
