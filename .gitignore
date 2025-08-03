@@ -1,5 +1,6 @@
 build/
 backup/
 all_project_files.txt
+gdb_session.log
 .bin
 .o
