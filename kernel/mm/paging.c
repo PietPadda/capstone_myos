@@ -12,6 +12,7 @@ extern void enable_paging();
 
 // The kernel's page directory, now globally visible.
 page_directory_t* kernel_directory = NULL;
+extern task_struct_t* current_task;
 
 // A virtual address pointer to the page tables of the current page directory.
 #define CURRENT_PAGE_TABLES ((page_table_t*)0xFFC00000)
@@ -89,6 +90,11 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
 
     qemu_debug_string("PAGING: before zero out the new directory.\n");
     // Zero out the new directory.
+    qemu_debug_string("new dir virt: ");
+    qemu_debug_hex(new_dir_virt);
+    qemu_debug_string("\nsizeof(page_directory_t): ");
+    qemu_debug_hex(sizeof(page_directory_t));
+    qemu_debug_string("\nnow, memset directly after\n");
     memset(new_dir_virt, 0, sizeof(page_directory_t));
     qemu_debug_string("PAGING: after zero out the new directory.\n");
 
@@ -137,56 +143,50 @@ void paging_free_directory(page_directory_t* dir_phys) {
     pmm_free_frame(dir_phys);
 }
 
-// This is the corrected function to get a page table entry.
-// It now correctly uses the 'dir' argument instead of relying on the active directory.
+// Revert to the original version that correctly uses recursive mapping for the active directory.
 pte_t* paging_get_page(page_directory_t* dir, uint32_t virt_addr, bool create, uint32_t flags) {
     uint32_t pd_idx = virt_addr >> 22;
     uint32_t pt_idx = (virt_addr >> 12) & 0x3FF;
 
-    // Use the passed-in directory's physical address as a virtual address.
-    // This works because all our allocated frames are in the identity-mapped first 4MB.
-    pde_t* pde = &dir->entries[pd_idx];
-
-    if (!(*pde & PAGING_FLAG_PRESENT)) {
+    // Use the magic virtual address for the currently active page directory.
+    if (!(CURRENT_PAGE_DIR->entries[pd_idx] & PAGING_FLAG_PRESENT)) {
         if (create) {
-            // Page table doesn't exist, so allocate a new physical frame for it.
-            page_table_t* new_table_phys = (page_table_t*)pmm_alloc_frame();
+            uint32_t new_table_phys = (uint32_t)pmm_alloc_frame();
             if (!new_table_phys) {
                 return NULL; // Out of memory
             }
-            
-            // Zero out the new page table using its physical (and virtual) address.
-            memset(new_table_phys, 0, sizeof(page_table_t));
+            // We use the physical address here because it's in low memory
+            // and identity-mapped.
+            memset((void*)new_table_phys, 0, sizeof(page_table_t));
+            CURRENT_PAGE_DIR->entries[pd_idx] = new_table_phys | (flags & 0x7);
 
-            // Set the page directory entry to point to our new table.
-            *pde = (pde_t)new_table_phys | (flags & 0x7);
+            // Invalidate the TLB for the page table's virtual address
+            __asm__ __volatile__("invlpg (%0)" : : "b"(&CURRENT_PAGE_TABLES[pd_idx]) : "memory");
         } else {
-            return NULL; // Page table doesn't exist and we shouldn't create it.
+            return NULL;
         }
     }
 
-    // Get the physical address of the page table from the PDE.
-    page_table_t* table_phys = (page_table_t*)(*pde & ~0xFFF);
-    
-    // Return a pointer to the correct Page Table Entry using the table's direct address.
-    return &table_phys->entries[pt_idx];
+    // Use the magic virtual address "window" to access the page table.
+    page_table_t* table = &CURRENT_PAGE_TABLES[pd_idx];
+    return &table->entries[pt_idx];
 }
 
-// Maps a virtual address to a physical address in the given page directory.
+// Revert this function as well to match the stable paging_get_page.
 void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_addr, uint32_t flags) {
-    // Pass the flags through to the creation logic.
     pte_t* pte = paging_get_page(dir, virt_addr, true, flags);
     if (pte) {
-        // Set the entry to point to the physical frame with the given flags.
         *pte = phys_addr | flags;
-
-        // Invalidate the TLB entry for this virtual address to ensure the change takes effect
-        // if the directory we are modifying happens to be the active one.
         __asm__ __volatile__("invlpg (%0)" : : "b"(virt_addr) : "memory");
     }
 }
 
 void paging_switch_directory(page_directory_t* dir) {
+    qemu_debug_string("PAGING: state dump inside paging_swing_directory\n\n");
+    qemu_debug_cpu_state(&current_task->cpu_state);
+    qemu_debug_string("\n\n");
+    qemu_debug_memdump(dir, sizeof(page_directory_t));
+    qemu_debug_string("\n\n");
     qemu_debug_string("PAGING: before loading page dir\n");
     load_page_directory(dir);
     qemu_debug_string("PAGING: after loading page dir\n");

@@ -21,7 +21,7 @@ commands 1
     printf "--- exec_program hit! Arming final breakpoint... ---\n"
     
     # Set the real breakpoint
-    b load_page_directory
+    b paging_clone_directory:92
     
     # Disable the temporary breakpoint so we don't hit it again
     disable 1

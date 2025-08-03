@@ -187,6 +187,11 @@ int exec_program(int argc, char* argv[]) {
         return -1;
     }
     qemu_debug_string("PROCESS: Page directory cloned.\n");
+
+    // --- TEMPORARILY SWITCH TO THE NEW ADDRESS SPACE ---
+    page_directory_t* old_dir;
+    __asm__ __volatile__("mov %%cr3, %0" : "=r"(old_dir)); // Save old CR3
+    paging_switch_directory(new_dir);                     // Load new CR3
     
     /*
     // Temporarily switch into the new address space to map the program.
@@ -305,6 +310,9 @@ int exec_program(int argc, char* argv[]) {
     qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
     */
+
+    // --- SWITCH BACK TO THE ORIGINAL ADDRESS SPACE ---
+    paging_switch_directory(old_dir);
 
     // Find a free process slot in the process table
     task_struct_t* new_task = NULL;

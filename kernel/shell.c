@@ -177,8 +177,15 @@ void process_command() {
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
                 qemu_debug_string("SHELL: cat after called fs_read_file...\n");
                 if (buffer) {
+                    qemu_debug_string("SHELL: cat after if buffer...\n");
                     for (uint32_t i = 0; i < file_entry->file_size; i++) {
+                        //qemu_debug_string("SHELL: print in loop...\n");
+                        //qemu_debug_hex(buffer[i]);
+                        //qemu_debug_string("\n");
+                        //qemu_debug_hex(i);
+                        //qemu_debug_string("\n");
                         print_char(buffer[i]);
+                        //qemu_debug_string("SHELL: cat after buffer[i] print");
                     }
                     // free the buffer to prev mem leaks
                     qemu_debug_string("SHELL: cat before free buffer...\n");
