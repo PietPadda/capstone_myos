@@ -81,11 +81,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     }
     qemu_debug_string("PAGING: new_dir_phys allocated.\n");
 
-    // Because the first 4MB of memory are identity-mapped, and our PMM allocates
-    // from a region well within that (e.g., after the kernel), we can simply
-    // use the physical addresses as virtual addresses to access the contents
-    // of the page directories. This avoids complex and unsafe temporary mappings.
-    page_directory_t* src_virt = src_phys;
+    // We can safely write to new_dir_phys because it's in identity-mapped low memory.
     page_directory_t* new_dir_virt = new_dir_phys;
 
     qemu_debug_string("PAGING: before zero out the new directory.\n");
@@ -97,6 +93,10 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     qemu_debug_string("\nnow, memset directly after\n");
     memset(new_dir_virt, 0, sizeof(page_directory_t));
     qemu_debug_string("PAGING: after zero out the new directory.\n");
+
+    // Read from the source directory using the reliable recursive mapping.
+    // This ensures we are reading from the true, active page directory.
+    page_directory_t* src_virt = CURRENT_PAGE_DIR;
 
     // Copy the mapping for the first 4MB, which contains the kernel.
     new_dir_virt->entries[0] = src_virt->entries[0];
