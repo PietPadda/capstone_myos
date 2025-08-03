@@ -57,21 +57,25 @@ static void sys_exit(registers_t *r) {
     // Switch to the kernel's main page directory. This is our safe place.
     paging_switch_directory(kernel_directory);
 
-    // Now, from the safety of the kernel's address space, call our new
-    // robust function to free the memory of the (now inactive) user process.
+    // Free all memory associated with the exiting process
     if (task_to_exit) {
         qemu_debug_string("SYSCALL: Freeing memory for PID ");
         qemu_debug_hex(task_to_exit->pid);
         qemu_debug_string("...\n");
+
+        // Free the user-space page directory and all associated pages
         paging_free_directory(task_to_exit->page_directory);
+
+        // Free the process's kernel stack
+        pmm_free_frame(task_to_exit->kernel_stack);
     }
 
+    // Fully clear the process slot to prevent stale pointers
+    memset(task_to_exit->name, 0, sizeof(task_struct_t));
     // Mark the slot as free for reuse
     task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
-    memset(task_to_exit->name, 0, PROCESS_NAME_LEN);
-
+    
     qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
-    // Now it's safe to call the scheduler to switch to the next task (the shell).
     // Force a context switch. The scheduler will now see the shell is runnable.
     __asm__ __volatile__("sti"); // Re-enable interrupts
     __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
