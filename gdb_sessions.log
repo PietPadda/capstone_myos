@@ -1,0 +1,7 @@
+Breakpoint 1 at 0x14e43: file kernel/cpu/isr.asm, line 151.
+Continuing.
+
+Breakpoint 1, irq_common_stub () at kernel/cpu/isr.asm:151
+Continuing.
+
+Breakpoint 1, irq_common_stub () at kernel/cpu/isr.asm:151
