@@ -18,5 +18,7 @@ void qemu_debug_memdump(const void* addr, size_t size);
 void qemu_debug_regs(registers_t *r);
 // Dumps the state of a saved cpu_state_t struct
 void qemu_debug_cpu_state(cpu_state_t *s);
+// Sends an unsigned decimal integer to the debug log
+void qemu_debug_dec(uint32_t n);
 
 #endif

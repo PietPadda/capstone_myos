@@ -28,16 +28,16 @@ extern task_struct_t* current_task;
 
 // This function sets up and enables paging.
 void paging_init() {
-    qemu_debug_string("PAGING_INIT: start\n");
+    //qemu_debug_string("PAGING_INIT: start\n");
 
     kernel_directory = (page_directory_t*)pmm_alloc_frame();
     if (!kernel_directory) {
         qemu_debug_string("PAGING_INIT: PANIC! no frame for page directory\n");
         return;
     }
-    qemu_debug_string("PAGING_INIT: kernel_directory allocated\n");
+    //qemu_debug_string("PAGING_INIT: kernel_directory allocated\n");
     memset(kernel_directory, 0, sizeof(page_directory_t));
-    qemu_debug_string("PAGING_INIT: kernel_directory zeroed\n");
+    //qemu_debug_string("PAGING_INIT: kernel_directory zeroed\n");
 
     // We will identity map the first 4MB of memory.
     page_table_t* first_pt = (page_table_t*)pmm_alloc_frame();
@@ -45,9 +45,9 @@ void paging_init() {
         qemu_debug_string("PAGING_INIT: PANIC! no frame for page table\n");
         return;
     }
-    qemu_debug_string("PAGING_INIT: first_pt allocated\n");
+    //qemu_debug_string("PAGING_INIT: first_pt allocated\n");
     memset(first_pt, 0, sizeof(page_table_t));
-    qemu_debug_string("PAGING_INIT: first_pt zeroed\n");
+    //qemu_debug_string("PAGING_INIT: first_pt zeroed\n");
 
     // Loop through all 1024 entries in the page table to map 4MB.
     for (int i = 0; i < 1024; i++) {
@@ -56,29 +56,29 @@ void paging_init() {
         pte_t page = phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
         first_pt->entries[i] = page;
     }
-    qemu_debug_string("PAGING_INIT: first_pt entries filled\n");
+    //qemu_debug_string("PAGING_INIT: first_pt entries filled\n");
 
     // Put the newly created page table into the first entry of the page directory.
     // The USER flag is NOT set, protecting the kernel from user-mode access.
     kernel_directory->entries[0] = (pde_t)first_pt | PAGING_FLAG_PRESENT | PAGING_FLAG_RW ;
-    qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
+    //qemu_debug_string("PAGING_INIT: page directory entry [0] set\n");
 
     // Add the recursive mapping.
     // The last entry of the page directory is made to point to the directory's physical address.
     uint32_t page_dir_phys_addr = (uint32_t)kernel_directory;
     kernel_directory->entries[1023] = page_dir_phys_addr | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    qemu_debug_string("PAGING_INIT: Recursive mapping set for entry 1023.\n");
+    //emu_debug_string("PAGING_INIT: Recursive mapping set for entry 1023.\n");
 
     load_page_directory(kernel_directory);
-    qemu_debug_string("PAGING_INIT: CR3 loaded with page directory address\n");
+    //qemu_debug_string("PAGING_INIT: CR3 loaded with page directory address\n");
 
     enable_paging();
-    qemu_debug_string("PAGING_INIT: Paging bit set in CR0. MMU is now active.\n");
+    //qemu_debug_string("PAGING_INIT: Paging bit set in CR0. MMU is now active.\n");
 }
 
 // Clones a page directory and its tables.
 page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
-    qemu_debug_string("PAGING: clone_directory started.\n");
+    //qemu_debug_string("PAGING: clone_directory started.\n");
     page_directory_t* new_dir_phys = (page_directory_t*)pmm_alloc_frame();
 
     // error checking
@@ -86,18 +86,18 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
         qemu_debug_string("PAGING: PANIC! No frame for new directory.\n");
         return NULL;
     }
-    qemu_debug_string("PAGING: new_dir_phys allocated.\n");
+    //qemu_debug_string("PAGING: new_dir_phys allocated.\n");
 
     // Temporarily map the new directory so we can write to it safely.
     paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, (uint32_t)new_dir_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
 
     // We can safely write to new_dir_phys because it's in identity-mapped low memory.
     page_directory_t* new_dir_virt = (page_directory_t*)TEMP_PAGEDIR_ADDR;
-    qemu_debug_string("PAGING: before zero out the new directory.\n");
+    //qemu_debug_string("PAGING: before zero out the new directory.\n");
 
     // Zero out the new directory.
     memset(new_dir_virt, 0, sizeof(page_directory_t));
-    qemu_debug_string("PAGING: after zero out the new directory.\n");
+   //qemu_debug_string("PAGING: after zero out the new directory.\n");
 
     // Read from the source directory using the reliable recursive mapping.
     // This ensures we are reading from the true, active page directory.
@@ -106,23 +106,23 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     // Copy the mapping for the first 4MB, which contains the kernel.
     new_dir_virt->entries[0] = src_virt->entries[0];
 
-    qemu_debug_string("PAGING: before copy kernel space entries.\n");
+    //qemu_debug_string("PAGING: before copy kernel space entries.\n");
     // Copy kernel-space entries (upper 1GB, entries 768-1022).
     for (int i = 768; i < 1023; i++) {
         if (src_virt->entries[i] & PAGING_FLAG_PRESENT) {
             new_dir_virt->entries[i] = src_virt->entries[i];
         }
     }
-    qemu_debug_string("PAGING: Kernel entries copied.\n");
+    //qemu_debug_string("PAGING: Kernel entries copied.\n");
 
     // Set the recursive mapping for the new directory to point to itself.
     new_dir_virt->entries[1023] = (uint32_t)new_dir_phys | PAGING_FLAG_PRESENT | PAGING_FLAG_RW;
-    qemu_debug_string("PAGING: Recursive mapping set for new directory.\n");
+    //qemu_debug_string("PAGING: Recursive mapping set for new directory.\n");
 
         // Unmap the temporary page.
     paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, 0, 0);
 
-    qemu_debug_string("PAGING: clone_directory finished successfully.\n");
+    //qemu_debug_string("PAGING: clone_directory finished successfully.\n");
     return new_dir_phys;
 }
 
@@ -219,14 +219,14 @@ void paging_map_page(page_directory_t* dir, uint32_t virt_addr, uint32_t phys_ad
 }
 
 void paging_switch_directory(page_directory_t* dir) {
-    qemu_debug_string("PAGING: state dump inside paging_swing_directory\n\n");
-    qemu_debug_cpu_state(&current_task->cpu_state);
-    qemu_debug_string("\n\n");
-    qemu_debug_memdump(dir, sizeof(page_directory_t));
-    qemu_debug_string("\n\n");
-    qemu_debug_string("PAGING: before loading page dir\n");
+    //qemu_debug_string("PAGING: state dump inside paging_swing_directory\n\n");
+    //qemu_debug_cpu_state(&current_task->cpu_state);
+    //qemu_debug_string("\n\n");
+    //qemu_debug_memdump(dir, sizeof(page_directory_t));
+    //qemu_debug_string("\n\n");
+    //qemu_debug_string("PAGING: before loading page dir\n");
     load_page_directory(dir);
-    qemu_debug_string("PAGING: after loading page dir\n");
+    //qemu_debug_string("PAGING: after loading page dir\n");
 }
 
 // Dumps debug information about the PDE and PTE for a given virtual address.

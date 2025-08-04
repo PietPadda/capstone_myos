@@ -90,3 +90,23 @@ void qemu_debug_cpu_state(cpu_state_t *s) {
     qemu_debug_string("CR3: "); qemu_debug_hex(s->cr3);
     qemu_debug_string("\n");
 }
+
+// print an unsigned decimal integer to the debug log
+void qemu_debug_dec(uint32_t n) {
+    if (n == 0) {
+        port_byte_out(0xE9, '0');
+        return;
+    }
+
+    char buf[12];
+    int i = 0;
+    while (n > 0) {
+        buf[i++] = (n % 10) + '0';
+        n /= 10;
+    }
+    
+    // The digits are in reverse order, so print them backwards.
+    while (i > 0) {
+        port_byte_out(0xE9, buf[--i]);
+    }
+}

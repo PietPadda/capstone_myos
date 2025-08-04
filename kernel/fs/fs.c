@@ -88,7 +88,7 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     uint32_t fat_offset = (cluster * 3) / 2;
 
     // Verify mapping at time of use
-    qemu_debug_string("FS_GET_FAT_ENTRY: Pre-access check:\n");
+    //qemu_debug_string("FS_GET_FAT_ENTRY: Pre-access check:\n");
     //paging_dump_entry_for_addr((uint32_t)fat_buffer + fat_offset);
 
     uint32_t fat_size_bytes = bpb->sectors_per_fat * bpb->bytes_per_sector;
@@ -96,16 +96,16 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     // --- Defensive Bounds Check ---
     // We check for fat_offset + 1 because we need to read two bytes.
     if (fat_offset + 1 >= fat_size_bytes) {
-        qemu_debug_string("  FAT_GET: offset is out of bounds! Returning EOC.\n");
+        //qemu_debug_string("  FAT_GET: offset is out of bounds! Returning EOC.\n");
         return 0xFFF; // Return End-of-Chain
     }
 
     // Log the inputs to the function.
-    qemu_debug_string("  FAT_GET: cluster=");
-    qemu_debug_hex(cluster);
-    qemu_debug_string(", calculated_offset=");
-    qemu_debug_hex(fat_offset);
-    qemu_debug_string("\n");
+    //qemu_debug_string("  FAT_GET: cluster=");
+    //qemu_debug_hex(cluster);
+    //qemu_debug_string(", calculated_offset=");
+    //qemu_debug_hex(fat_offset);
+    //qemu_debug_string("\n");
 
     // --- Safe, Byte-by-Byte Read to Avoid Unaligned Access ---
     uint8_t byte1 = fat_buffer[fat_offset];
@@ -113,9 +113,9 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     uint16_t entry = (byte2 << 8) | byte1; // Combine them into a 16-bit value
 
     // Log the raw 16-bit value we read from the FAT.
-    qemu_debug_string("  FAT_GET: raw_entry_read=0x");
-    qemu_debug_hex(entry);
-    qemu_debug_string("\n");
+    //qemu_debug_string("  FAT_GET: raw_entry_read=0x");
+    //qemu_debug_hex(entry);
+    //qemu_debug_string("\n");
     
     // The logic depends on whether the cluster number is even or odd.
     if (cluster % 2 == 0) {
@@ -127,9 +127,9 @@ uint16_t fs_get_fat_entry(uint16_t cluster) {
     }
 
     // Log the final, processed value we are returning.
-    qemu_debug_string("  FAT_GET: returning_next_cluster=0x");
-    qemu_debug_hex(entry);
-    qemu_debug_string("\n");
+    //qemu_debug_string("  FAT_GET: returning_next_cluster=0x");
+    //qemu_debug_hex(entry);
+    //qemu_debug_string("\n");
 
     return entry;
 }
@@ -174,24 +174,24 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
 }
 
 void* fs_read_file(fat_dir_entry_t* entry) {
-    qemu_debug_string("FS: Entered fs_read_file.\n");
+    //qemu_debug_string("FS: Entered fs_read_file.\n");
     uint32_t size = entry->file_size;
-    qemu_debug_string("FS: File size is ");
-    qemu_debug_hex(size);
-    qemu_debug_string(" bytes.\n");
+    //qemu_debug_string("FS: File size is ");
+    //qemu_debug_hex(size);
+    //qemu_debug_string(" bytes.\n");
 
     // Handle empty files
     if (size == 0) {
         qemu_debug_string("FS: File is empty, returning dummy buffer.\n");
         return malloc(1); 
     }
-    qemu_debug_string("FS: All empty files handled.\n");
+    //qemu_debug_string("FS: All empty files handled.\n");
 
     // Allocate a single, contiguous buffer from the kernel's heap.
     uint8_t* file_buffer = (uint8_t*)malloc(size);
-    qemu_debug_string("FS: malloc requested, file_buffer is at: ");
-    qemu_debug_hex((uint32_t)file_buffer);
-    qemu_debug_string("\n");
+    //qemu_debug_string("FS: malloc requested, file_buffer is at: ");
+    //qemu_debug_hex((uint32_t)file_buffer);
+    //qemu_debug_string("\n");
 
     // error check
     if (!file_buffer) {
@@ -205,36 +205,36 @@ void* fs_read_file(fat_dir_entry_t* entry) {
 
     // This loop is now safe because our buffer is large enough.
     while (current_cluster < 0xFF8) { // 0xFF8 is the End-of-Chain marker for FAT12
-        qemu_debug_string("FS: Reading cluster #");
-        qemu_debug_hex(current_cluster);
-        qemu_debug_string("...\n");
+        //qemu_debug_string("FS: Reading cluster #");
+        //qemu_debug_hex(current_cluster);
+        //qemu_debug_string("...\n");
 
         // Read a cluster into our safe, static DMA buffer.
-        qemu_debug_string("  -> Calling read_disk_sector...\n");
+        //qemu_debug_string("  -> Calling read_disk_sector...\n");
         read_disk_sector(data_area_start_sector + (current_cluster - 2), dma_buffer);
-        qemu_debug_string("  -> Returned from read_disk_sector.\n");
+        //qemu_debug_string("  -> Returned from read_disk_sector.\n");
 
         // Figure out how much of this cluster to copy.
         uint32_t remaining = size - (current_pos - file_buffer);
         uint32_t to_copy = (remaining > bytes_per_cluster) ? bytes_per_cluster : remaining;
 
         // Copy the data from the dma buffer to our main file buffer.
-        qemu_debug_string("  -> Calling memcpy to dest: ");
-        qemu_debug_hex((uint32_t)current_pos);
-        qemu_debug_string(" for ");
-        qemu_debug_hex(to_copy);
-        qemu_debug_string(" bytes.\n");
+        //qemu_debug_string("  -> Calling memcpy to dest: ");
+        //qemu_debug_hex((uint32_t)current_pos);
+        //qemu_debug_string(" for ");
+        //qemu_debug_hex(to_copy);
+        //qemu_debug_string(" bytes.\n");
         
          // Use our new debug version of memcpy
-        memcpy_debug(current_pos, dma_buffer, to_copy);
-        // memcpy(current_pos, dma_buffer, to_copy);
+        //memcpy_debug(current_pos, dma_buffer, to_copy);
+        memcpy(current_pos, dma_buffer, to_copy);
 
-        qemu_debug_string("  -> Returned from memcpy.\n");
+        //qemu_debug_string("  -> Returned from memcpy.\n");
 
         current_pos += to_copy;
         current_cluster = fs_get_fat_entry(current_cluster);
     }
 
-    qemu_debug_string("FS: Finished reading all clusters.\n");
+    //qemu_debug_string("FS: Finished reading all clusters.\n");
     return file_buffer;
 }

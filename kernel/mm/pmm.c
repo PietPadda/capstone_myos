@@ -97,3 +97,21 @@ void* pmm_get_free_addr() {
     // by taking the start address and adding its size in bytes.
     return (void*)((uint32_t)pmm_bitmap + pmm_bitmap_size);
 }
+
+// count the number of free frames.
+uint32_t pmm_get_free_frame_count() {
+    uint32_t free_count = 0;
+    // Iterate through every dword in the bitmap
+    for (uint32_t dword = 0; dword < pmm_bitmap_size / 4; dword++) {
+        // If the dword is all 1s, all 32 frames are used. Skip it.
+        if (pmm_bitmap[dword] != 0xFFFFFFFF) {
+            // Check each bit in the dword
+            for (int bit = 0; bit < 32; bit++) {
+                if (!(pmm_bitmap[dword] & (1 << bit))) {
+                    free_count++;
+                }
+            }
+        }
+    }
+    return free_count;
+}

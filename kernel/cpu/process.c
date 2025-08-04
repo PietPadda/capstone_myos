@@ -107,6 +107,10 @@ void switch_to_user_mode(void* entry_point, void* stack_ptr) {
 // This function finds an ELF executable on disk, loads it into memory,
 // and starts it as a new user-mode process in its own address space.
 int exec_program(int argc, char* argv[]) {
+    qemu_debug_string("EXEC: Entered. Free frames: ");
+    qemu_debug_dec(pmm_get_free_frame_count());
+    qemu_debug_string("\n");
+
     // --- START CRITICAL SECTION ---
     // This is the definitive fix. We disable interrupts because the entire process
     // of loading a file, allocating memory, and setting up new page tables is
@@ -115,7 +119,7 @@ int exec_program(int argc, char* argv[]) {
     // triple fault when the shell resumes.
     __asm__ __volatile__("cli");
 
-    qemu_debug_string("PROCESS: Entering exec_program.\n");
+    //qemu_debug_string("PROCESS: Entering exec_program.\n");
 
     // The shell has already processed the 'run' command.
     // argv[0] is now the filename of the program to execute.
@@ -128,29 +132,29 @@ int exec_program(int argc, char* argv[]) {
     }
 
     const char* filename = argv[0];
-    qemu_debug_string("PROCESS: Filename is -> ");
-    qemu_debug_string(filename);
-    qemu_debug_string("\n");
+    //qemu_debug_string("PROCESS: Filename is -> ");
+    //qemu_debug_string(filename);
+    //qemu_debug_string("\n");
 
     // Find the file on disk using our filesystem driver.
-    qemu_debug_string("PROCESS: Calling fs_find_file...\n");
+    //qemu_debug_string("PROCESS: Calling fs_find_file...\n");
     fat_dir_entry_t* file_entry = fs_find_file(filename);
-    qemu_debug_string("PROCESS: Returned from fs_find_file.\n");
+    //qemu_debug_string("PROCESS: Returned from fs_find_file.\n");
 
     // error handling
     if (!file_entry) {
-        qemu_debug_string("PROCESS: file_entry is NULL.\n");
+        //qemu_debug_string("PROCESS: file_entry is NULL.\n");
         print_string("run: File not found: ");
         print_string(filename);
         __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
-    qemu_debug_string("PROCESS: file_entry is VALID.\n");
+    //qemu_debug_string("PROCESS: file_entry is VALID.\n");
 
     // Read the entire file into a temporary buffer in kernel memory
-    qemu_debug_string("PROCESS: Calling fs_read_file...\n");
+    //qemu_debug_string("PROCESS: Calling fs_read_file...\n");
     uint8_t* file_buffer = (uint8_t*)fs_read_file(file_entry);
-    qemu_debug_string("PROCESS: Returned from fs_read_file.\n");
+    //qemu_debug_string("PROCESS: Returned from fs_read_file.\n");
 
     // error handling
     if (!file_buffer) {
@@ -172,11 +176,11 @@ int exec_program(int argc, char* argv[]) {
         __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
-    qemu_debug_string("PROCESS: ELF loaded successfully.\n");
+    //qemu_debug_string("PROCESS: ELF loaded successfully.\n");
 
     // --- Address Space Creation ---
     // Create a new, separate address space for the process.
-    qemu_debug_string("PROCESS: Cloning kernel page directory...\n");
+    //qemu_debug_string("PROCESS: Cloning kernel page directory...\n");
     page_directory_t* new_dir = paging_clone_directory(kernel_directory);
 
     // error handling
@@ -186,7 +190,7 @@ int exec_program(int argc, char* argv[]) {
         __asm__ __volatile__("sti"); // Re-enable interrupts before returning
         return -1;
     }
-    qemu_debug_string("PROCESS: Page directory cloned.\n");
+    //qemu_debug_string("PROCESS: Page directory cloned.\n");
 
     // --- TEMPORARILY SWITCH TO THE NEW ADDRESS SPACE ---
     page_directory_t* old_dir;
@@ -238,11 +242,11 @@ int exec_program(int argc, char* argv[]) {
             if (phdr->memsz > phdr->filesz) {
                 uint32_t bss_start = phdr->vaddr + phdr->filesz;
                 uint32_t bss_size = phdr->memsz - phdr->filesz;
-                qemu_debug_string("PROCESS: Zeroing .bss section at ");
-                qemu_debug_hex(bss_start);
-                qemu_debug_string(" for ");
-                qemu_debug_hex(bss_size);
-                qemu_debug_string(" bytes.\n");
+                //qemu_debug_string("PROCESS: Zeroing .bss section at ");
+                //qemu_debug_hex(bss_start);
+                //qemu_debug_string(" for ");
+                //qemu_debug_hex(bss_size);
+                //qemu_debug_string(" bytes.\n");
                 memset((void*)bss_start, 0, bss_size);
             }
         }
@@ -307,7 +311,7 @@ int exec_program(int argc, char* argv[]) {
     *((int*)user_stack_ptr) = argc;
 
     // --- SWITCH BACK TO THE ORIGINAL ADDRESS SPACE ---
-    qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
+    //qemu_debug_string("PROCESS: Page mapping complete. Switching back to original address space.\n");
     paging_switch_directory(old_dir);
 
     // Find a free process slot in the process table
@@ -350,12 +354,12 @@ int exec_program(int argc, char* argv[]) {
     new_task->cpu_state.cr3 = (uint32_t)new_task->page_directory; // Set physical address for CR3
 
     // The program is now in memory, so we can free the temporary file buffer
-    qemu_debug_string("PROCESS: New task configured. Ready for scheduler.\n");
-    qemu_debug_string("  PID: "); qemu_debug_hex(new_task->pid);
-    qemu_debug_string("\n  EIP: "); qemu_debug_hex(new_task->cpu_state.eip);
-    qemu_debug_string("\n  ESP: "); qemu_debug_hex(new_task->cpu_state.esp);
-    qemu_debug_string("\n  CR3: "); qemu_debug_hex(new_task->cpu_state.cr3);
-    qemu_debug_string("\n");
+    //qemu_debug_string("PROCESS: New task configured. Ready for scheduler.\n");
+    //qemu_debug_string("  PID: "); qemu_debug_hex(new_task->pid);
+    //qemu_debug_string("\n  EIP: "); qemu_debug_hex(new_task->cpu_state.eip);
+    //qemu_debug_string("\n  ESP: "); qemu_debug_hex(new_task->cpu_state.esp);
+    //qemu_debug_string("\n  CR3: "); qemu_debug_hex(new_task->cpu_state.cr3);
+    //qemu_debug_string("\n");
     free(file_buffer);
 
     // --- END CRITICAL SECTION ---
@@ -421,19 +425,19 @@ void process_init() {
 
 // This is our new, more intelligent round-robin scheduler.
 cpu_state_t* schedule(registers_t *r) {
-    qemu_debug_string("schedule: entered.\n");
+    // qemu_debug_string("schedule: entered.\n");
 
     // This check is a safeguard against catastrophic failure.
     if (!current_task) {
-        qemu_debug_string("schedule: FATAL - current_task is NULL. Halting.\n");
+        // qemu_debug_string("schedule: FATAL - current_task is NULL. Halting.\n");
         for (;;) __asm__("cli; hlt");
     }
 
     // Only save the CPU state if the task is not a zombie.
     if (current_task->state != TASK_STATE_ZOMBIE) {
-        qemu_debug_string("schedule: Saving state for PID ");
-        qemu_debug_hex(current_task->pid);
-        qemu_debug_string("...\n");
+        // qemu_debug_string("schedule: Saving state for PID ");
+        // qemu_debug_hex(current_task->pid);
+        // qemu_debug_string("...\n");
 
         // Save the CPU state of the current task
         // We only copy the registers that are part of cpu_state_t
@@ -462,20 +466,20 @@ cpu_state_t* schedule(registers_t *r) {
             current_task->cpu_state.ss = 0x10; // Kernel Data Segment
         }
     } else { // is a zombie, don't save sate
-        qemu_debug_string("schedule: Current task is a zombie, not saving state.\n");
+        // qemu_debug_string("schedule: Current task is a zombie, not saving state.\n");
     }
 
     // not a zombie, save state
-    qemu_debug_string("schedule: State saved. Finding next task...\n");
+    // qemu_debug_string("schedule: State saved. Finding next task...\n");
 
     // Wake up sleeping tasks
     uint32_t now = timer_get_ticks();
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table[i].state == TASK_STATE_SLEEPING && now >= process_table[i].wakeup_time) {
             process_table[i].state = TASK_STATE_RUNNING;
-            qemu_debug_string("schedule: Woke up PID ");
-            qemu_debug_hex(i);
-            qemu_debug_string(".\n");
+            // qemu_debug_string("schedule: Woke up PID ");
+            // qemu_debug_hex(i);
+            // qemu_debug_string(".\n");
         }
     }
 
@@ -488,16 +492,16 @@ cpu_state_t* schedule(registers_t *r) {
         if (process_table[next_pid].state == TASK_STATE_RUNNING) { // Simpler logic, idle task is just another task
             // Found a runnable task, switch to it.
             current_task = &process_table[next_pid];
-            qemu_debug_string("schedule: Switching to PID ");
-            qemu_debug_hex(current_task->pid);
-            qemu_debug_string(".\n");
-            qemu_debug_string("schedule: switched to new task\n");
+            // qemu_debug_string("schedule: Switching to PID ");
+            // qemu_debug_hex(current_task->pid);
+            // qemu_debug_string(".\n");
+            // qemu_debug_string("schedule: switched to new task\n");
 
             // CRITICAL: Update the TSS to point to this new task's kernel stack.
             uint32_t kernel_stack_top = (uint32_t)current_task->kernel_stack + PMM_FRAME_SIZE;
             tss_entry.esp0 = kernel_stack_top;
 
-            qemu_debug_string("schedule: before return to new task\n");
+            // qemu_debug_string("schedule: before return to new task\n");
             return &current_task->cpu_state;
         }
     }
@@ -506,9 +510,9 @@ cpu_state_t* schedule(registers_t *r) {
     // If no runnable task is found (should only happen if all are waiting/sleeping),
     // If no other task was found, default to the idle task.
     current_task = &process_table[0];
-    qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
-    qemu_debug_hex(current_task->pid);
-    qemu_debug_string(".\n");
+    // qemu_debug_string("schedule: No other task to switch to. Continuing with PID ");
+    // qemu_debug_hex(current_task->pid);
+    // qemu_debug_string(".\n");
 
     // CRITICAL: Update the TSS for the idle task as well.
     uint32_t kernel_stack_top = (uint32_t)current_task->kernel_stack + PMM_FRAME_SIZE;

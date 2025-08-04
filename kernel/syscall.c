@@ -61,6 +61,12 @@ static void sys_exit(registers_t *r) {
     paging_free_directory(task_to_exit->page_directory);
     pmm_free_frame(task_to_exit->kernel_stack);
 
+    qemu_debug_string("SYSCALL: Exiting PID ");
+    qemu_debug_dec(task_to_exit->pid);
+    qemu_debug_string(". Free frames: ");
+    qemu_debug_dec(pmm_get_free_frame_count());
+    qemu_debug_string("\n");
+
     // Instead of destroying the PCB, turn it into a zombie.
     // This preserves the PID and state until it is reaped.
     task_to_exit->state = TASK_STATE_ZOMBIE;

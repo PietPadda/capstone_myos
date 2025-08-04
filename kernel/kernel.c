@@ -61,6 +61,10 @@ void kmain() {
     pmm_init(16777216);
     qemu_debug_string("pmm_init ");
 
+    qemu_debug_string("PMM Initialized. Free frames: ");
+    qemu_debug_dec(pmm_get_free_frame_count());
+    qemu_debug_string("\n");
+
     // PMM Sanity Check
     void* frame1 = pmm_alloc_frame();
     qemu_debug_string("PMM Test: Alloc frame 1 at ");
