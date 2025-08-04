@@ -126,8 +126,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
     return new_dir_phys;
 }
 
-// This is the final, correct version.
-// It frees the page tables and pages of the CURRENTLY ACTIVE directory.
+// It frees the page tables and pages of a given directory.
 void paging_free_directory(page_directory_t* dir_phys) {
    // err check
     if (!dir_phys) return;
@@ -139,7 +138,7 @@ void paging_free_directory(page_directory_t* dir_phys) {
     // Free all user-space pages and page tables (entries 1 to 767).
     // We start at 1 because entry 0 maps the kernel's low memory, which is shared
     // and should never be freed by a user process.
-    for (int i = 0; i < 768; i++) {
+    for (int i = 1; i < 768; i++) {
         // Access the PDE using the safe VIRTUAL address.
         pde_t pde = dir_phys->entries[i];
 
