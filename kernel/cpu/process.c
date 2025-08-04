@@ -423,38 +423,44 @@ cpu_state_t* schedule(registers_t *r) {
         qemu_debug_string("schedule: FATAL - current_task is NULL. Halting.\n");
         for (;;) __asm__("cli; hlt");
     }
-    qemu_debug_string("schedule: Saving state for PID ");
-    qemu_debug_hex(current_task->pid);
-    qemu_debug_string("...\n");
 
-    // Save the CPU state of the current task
-    // We only copy the registers that are part of cpu_state_t
-    current_task->cpu_state.eax = r->eax;
-    current_task->cpu_state.ecx = r->ecx;
-    current_task->cpu_state.edx = r->edx;
-    current_task->cpu_state.ebx = r->ebx;
-    current_task->cpu_state.ebp = r->ebp;
-    current_task->cpu_state.esi = r->esi;
-    current_task->cpu_state.edi = r->edi;
-    current_task->cpu_state.eip = r->eip;
-    current_task->cpu_state.cs = r->cs;
-    current_task->cpu_state.eflags = r->eflags;
-    current_task->cpu_state.cr3 = (uint32_t)current_task->page_directory; // Save the physical address of the page directory
+    // Only save the CPU state if the task is not a zombie.
+    if (current_task->state != TASK_STATE_ZOMBIE) {
+        qemu_debug_string("schedule: Saving state for PID ");
+        qemu_debug_hex(current_task->pid);
+        qemu_debug_string("...\n");
 
+        // Save the CPU state of the current task
+        // We only copy the registers that are part of cpu_state_t
+        current_task->cpu_state.eax = r->eax;
+        current_task->cpu_state.ecx = r->ecx;
+        current_task->cpu_state.edx = r->edx;
+        current_task->cpu_state.ebx = r->ebx;
+        current_task->cpu_state.ebp = r->ebp;
+        current_task->cpu_state.esi = r->esi;
+        current_task->cpu_state.edi = r->edi;
+        current_task->cpu_state.eip = r->eip;
+        current_task->cpu_state.cs = r->cs;
+        current_task->cpu_state.eflags = r->eflags;
+        current_task->cpu_state.cr3 = (uint32_t)current_task->page_directory; // Save the physical address of the page directory
 
-    // Check if the interrupt came from user mode (ring 3).
-    // The user code segment selector is 0x1B (index 3, RPL 3).
-    if (r->cs == 0x1B) { // The kernel code segment selector is 0x08.
-        // This was a user task. The CPU pushed useresp and ss.
-        current_task->cpu_state.esp = r->useresp;
-        current_task->cpu_state.ss = r->ss;
-    } else {
-        // This was a kernel task. The CPU did not change stacks.
-        // The task's stack pointer is the one saved by PUSHA, which is in r->esp.
-        current_task->cpu_state.esp = r->esp;
-        current_task->cpu_state.ss = 0x10; // Kernel Data Segment
+        // Check if the interrupt came from user mode (ring 3).
+        // The user code segment selector is 0x1B (index 3, RPL 3).
+        if (r->cs == 0x1B) { // The kernel code segment selector is 0x08.
+            // This was a user task. The CPU pushed useresp and ss.
+            current_task->cpu_state.esp = r->useresp;
+            current_task->cpu_state.ss = r->ss;
+        } else {
+            // This was a kernel task. The CPU did not change stacks.
+            // The task's stack pointer is the one saved by PUSHA, which is in r->esp.
+            current_task->cpu_state.esp = r->esp;
+            current_task->cpu_state.ss = 0x10; // Kernel Data Segment
+        }
+    } else { // is a zombie, don't save sate
+        qemu_debug_string("schedule: Current task is a zombie, not saving state.\n");
     }
 
+    // not a zombie, save state
     qemu_debug_string("schedule: State saved. Finding next task...\n");
 
     // Wake up sleeping tasks

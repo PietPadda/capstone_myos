@@ -46,37 +46,34 @@ static void sys_exit(registers_t *r) {
     __asm__ __volatile__("cli"); // Disable interrupts during this critical operation
     qemu_debug_string("SYSCALL: Entering sys_exit (syscall 3).\n");
 
-    // Keep a pointer to the task we are exiting.
+    // Get a pointer to the task that is exiting.
     task_struct_t* task_to_exit = current_task;
 
-    // Wake up the parent shell (PID 1) if it's waiting.
+    // If the shell is waiting for a child, wake it up.
     if (process_table[1].state == TASK_STATE_WAITING) {
         process_table[1].state = TASK_STATE_RUNNING;
     }
 
-    // Switch to the kernel's main page directory. This is our safe place.
+    // Switch to the kernel's safe, master page directory.
     paging_switch_directory(kernel_directory);
 
-    // Free all memory associated with the exiting process
-    if (task_to_exit) {
-        qemu_debug_string("SYSCALL: Freeing memory for PID ");
-        qemu_debug_hex(task_to_exit->pid);
-        qemu_debug_string("...\n");
+    // Free the major memory resources used by the process.
+    paging_free_directory(task_to_exit->page_directory);
+    pmm_free_frame(task_to_exit->kernel_stack);
 
-        // Free the user-space page directory and all associated pages
-        paging_free_directory(task_to_exit->page_directory);
+    // Instead of destroying the PCB, turn it into a zombie.
+    // This preserves the PID and state until it is reaped.
+    task_to_exit->state = TASK_STATE_ZOMBIE;
 
-        // Free the process's kernel stack
-        pmm_free_frame(task_to_exit->kernel_stack);
-    }
+    // Clear stale pointers to prevent accidental use.
+    task_to_exit->page_directory = NULL;
+    task_to_exit->kernel_stack = NULL;
 
-    // Fully clear the process slot to prevent stale pointers
-    memset(task_to_exit->name, 0, sizeof(task_struct_t));
-    // Mark the slot as free for reuse
-    task_to_exit->state = TASK_STATE_UNUSED; // unused, not zombie
-    
-    qemu_debug_string("SYSCALL: Preparing return to shell (PID 1)...\n");
-    // Force a context switch. The scheduler will now see the shell is runnable.
+    qemu_debug_string("SYSCALL: PID ");
+    qemu_debug_hex(task_to_exit->pid);
+    qemu_debug_string(" is now a zombie. Switching tasks.\n");
+
+    // Re-enable interrupts and call the scheduler.
     __asm__ __volatile__("sti"); // Re-enable interrupts
     __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
 }
