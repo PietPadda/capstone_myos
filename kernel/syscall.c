@@ -58,10 +58,6 @@ static void sys_exit(registers_t *r) {
     // The scheduler will still save its state, but it won't be run again.
     task_to_exit->state = TASK_STATE_ZOMBIE;
 
-    // Clear stale pointers to prevent accidental use.
-    task_to_exit->page_directory = NULL;
-    task_to_exit->kernel_stack = NULL;
-
     qemu_debug_string("SYSCALL: PID ");
     qemu_debug_hex(task_to_exit->pid);
     qemu_debug_string(" is now a zombie. Switching tasks. Free frames: ");
