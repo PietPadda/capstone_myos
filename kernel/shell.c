@@ -288,7 +288,6 @@ void process_command() {
         if (argc > 1) {
             // Flush any lingering keyboard input before launching the program.
             keyboard_flush();
-            //qemu_debug_string("SHELL: 'run' command detected. Calling exec_program...\n");
             int child_pid = exec_program(argc - 1, &argv[1]);
         
             if (child_pid >= 0) {
