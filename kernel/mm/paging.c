@@ -128,7 +128,7 @@ page_directory_t* paging_clone_directory(page_directory_t* src_phys) {
 
 // It frees the page tables and pages of a given directory.
 void paging_free_directory(page_directory_t* dir_phys) {
-   // err check
+    // err check
     if (!dir_phys) return;
 
     // Temporarily map the directory we want to free into our current address space.
@@ -140,7 +140,7 @@ void paging_free_directory(page_directory_t* dir_phys) {
     // and should never be freed by a user process.
     for (int i = 1; i < 768; i++) {
         // Access the PDE using the safe VIRTUAL address.
-        pde_t pde = dir_phys->entries[i];
+        pde_t pde = dir_virt->entries[i];
 
         if (pde & PAGING_FLAG_PRESENT) {
             // Get the PHYSICAL address of the page table from the directory entry.
