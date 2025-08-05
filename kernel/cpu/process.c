@@ -363,9 +363,8 @@ int exec_program(int argc, char* argv[]) {
     free(file_buffer);
 
     // --- END CRITICAL SECTION ---
-    // The new task is safely in the process table. We can now re-enable interrupts.
-    // The next timer tick will correctly schedule this new process.
-    __asm__ __volatile__("sti");
+    // Do NOT re-enable interrupts here.
+    // The caller (the shell) is now responsible for this.
 
     return new_pid; // Return the new PID to the caller (the shell)
 }

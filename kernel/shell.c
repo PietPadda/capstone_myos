@@ -292,13 +292,17 @@ void process_command() {
             int child_pid = exec_program(argc - 1, &argv[1]);
         
             if (child_pid >= 0) {
-                // We successfully launched a child. Now, we wait for it.
+                // exec_program succeeded and returned with interrupts disabled.
+                // We can now safely set our state to waiting.
                 current_task->state = TASK_STATE_WAITING;
-                //qemu_debug_string("Shell waiting for child process...\n");
 
-                // Force a context switch to run the new program.
-                // The scheduler will skip us until the child exits and wakes us up.
-                __asm__ __volatile__("int $0x20"); // Fire timer IRQ
+                // We yield the CPU. The IRET from the interrupt handler
+                // will automatically re-enable interrupts for us.
+                __asm__ __volatile__("int $0x20");
+            } else {
+                // exec_program failed, but it left interrupts disabled.
+                // We must re-enable them before continuing the shell.
+                __asm__ __volatile__("sti");
             }
         } else {
             print_string("Usage: run <filename>");
