@@ -340,6 +340,10 @@ void process_command() {
             if (pid_to_kill > 0 && pid_to_kill < MAX_PROCESSES) {
                 task_struct_t* task = &process_table[pid_to_kill];
                 if (task->state == TASK_STATE_ZOMBIE) {
+                    // The reaper (the shell) is now responsible for freeing the memory.
+                    paging_free_directory(task->page_directory);
+                    pmm_free_frame(task->kernel_stack);
+
                     // "Reap" the zombie by clearing its entire PCB entry.
                     memset(task, 0, sizeof(task_struct_t));
                     task->state = TASK_STATE_UNUSED;
@@ -347,6 +351,7 @@ void process_command() {
                     print_string("Reaped zombie PID ");
                     print_dec(pid_to_kill);
 
+                    // We log the frame count AFTER freeing to confirm it was restored.
                     qemu_debug_string("SHELL: Reaped zombie. Free frames: ");
                     qemu_debug_dec(pmm_get_free_frame_count());
                     qemu_debug_string("\n");

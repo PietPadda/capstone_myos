@@ -54,21 +54,8 @@ static void sys_exit(registers_t *r) {
         process_table[1].state = TASK_STATE_RUNNING;
     }
 
-    // Switch to the kernel's safe, master page directory.
-    paging_switch_directory(kernel_directory);
-
-    // Free the major memory resources used by the process.
-    paging_free_directory(task_to_exit->page_directory);
-    pmm_free_frame(task_to_exit->kernel_stack);
-
-    qemu_debug_string("SYSCALL: Exiting PID ");
-    qemu_debug_dec(task_to_exit->pid);
-    qemu_debug_string(". Free frames: ");
-    qemu_debug_dec(pmm_get_free_frame_count());
-    qemu_debug_string("\n");
-
-    // Instead of destroying the PCB, turn it into a zombie.
-    // This preserves the PID and state until it is reaped.
+    // We NO LONGER free memory here. We only mark the task as a zombie.
+    // The scheduler will still save its state, but it won't be run again.
     task_to_exit->state = TASK_STATE_ZOMBIE;
 
     // Clear stale pointers to prevent accidental use.
@@ -77,7 +64,9 @@ static void sys_exit(registers_t *r) {
 
     qemu_debug_string("SYSCALL: PID ");
     qemu_debug_hex(task_to_exit->pid);
-    qemu_debug_string(" is now a zombie. Switching tasks.\n");
+    qemu_debug_string(" is now a zombie. Switching tasks. Free frames: ");
+    qemu_debug_dec(pmm_get_free_frame_count()); // Log the count, which should NOT change.
+    qemu_debug_string("\n");
 
     // Re-enable interrupts and call the scheduler.
     __asm__ __volatile__("sti"); // Re-enable interrupts
