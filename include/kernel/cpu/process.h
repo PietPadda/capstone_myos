@@ -13,7 +13,7 @@
 
 #define USER_STACK_PAGES  4                                 // and be 16KB (4 pages) in size
 #define USER_STACK_SIZE (USER_STACK_PAGES * PMM_FRAME_SIZE) // 16KB
-#define USER_STACK_TOP    0xE0000000                        // User stacks will start at 3.5GB
+#define USER_STACK_TOP    0xC0000000                        // User stacks will start at 3GB
 
 // Enum for process states
 typedef enum {
