@@ -131,6 +131,10 @@ void paging_free_directory(page_directory_t* dir_phys) {
     // err check
     if (!dir_phys) return;
 
+    qemu_debug_string("PAGING_FREE: Starting for dir_phys: ");
+    qemu_debug_hex((uint32_t)dir_phys);
+    qemu_debug_string("\n");
+
     // Temporarily map the directory we want to free into our current address space.
     paging_map_page(CURRENT_PAGE_DIR, TEMP_PAGEDIR_ADDR, (uint32_t)dir_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
     page_directory_t* dir_virt = (page_directory_t*)TEMP_PAGEDIR_ADDR;
@@ -143,6 +147,12 @@ void paging_free_directory(page_directory_t* dir_phys) {
         pde_t pde = dir_virt->entries[i];
 
         if (pde & PAGING_FLAG_PRESENT) {
+            qemu_debug_string("PAGING_FREE: Found present PDE at index ");
+            qemu_debug_dec(i);
+            qemu_debug_string(" with value ");
+            qemu_debug_hex(pde);
+            qemu_debug_string("\n");
+
             // Get the PHYSICAL address of the page table from the directory entry.
             page_table_t* pt_phys = (page_table_t*)(pde & ~0xFFF);
 
@@ -173,6 +183,10 @@ void paging_free_directory(page_directory_t* dir_phys) {
 
     // Finally, free the physical frame that held the page directory.
     pmm_free_frame(dir_phys);
+
+     qemu_debug_string("PAGING_FREE: Finished for dir_phys: ");
+    qemu_debug_hex((uint32_t)dir_phys);
+    qemu_debug_string("\n");
     
     // IMPORTANT: The caller (sys_exit) is now responsible for immediately
     // switching to a new, valid page directory because the one we were just
