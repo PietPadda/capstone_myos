@@ -149,10 +149,20 @@ fat_dir_entry_t* fs_find_file(const char* filename) {
     while (filename[i] && filename[i] != '.' && j < 8) {
         fat_name[j++] = toupper(filename[i++]);
     }
-    if (filename[i] == '.') i++;
+
+    if (filename[i] == '.') {
+        i++;
+    }
+
     j = 8;
     while (filename[i] && j < 11) {
         fat_name[j++] = toupper(filename[i++]);
+    }
+
+    // If we haven't consumed the entire input string, it's not a valid 8.3 name.
+    // This is the fix to prevent matching "file.txt123" with "file.txt".
+    if (filename[i] != '\0') {
+        return NULL; // Filename is too long or has invalid characters.
     }
 
     // Search the directory
