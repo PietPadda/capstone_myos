@@ -4,40 +4,6 @@
 #include <kernel/io.h>
 #include <kernel/types.h>
 
-// VGA register ports
-#define VGA_MISC_WRITE 0x3C2
-#define VGA_AC_INDEX 0x3C0
-#define VGA_CRTC_INDEX 0x3D4
-#define VGA_CRTC_DATA 0x3D5
-#define VGA_GC_INDEX 0x3CE
-#define VGA_SC_INDEX 0x3C4
-#define VGA_SC_DATA 0x3C5
-
-// This function reprograms the VGA controller to enable 80x50 text mode.
-// The sequence of register writes is a standard recipe for enabling the 400-scanline mode.
-void vga_set_80x50_mode() {
-    // We must unlock the CRTC registers before we can modify them.
-    port_byte_out(VGA_CRTC_INDEX, 0x03);
-    port_byte_out(VGA_CRTC_DATA, port_byte_in(VGA_CRTC_DATA) | 0x80);
-    port_byte_out(VGA_CRTC_INDEX, 0x11);
-    port_byte_out(VGA_CRTC_DATA, port_byte_in(VGA_CRTC_DATA) & 0x7F);
-
-    // Write the new register values for 80x50 mode
-    unsigned char regs[] = {
-        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-        0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
-    };
-    uint16_t values[] = {
-        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3,
-    };
-
-    for (int i = 0; i < 24; i++) {
-        port_byte_out(VGA_CRTC_INDEX, regs[i]);
-        port_byte_out(VGA_CRTC_DATA, values[i]);
-    }
-}
-
 // Define a static cursor position
 static int cursor_row = 0;
 static int cursor_col = 0;
