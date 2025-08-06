@@ -18,38 +18,62 @@ extern task_struct_t process_table[MAX_PROCESSES];
 // Make the global current_task pointer visible to this file.
 extern task_struct_t* current_task;
 
-#define PROMPT "PGOS> "
-#define MAX_CMD_LEN 256
-
-// Static variables to hold the command buffer state
-static char cmd_buffer[MAX_CMD_LEN];
-static int cmd_index = 0;
+// global variables to hold the shell's state
+char history_buffer[HISTORY_SIZE][MAX_CMD_LEN];
+int history_count = 0;
+int history_index = 0;
+char current_line[MAX_CMD_LEN];
+int cursor_pos = 0;
+int line_len = 0;
 
 // Forward-declaration for our command processor
 void process_command();
 
 // Initialize the shell.
 void shell_init() {
-    memset(cmd_buffer, 0, MAX_CMD_LEN); // Clear the command buffer
-    cmd_index = 0; // Reset command index on shell restart
-    print_string(PROMPT);
+    // Clear the current line and set cursor to the start.
+    memset(current_line, 0, MAX_CMD_LEN);
+    cursor_pos = 0;
+    line_len = 0;
+
+    // Reset history index to the end.
+    history_index = history_count;
+
+    print_string(PROMPT); // print our cmd prompt
 }
 
 // Handles a single character of input.
 void shell_handle_input(char c) {
     if (c == '\n') {
         print_char(c); // Echo the newline
-        cmd_buffer[cmd_index] = '\0';
+        current_line[line_len] = '\0'; // Null-terminate the command.
         process_command();
+
     } else if (c == '\b') {
-        if (cmd_index > 0) {
-            cmd_index--;
-            cmd_buffer[cmd_index] = '\0'; // Erase the character from our buffer
-            print_char(c); // Echo backspace
+        if (cursor_pos > 0) {
+            // Shift characters to the left to delete.
+            for (int i = cursor_pos; i < line_len; i++) {
+                current_line[i - 1] = current_line[i];
+            }
+            line_len--;
+            cursor_pos--;
+
+            // Redraw the line to show the change.
+            vga_redraw_line();
         }
-    } else if (cmd_index < MAX_CMD_LEN - 1) {
-        cmd_buffer[cmd_index++] = c;
-        print_char(c); // Echo the character
+    } else if (c >= ' ' && c <= '~') { // Handle printable characters
+        if (line_len < MAX_CMD_LEN - 1) {
+            // Make space for the new character if not at end of line.
+            for (int i = line_len; i > cursor_pos; i--) {
+                current_line[i] = current_line[i - 1];
+            }
+            current_line[cursor_pos] = c;
+            line_len++;
+            cursor_pos++;
+            
+            // Redraw the line to show the new character.
+            vga_redraw_line();
+        }
     }
 }
 
