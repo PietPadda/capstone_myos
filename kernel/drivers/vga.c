@@ -9,57 +9,78 @@
 #define VGA_HEIGHT 50
 
 // VGA register ports
-#define VGA_MISC_WRITE 0x3C2
-#define VGA_AC_INDEX 0x3C0
-#define VGA_CRTC_INDEX 0x3D4
-#define VGA_CRTC_DATA 0x3D5
-#define VGA_GC_INDEX 0x3CE
-#define VGA_SC_INDEX 0x3C4
-#define VGA_SC_DATA 0x3C5
+#define VGA_MISC_WRITE 0x3C2  // Miscellaneous Output Write Register
+#define VGA_AC_INDEX 0x3C0    // Attribute Controller Index and Data Write Register
+#define VGA_CRTC_INDEX 0x3D4  // CRTC Index Register (for color monitors)
+#define VGA_CRTC_DATA 0x3D5   // CRTC Data Register (for color monitors)
+#define VGA_GC_INDEX 0x3CE    // Graphics Controller Index Register
+#define VGA_GC_DATA 0x3CF     // Graphics Controller Data Register
+#define VGA_SC_INDEX 0x3C4    // Sequencer Index Register
+#define VGA_SC_DATA 0x3C5     // Sequencer Data Register
 
 // This function reprograms the VGA controller to enable 80x50 text mode.
 // The sequence of register writes is a standard recipe for enabling the 400-scanline mode.
 void vga_set_80x50_mode() {
-    // This sets the clock source for a 400-scanline mode
-    port_byte_out(VGA_MISC_WRITE, 0x67);
+    // Set the Miscellaneous Output Register to select the clock source
+    // and sync polarities for a 400-scanline mode.
+    port_byte_out(0x3C2, 0xE7);
 
-    // Reprogram the Sequencer
-    // This tells the sequencer to use a font with an 8-pixel height
-    port_byte_out(VGA_SC_INDEX, 0x01); // Clocking Mode Register
-    port_byte_out(VGA_SC_DATA, 0x01);  // Set the 8-dot clock
-    port_byte_out(VGA_SC_INDEX, 0x03); // Character Map Select Register
-    port_byte_out(VGA_SC_DATA, 0x00);  // Select the standard 8x8 font map
-    port_byte_out(VGA_SC_INDEX, 0x04); // Memory Mode Register
-    port_byte_out(VGA_SC_DATA, 0x06);  // Enable extended memory for text mode
+    // Reprogram the Sequencer (SQ)
+    // The Sequencer controls character clocking and font memory access.
+    port_byte_out(0x3C4, 0x00); port_byte_out(0x3C5, 0x01); // Start synchronous reset
+    port_byte_out(0x3C4, 0x01); port_byte_out(0x3C5, 0x01); // Set 8-dot clock
+    port_byte_out(0x3C4, 0x02); port_byte_out(0x3C5, 0x0F); // Enable all memory planes
+    port_byte_out(0x3C4, 0x03); port_byte_out(0x3C5, 0x00); // Explicitly select 8x8 font
+    port_byte_out(0x3C4, 0x04); port_byte_out(0x3C5, 0x06); // Enable extended memory
+    port_byte_out(0x3C4, 0x00); port_byte_out(0x3C5, 0x03); // End synchronous reset
 
-    // We must unlock the CRTC registers before we can modify them.
-    port_byte_out(VGA_CRTC_INDEX, 0x03);
-    port_byte_out(VGA_CRTC_DATA, port_byte_in(VGA_CRTC_DATA) | 0x80);
-    port_byte_out(VGA_CRTC_INDEX, 0x11);
-    port_byte_out(VGA_CRTC_DATA, port_byte_in(VGA_CRTC_DATA) & 0x7F);
+    // Reprogram the Cathode Ray Tube Controller (CRTC)
+    // The CRTC controls horizontal/vertical timings and screen dimensions.
+    // We must unlock the CRTC registers 0-7 before we can modify them.
+    port_byte_out(0x3D4, 0x11);
+    port_byte_out(0x3D5, port_byte_in(0x3D5) & 0x7F);
 
-    // Write the new register values for 80x50 mode
-    unsigned char regs[] = {
+    // Use a known-good set of CRTC values that produced a close-to-correct result.
+    uint8_t crtc_regs[] = {
         0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
-        0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
+        0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17
     };
-    unsigned char values[] = {
+    uint8_t crtc_vals[] = {
         0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x06, 0x07,
-        0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3,
+        0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3
     };
-
-    // the loop must iterate exactly 24 times for the 24 registers
     for (int i = 0; i < 24; i++) {
-        port_byte_out(VGA_CRTC_INDEX, regs[i]);
-        port_byte_out(VGA_CRTC_DATA, values[i]);
+        port_byte_out(0x3D4, crtc_regs[i]);
+        port_byte_out(0x3D5, crtc_vals[i]);
     }
 
-    // Step 4: Reprogram the Attribute Controller
-    // This final piece ensures all parts of the VGA card are in sync.
-    port_byte_in(VGA_CRTC_INDEX + 6); // Reset the AC's internal flip-flop
-    port_byte_out(VGA_AC_INDEX, 0x10); // Select the Mode Control Register
-    port_byte_out(VGA_AC_INDEX, 0x01); // Set it to text mode with blinking
-    port_byte_in(VGA_CRTC_INDEX + 6); // Reset again for safety
+    // Reprogram the Graphics Controller (GC)
+    // The Graphics Controller maps the video memory to the correct address.
+    port_byte_out(0x3CE, 0x06); 
+    port_byte_out(0x3CF, 0x05); // Map video memory to 0xB8000 and enable text mode
+
+    // Reprogram the Attribute Controller (AC)
+    // The Attribute Controller handles color and enables the display.
+    port_byte_in(0x3DA); // Read status register to reset the AC's internal flip-flop
+    port_byte_out(0x3C0, 0x10); 
+    port_byte_out(0x3C0, 0x01); // Set bit 0 to explicitly enable text mode
+
+    port_byte_in(0x3DA); // Reset flip-flop for the next write
+    port_byte_out(0x3C0, 0x11); 
+    port_byte_out(0x3C0, 0x00); // Overscan color (black)
+
+    port_byte_in(0x3DA); // Reset flip-flop
+    port_byte_out(0x3C0, 0x12); 
+    port_byte_out(0x3C0, 0x0F); // Enable all 4 color planes
+
+    port_byte_in(0x3DA); // Reset flip-flop
+    port_byte_out(0x3C0, 0x13); 
+    port_byte_out(0x3C0, 0x00); // Horizontal Panning
+
+    // Turn the screen back on
+    // This final, crucial step enables the video display.
+    port_byte_in(0x3DA); // Reset flip-flop one last time
+    port_byte_out(0x3C0, 0x20); // Enable video display
 }
 
 // Define a static cursor position
