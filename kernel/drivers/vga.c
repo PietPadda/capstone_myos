@@ -20,8 +20,7 @@
 // This function reprograms the VGA controller to enable 80x50 text mode.
 // The sequence of register writes is a standard recipe for enabling the 400-scanline mode.
 void vga_set_80x50_mode() {
-    // Add the master clock setting
-    // fundamental requirement for a 400-scanline mode
+    // This sets the clock source for a 400-scanline mode
     port_byte_out(VGA_MISC_WRITE, 0x67);
 
     // We must unlock the CRTC registers before we can modify them.
@@ -36,11 +35,12 @@ void vga_set_80x50_mode() {
         0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
     };
     unsigned char values[] = {
-        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x00, 0x00,
+        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x06, 0x07,
         0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3,
     };
 
-    for (int i = 0; i < (VGA_HEIGHT - 1); i++) {
+    // he loop must iterate exactly 24 times for the 24 registers
+    for (int i = 0; i < 24; i++) {
         port_byte_out(VGA_CRTC_INDEX, regs[i]);
         port_byte_out(VGA_CRTC_DATA, values[i]);
     }
@@ -106,7 +106,8 @@ void print_char(char c) {
             cursor_col--;
         } else if (cursor_row > 0) {
             cursor_row--;
-            cursor_col = (VGA_HEIGHT - 1); // Move to the end of the previous line.
+            // BWrap to the last column (WIDTH - 1), not the last row.
+            cursor_col = (VGA_WIDTH  - 1); // Move to the end of the previous line.
         }
         // Write a blank space to the current cursor position to 'erase' the char.
         VGA_BUFFER[(cursor_row * VGA_WIDTH) + cursor_col] = ' ' | (0x0F << 8);
@@ -131,7 +132,7 @@ void print_char(char c) {
     // scrolling logic when cursor_row >= VGA_HEIGHT
     if (cursor_row >= VGA_HEIGHT) {
         // Move the text of every line up by one row.
-        for (int i = 0; i < (VGA_HEIGHT - 1) * VGA_HEIGHT; i++) {
+        for (int i = 0; i < (VGA_HEIGHT - 1) * VGA_WIDTH; i++) {
             VGA_BUFFER[i] = VGA_BUFFER[i + VGA_WIDTH];
         }
 
