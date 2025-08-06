@@ -4,10 +4,6 @@
 #include <kernel/io.h>
 #include <kernel/types.h>
 
-// Define our screen dimensions as constants
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 50
-
 // VGA register ports
 #define VGA_MISC_WRITE 0x3C2
 #define VGA_AC_INDEX 0x3C0
@@ -36,7 +32,7 @@ void vga_set_80x50_mode() {
         0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3,
     };
 
-    for (int i = 0; i < (VGA_HEIGHT - 1); i++) {
+    for (int i = 0; i < 24; i++) {
         port_byte_out(VGA_CRTC_INDEX, regs[i]);
         port_byte_out(VGA_CRTC_DATA, values[i]);
     }
@@ -52,7 +48,7 @@ volatile unsigned short* const VGA_BUFFER = (unsigned short*)0xB8000;
 // Clear the screen by filling it with spaces
 void clear_screen() {
     int i;
-    for (int i = 0; i < VGA_WIDTH  * VGA_HEIGHT; i++) {
+    for (int i = 0; i < 80 * 25; i++) {
         VGA_BUFFER[i] = (unsigned short)' ' | 0x0F00;
     }
     cursor_row = 0;
@@ -62,7 +58,7 @@ void clear_screen() {
 
 // Updates the VGA cursor's position.
 void update_cursor(int row, int col) {
-    unsigned short position = (row * VGA_WIDTH) + col;
+    unsigned short position = (row * 80) + col;
 
     // Send the high byte of the cursor position
     port_byte_out(0x3D4, 0x0E);
@@ -80,11 +76,11 @@ void print_char_color(char c, uint8_t color) {
         cursor_row++;
         cursor_col = 0;
     } else {
-        VGA_BUFFER[(cursor_row * VGA_WIDTH) + cursor_col] = c | (color << 8);
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = c | (color << 8);
         cursor_col++;
     }
 
-    if (cursor_col >= VGA_WIDTH) {
+    if (cursor_col >= 80) {
         cursor_col = 0;
         cursor_row++;
     }
@@ -102,10 +98,10 @@ void print_char(char c) {
             cursor_col--;
         } else if (cursor_row > 0) {
             cursor_row--;
-            cursor_col = (VGA_HEIGHT - 1); // Move to the end of the previous line.
+            cursor_col = 79; // Move to the end of the previous line.
         }
         // Write a blank space to the current cursor position to 'erase' the char.
-        VGA_BUFFER[(cursor_row * VGA_WIDTH) + cursor_col] = ' ' | (0x0F << 8);
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = ' ' | (0x0F << 8);
 
     // Handle newline
     } else if (c == '\n') {
@@ -115,29 +111,29 @@ void print_char(char c) {
         // Handle a normal character.
         // The new way: Directly write the character 'c' with a white-on-black
         // attribute (0x0F). This is more stable than the old method.
-        VGA_BUFFER[(cursor_row * VGA_WIDTH) + cursor_col] = c | (0x0F << 8);
+        VGA_BUFFER[(cursor_row * 80) + cursor_col] = c | (0x0F << 8);
         cursor_col++;
     }
 
     // If we're at the end of the line, wrap to the next line.
-    if (cursor_col >= VGA_WIDTH) {
+    if (cursor_col >= 80) {
         cursor_col = 0;
         cursor_row++;
     }
-    // scrolling logic when cursor_row >= VGA_HEIGHT
-    if (cursor_row >= VGA_HEIGHT) {
+    // scrolling logic when cursor_row >= 25
+    if (cursor_row >= 25) {
         // Move the text of every line up by one row.
-        for (int i = 0; i < (VGA_HEIGHT - 1) * VGA_HEIGHT; i++) {
-            VGA_BUFFER[i] = VGA_BUFFER[i + VGA_WIDTH];
+        for (int i = 0; i < 24 * 80; i++) {
+            VGA_BUFFER[i] = VGA_BUFFER[i + 80];
         }
 
         // Clear the last line.
-        for (int i = (VGA_HEIGHT - 1) * VGA_WIDTH; i < VGA_HEIGHT * VGA_WIDTH; i++) {
+        for (int i = 24 * 80; i < 25 * 80; i++) {
             VGA_BUFFER[i] = ' ' | (0x0F << 8);
         }
         
         // Set the cursor to the beginning of the last line.
-        cursor_row = (VGA_HEIGHT - 1);
+        cursor_row = 24;
     }
 
     // Update the hardware cursor's position.
