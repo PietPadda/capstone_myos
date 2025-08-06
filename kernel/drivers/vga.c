@@ -171,7 +171,7 @@ void print_bootscreen() {
 }
 
 // Helper function to redraw the entire current line
-static void vga_redraw_line() {
+void vga_redraw_line() {
     // Save current cursor position and line length
     int saved_row = cursor_row;
     int saved_col = cursor_col;

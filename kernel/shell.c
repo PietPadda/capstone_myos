@@ -96,15 +96,14 @@ void restart_shell() {
 
 // This function processes the completed command. 
 void process_command() {
-    //qemu_debug_string("SHELL:\nProcessing command...");
     // Trim leading whitespace
-    char* start = cmd_buffer;
+    char* start = current_line;
     while (*start == ' ') start++;
 
     // Parse the command line into argc and argv
     int argc = 0;
     char* argv[MAX_ARGS];
-    // Zero out the argv array to prevent using garbage pointers+    
+    // Zero out the argv array to prevent using garbage pointers
     // for arguments that don't exist.
     memset(argv, 0, sizeof(char*) * MAX_ARGS);
 
@@ -118,9 +117,6 @@ void process_command() {
 
         // Store the pointer to the start of the word.
         argv[argc++] = word_start;
-        //qemu_debug_string("SHELL: Parsed arg -> ");
-        //qemu_debug_string(word_start);
-        //qemu_debug_string("\n");
 
         // Check if we are at the end of the entire command string.
         if (*word_end == ' ') {
@@ -144,7 +140,6 @@ void process_command() {
 
     // Handle empty or only-whitespace commands
     if (argc == 0) {
-        cmd_index = 0;
         print_string("\n");
         print_string(PROMPT);
         return;
@@ -197,24 +192,13 @@ void process_command() {
             fat_dir_entry_t* file_entry = fs_find_file(argv[1]);
             if (file_entry) {
                 __asm__ __volatile__("cli"); // Disable interrupts
-                //qemu_debug_string("SHELL: cat before calling fs_read_file...\n");
                 uint8_t* buffer = (uint8_t*)fs_read_file(file_entry);
-                //qemu_debug_string("SHELL: cat after called fs_read_file...\n");
                 if (buffer) {
-                    //qemu_debug_string("SHELL: cat after if buffer...\n");
                     for (uint32_t i = 0; i < file_entry->file_size; i++) {
-                        //qemu_debug_string("SHELL: print in loop...\n");
-                        //qemu_debug_hex(buffer[i]);
-                        //qemu_debug_string("\n");
-                        //qemu_debug_hex(i);
-                        //qemu_debug_string("\n");
                         print_char(buffer[i]);
-                        //qemu_debug_string("SHELL: cat after buffer[i] print");
                     }
                     // free the buffer to prev mem leaks
-                    //qemu_debug_string("SHELL: cat before free buffer...\n");
                     free(buffer);
-                    //qemu_debug_string("SHELL: cat after free buffer...\n");
                 }
                 __asm__ __volatile__("sti"); // Re-enable interrupts
             } else {
@@ -391,20 +375,20 @@ void process_command() {
         }
 
     // invalid command
-    } else if (cmd_index > 0) { // Only show error for non-empty commands
+    } else  { // Only show error for non-empty commands
         print_string("Unknown command: ");
-        print_string(cmd_buffer);
+        print_string(current_line);
         print_string("\n");
     }
     
     // Reset for the next command and print a new prompt.
-    // This is only reached for built-in commands that don't launch a program.
-    cmd_index = 0;
+    memset(current_line, 0, MAX_CMD_LEN);
+    line_len = 0;
+    cursor_pos = 0;
 
     // Only print a newline for spacing if the command wasn't "cls".
     if (strcmp(argv[0], "cls") != 0) {
         print_string("\n");
     }
-
     print_string(PROMPT);
 }
