@@ -14,6 +14,10 @@ void print_hex(uint32_t n);
 void print_dec(uint32_t n);
 void print_char_color(char c, uint8_t color);
 void print_bootscreen();
-void vga_redraw_line();
+
+// public cursor API for the shell to use.
+int vga_get_cursor_row();
+int vga_get_cursor_col();
+void vga_set_cursor_pos(int row, int col);
 
 #endif

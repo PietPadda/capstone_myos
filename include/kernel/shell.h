@@ -23,5 +23,6 @@ void shell_handle_input(char c);
 
 void shell_run();
 void restart_shell();
+void shell_redraw_line();
 
 #endif

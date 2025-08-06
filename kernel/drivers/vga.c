@@ -170,26 +170,18 @@ void print_bootscreen() {
     }
 }
 
-// Helper function to redraw the entire current line
-void vga_redraw_line() {
-    // Save current cursor position and line length
-    int saved_row = cursor_row;
-    int saved_col = cursor_col;
+// Expose cursor position to other modules.
+int vga_get_cursor_row() {
+    return cursor_row;
+}
 
-    // Move cursor to the beginning of the line
-    cursor_col = 0;
+int vga_get_cursor_col() {
+    return cursor_col;
+}
+
+// Sets the cursor position from a logical row and column.
+void vga_set_cursor_pos(int row, int col) {
+    cursor_row = row;
+    cursor_col = col;
     update_cursor(cursor_row, cursor_col);
-
-    // Clear the rest of the line
-    for (int i = 0; i < 25; i++) {
-        print_char(' ');
-    }
-
-    // Move cursor back to the start of the line and print the buffer
-    cursor_row = saved_row;
-    cursor_col = 0;
-    print_string(current_line);
-
-    // Restore the cursor position
-    update_cursor(saved_row, saved_col);
 }

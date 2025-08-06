@@ -59,7 +59,7 @@ void shell_handle_input(char c) {
             cursor_pos--;
 
             // Redraw the line to show the change.
-            vga_redraw_line();
+            shell_redraw_line();
         }
     } else if (c >= ' ' && c <= '~') { // Handle printable characters
         if (line_len < MAX_CMD_LEN - 1) {
@@ -72,7 +72,7 @@ void shell_handle_input(char c) {
             cursor_pos++;
             
             // Redraw the line to show the new character.
-            vga_redraw_line();
+            shell_redraw_line();
         }
     }
 }
@@ -391,4 +391,29 @@ void process_command() {
         print_string("\n");
     }
     print_string(PROMPT);
+}
+
+// This function correctly redraws the shell's current line and cursor
+// to account for the prompt and command buffer state.
+void shell_redraw_line() {
+    // Get the current physical cursor row from the VGA driver.
+    int current_row = vga_get_cursor_row();
+
+    // Move the cursor to the beginning of the prompt line.
+    vga_set_cursor_pos(current_row, 0);
+
+    // Erase the line by printing a full row of spaces.
+    for (int i = 0; i < 80; i++) {
+        print_char(' ');
+    }
+    
+    // Move back to the start of the line and print the prompt.
+    vga_set_cursor_pos(current_row, 0);
+    print_string(PROMPT);
+
+    // Print the command buffer.
+    print_string(current_line);
+
+    // Restore the cursor to its correct logical position.
+    vga_set_cursor_pos(current_row, strlen(PROMPT) + cursor_pos);
 }
