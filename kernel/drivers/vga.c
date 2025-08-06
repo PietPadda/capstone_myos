@@ -47,11 +47,12 @@ void vga_set_80x50_mode() {
         0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17,
     };
     uint16_t crtc_values[] = {
-        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x00, 0x00,
+        0x5F, 0x4F, 0x50, 0x82, 0x54, 0x80, 0xBF, 0x1F, 0x00, 0x47, 0x06, 0x07,
         0x00, 0x00, 0x00, 0x00, 0x9C, 0x8E, 0x8F, 0x28, 0x00, 0x96, 0xB9, 0xE3,
     };
 
-    for (int i = 0; i < (VGA_HEIGHT - 1); i++) {
+    // The loop must only iterate 24 times for the 24 registers
+    for (int i = 0; i < 24; i++) {
         port_byte_out(VGA_CRTC_INDEX, crtc_regs[i]);
         port_byte_out(VGA_CRTC_DATA, crtc_values[i]);
     }
@@ -59,8 +60,8 @@ void vga_set_80x50_mode() {
     // Reprogram the Attribute Controller
     // This ensures colors are handled correctly
     port_byte_in(VGA_CRTC_INDEX + 6); // This read resets the AC index/data flip-flop
-    port_byte_out(VGA_AC_INDEX, 0x10);
-    port_byte_out(VGA_AC_INDEX, 0x41); // Enable screen output
+    port_byte_out(VGA_AC_INDEX, 0x10); // Select the Mode Control Register (0x10)
+    port_byte_out(VGA_AC_INDEX, 0x01); // Enable screen output in text mode
     port_byte_in(VGA_CRTC_INDEX + 6); // Reset again for safety
 }
 
