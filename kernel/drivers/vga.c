@@ -3,6 +3,11 @@
 #include <kernel/vga.h>
 #include <kernel/io.h>
 #include <kernel/types.h>
+#include <kernel/shell.h>
+
+// screen dimensions as constants
+#define VGA_WIDTH 80
+#define VGA_HEIGHT 25
 
 // Define a static cursor position
 static int cursor_row = 0;
@@ -163,4 +168,28 @@ void print_bootscreen() {
         print_char_color(pgos_art[i], color);
         i++;
     }
+}
+
+// Helper function to redraw the entire current line
+static void vga_redraw_line() {
+    // Save current cursor position and line length
+    int saved_row = cursor_row;
+    int saved_col = cursor_col;
+
+    // Move cursor to the beginning of the line
+    cursor_col = 0;
+    update_cursor(cursor_row, cursor_col);
+
+    // Clear the rest of the line
+    for (int i = 0; i < 25; i++) {
+        print_char(' ');
+    }
+
+    // Move cursor back to the start of the line and print the buffer
+    cursor_row = saved_row;
+    cursor_col = 0;
+    print_string(current_line);
+
+    // Restore the cursor position
+    update_cursor(saved_row, saved_col);
 }

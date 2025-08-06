@@ -14,5 +14,6 @@ void print_hex(uint32_t n);
 void print_dec(uint32_t n);
 void print_char_color(char c, uint8_t color);
 void print_bootscreen();
+void vga_redraw_line();
 
 #endif
