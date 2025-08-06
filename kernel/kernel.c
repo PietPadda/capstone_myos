@@ -39,7 +39,7 @@ void idle_task() {
     }
 }
 
-// This wrapper function will be the entry point for our shell process.
+// This wrapper function will be the entry point for our shell process
 void shell_task() {
     qemu_debug_string("shell_task: entered.\n");
     shell_init();
