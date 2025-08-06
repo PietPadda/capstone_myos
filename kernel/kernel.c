@@ -56,6 +56,10 @@ void kmain() {
     idt_install();
     qemu_debug_string("idt_inst ");
 
+    // Set the new video mode BEFORE we do any printing.
+    vga_set_80x50_mode();
+    qemu_debug_string("vga_mode_set ");
+
     // Initialize the Physical Memory Manager.
     // We'll assume 16MB of RAM for now. (16 * 1024 * 1024 = 16777216)
     pmm_init(16777216);

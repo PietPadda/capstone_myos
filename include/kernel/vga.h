@@ -5,6 +5,7 @@
 
 #include <kernel/types.h> // to include uint32_t
 
+void vga_set_80x50_mode();
 void clear_screen();
 void update_cursor(int row, int col);
 void print_string(const char* str);
