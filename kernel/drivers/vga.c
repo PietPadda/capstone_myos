@@ -54,7 +54,7 @@ void vga_set_80x50_mode() {
         port_byte_out(VGA_CRTC_DATA, values[i]);
     }
 
-    // Step 4: Reprogram the Attribute Controller
+    // Reprogram the Attribute Controller
     // This final piece ensures all parts of the VGA card are in sync.
     port_byte_in(VGA_CRTC_INDEX + 6); // Reset the AC's internal flip-flop
     port_byte_out(VGA_AC_INDEX, 0x10); // Select the Mode Control Register
