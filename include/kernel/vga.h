@@ -3,7 +3,7 @@
 #ifndef VGA_H
 #define VGA_H
 
-#include <kernel/types.h> // to include uint32_t
+#include <kernel/types.h> // to include uint32_t.
 
 void vga_set_80x50_mode();
 void clear_screen();
