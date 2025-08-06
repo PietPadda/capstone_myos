@@ -23,6 +23,15 @@ void vga_set_80x50_mode() {
     // This sets the clock source for a 400-scanline mode
     port_byte_out(VGA_MISC_WRITE, 0x67);
 
+    // Reprogram the Sequencer
+    // This tells the sequencer to use a font with an 8-pixel height
+    port_byte_out(VGA_SC_INDEX, 0x01); // Clocking Mode Register
+    port_byte_out(VGA_SC_DATA, 0x01);  // Set the 8-dot clock
+    port_byte_out(VGA_SC_INDEX, 0x03); // Character Map Select Register
+    port_byte_out(VGA_SC_DATA, 0x00);  // Select the standard 8x8 font map
+    port_byte_out(VGA_SC_INDEX, 0x04); // Memory Mode Register
+    port_byte_out(VGA_SC_DATA, 0x06);  // Enable extended memory for text mode
+
     // We must unlock the CRTC registers before we can modify them.
     port_byte_out(VGA_CRTC_INDEX, 0x03);
     port_byte_out(VGA_CRTC_DATA, port_byte_in(VGA_CRTC_DATA) | 0x80);
