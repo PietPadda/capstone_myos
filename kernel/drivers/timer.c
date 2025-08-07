@@ -138,6 +138,6 @@ void nosound() {
 // A wrapper function to make a beep for a specific duration.
 void beep(uint32_t frequency, uint32_t duration_ms) {
     play_sound(frequency);
-    delay_ms(duration_ms); // Use our existing blocking delay
+    sleep(duration_ms); // Use the scheduler-aware sleep function.
     nosound();
 }
