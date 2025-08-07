@@ -57,9 +57,31 @@ void shell_handle_input(char c) {
             shell_redraw_line();
         }
     } else if (c == ARROW_UP) {
-        // We will implement this next!
+        // Navigate "up" or "back" in history
+        if (history_index > 0) {
+            history_index--;
+            int actual_index = history_index % HISTORY_SIZE;
+            strncpy(current_line, history_buffer[actual_index], MAX_CMD_LEN);
+            // Move cursor to the end of the recalled line
+            line_len = cursor_pos = strlen(current_line);
+            shell_redraw_line();
+        }
     } else if (c == ARROW_DOWN) {
-        // We will implement this next!
+        // Navigate "down" or "forward" in history
+        if (history_index < history_count) {
+            history_index++;
+            if (history_index == history_count) {
+                // We've reached the end, so clear the line for a new command
+                current_line[0] = '\0';
+            } else {
+                // Get the next command from the buffer
+                int actual_index = history_index % HISTORY_SIZE;
+                strncpy(current_line, history_buffer[actual_index], MAX_CMD_LEN);
+            }
+            // Move cursor to the end of the line
+            line_len = cursor_pos = strlen(current_line);
+            shell_redraw_line();
+        }
         // handle enter
     } else if (c == '\n') {
         print_char(c); // Echo the newline
@@ -162,6 +184,16 @@ void process_command() {
         print_string("\n");
         print_string(PROMPT);
         return;
+    }
+
+    // save the command logic
+    // Don't save empty commands. 'start' points to the beginning of the command text.
+    if (strlen(start) > 0) {
+        // Copy the command into our history. Use strncpy for safety.
+        strncpy(history_buffer[history_count % HISTORY_SIZE], start, MAX_CMD_LEN);
+        history_count++;
+        // Reset the history navigation index to point to the new, blank line.
+        history_index = history_count;
     }
 
     // Command Handling
