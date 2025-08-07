@@ -137,10 +137,21 @@ void restart_shell() {
 
 // This function processes the completed command. 
 void process_command() {
-    // Trim leading whitespace
+    // Trim leading whitespace from the raw command line
     char* start = current_line;
     while (*start == ' ') start++;
 
+    // Save the pristine command to history FIRST
+    // Don't save empty commands. 'start' points to the beginning of the command text.
+    if (strlen(start) > 0) {
+        // Copy the command into our history. Use strncpy for safety.
+        strncpy(history_buffer[history_count % HISTORY_SIZE], start, MAX_CMD_LEN);
+        history_count++;
+        // Reset the history navigation index to point to the new, blank line.
+        history_index = history_count;
+    }
+
+    // Now, proceed with destructive parsing
     // Parse the command line into argc and argv
     int argc = 0;
     char* argv[MAX_ARGS];
@@ -184,16 +195,6 @@ void process_command() {
         print_string("\n");
         print_string(PROMPT);
         return;
-    }
-
-    // save the command logic
-    // Don't save empty commands. 'start' points to the beginning of the command text.
-    if (strlen(start) > 0) {
-        // Copy the command into our history. Use strncpy for safety.
-        strncpy(history_buffer[history_count % HISTORY_SIZE], start, MAX_CMD_LEN);
-        history_count++;
-        // Reset the history navigation index to point to the new, blank line.
-        history_index = history_count;
     }
 
     // Command Handling
