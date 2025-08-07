@@ -56,6 +56,7 @@ void shell_handle_input(char c) {
                 current_line[i - 1] = current_line[i];
             }
             line_len--;
+            current_line[line_len] = '\0'; // Null-terminate the new string.
             cursor_pos--;
 
             // Redraw the line to show the change.
