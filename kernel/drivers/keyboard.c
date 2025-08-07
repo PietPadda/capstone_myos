@@ -70,15 +70,24 @@ static void keyboard_handler(registers_t *r) {
     }
 
     // If we're still here, it must be a normal character key.
-    if (scancode < 128) {
-        char character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
-        
-        if (character) {
-            // Instead of calling the shell, add the character to our buffer
-            if ((kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE != kbd_buffer_read_idx) {
-                kbd_buffer[kbd_buffer_write_idx] = character;
-                kbd_buffer_write_idx = (kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE;
-            }
+    char character = 0; // Initialize to 0 (no character)
+
+    if (scancode == 0x4B) {
+        character = ARROW_LEFT;
+    } else if (scancode == 0x4D) {
+        character = ARROW_RIGHT;
+    } else if (scancode == 0x48) {
+        character = ARROW_UP;
+    } else if (scancode == 0x50) {
+        character = ARROW_DOWN;
+    } else if (scancode < 128) {
+        character = shift_pressed ? kbd_us_shift[scancode] : kbd_us[scancode];
+    }
+    
+    if (character) { // Only buffer if we got a valid character/code
+        if ((kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE != kbd_buffer_read_idx) {
+            kbd_buffer[kbd_buffer_write_idx] = character;
+            kbd_buffer_write_idx = (kbd_buffer_write_idx + 1) % KBD_BUFFER_SIZE;
         }
     }
 }

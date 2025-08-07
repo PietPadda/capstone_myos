@@ -44,11 +44,28 @@ void shell_init() {
 
 // Handles a single character of input.
 void shell_handle_input(char c) {
-    if (c == '\n') {
+    if (c == ARROW_LEFT) {
+        // only go left if not at the leftest point
+        if (cursor_pos > 0) {
+            cursor_pos--;
+            shell_redraw_line();
+        }
+        // only go right if not at the max line length
+    } else if (c == ARROW_RIGHT) {
+        if (cursor_pos < line_len) {
+            cursor_pos++;
+            shell_redraw_line();
+        }
+    } else if (c == ARROW_UP) {
+        // We will implement this next!
+    } else if (c == ARROW_DOWN) {
+        // We will implement this next!
+        // handle enter
+    } else if (c == '\n') {
         print_char(c); // Echo the newline
         current_line[line_len] = '\0'; // Null-terminate the command.
         process_command();
-
+        // handle backspace
     } else if (c == '\b') {
         if (cursor_pos > 0) {
             // Shift characters to the left to delete.
@@ -62,7 +79,8 @@ void shell_handle_input(char c) {
             // Redraw the line to show the change.
             shell_redraw_line();
         }
-    } else if (c >= ' ' && c <= '~') { // Handle printable characters
+        // Handle printable characters
+    } else if (c >= ' ' && c <= '~') { 
         if (line_len < MAX_CMD_LEN - 1) {
             // Make space for the new character if not at end of line.
             for (int i = line_len; i > cursor_pos; i--) {
