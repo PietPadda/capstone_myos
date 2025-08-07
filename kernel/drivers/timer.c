@@ -93,3 +93,42 @@ void sleep(uint32_t milliseconds) {
     // until the timer handler has woken it up.
     __asm__ __volatile__("hlt");
 }
+
+// PC SPEAKER CODE
+
+// Plays a sound of a given frequency.
+void play_sound(uint32_t frequency) {
+    // A frequency of 0 means stop the sound.
+    if (frequency == 0) {
+        nosound();
+        return;
+    }
+
+ 	uint32_t divisor = 1193180 / frequency;
+
+ 	// Set the PIT to square wave mode (mode 3) on channel 2.
+ 	port_byte_out(0x43, 0xB6);
+ 	
+    // Send the frequency divisor, low byte then high byte.
+ 	port_byte_out(0x42, (uint8_t)(divisor & 0xFF));
+ 	port_byte_out(0x42, (uint8_t)((divisor >> 8) & 0xFF));
+ 
+ 	// And finally, enable the speaker by setting bit 1 of port 0x61.
+ 	uint8_t tmp = port_byte_in(0x61);
+  	if (tmp != (tmp | 3)) {
+ 		port_byte_out(0x61, tmp | 3);
+ 	}
+}
+ 
+// Turns the speaker off.
+void nosound() {
+ 	uint8_t tmp = port_byte_in(0x61) & 0xFC;
+ 	port_byte_out(0x61, tmp);
+}
+ 
+// A wrapper function to make a beep for a specific duration.
+void beep(uint32_t frequency, uint32_t duration_ms) {
+    play_sound(frequency);
+    delay_ms(duration_ms); // Use our existing blocking delay
+    nosound();
+}
