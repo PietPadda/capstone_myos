@@ -450,21 +450,28 @@ void shell_redraw_line() {
     // Get the current physical cursor row from the VGA driver.
     int current_row = vga_get_cursor_row();
 
-    // Move the cursor to the beginning of the prompt line.
-    vga_set_cursor_pos(current_row, 0);
+    // Define a pointer directly to the VGA text-mode buffer.
+    volatile unsigned short* video_memory = (unsigned short*)0xB8000;
+    // Define our standard text color (white on black).
+    uint8_t color = 0x0F;
 
-    // Erase the line by printing a full row of spaces.
-    for (int i = 0; i < 80; i++) {
-        print_char(' ');
+    // Erase the entire line by writing space characters directly to the buffer.
+    //    This is a low-level operation with no side effects.
+    for (int col = 0; col < 80; col++) {
+        video_memory[(current_row * 80) + col] = ' ' | (color << 8);
+    }
+
+    // Write the prompt string directly to the buffer.
+    int prompt_len = strlen(PROMPT);
+    for (int i = 0; i < prompt_len; i++) {
+        video_memory[(current_row * 80) + i] = PROMPT[i] | (color << 8);
     }
     
-    // Move back to the start of the line and print the prompt.
-    vga_set_cursor_pos(current_row, 0);
-    print_string(PROMPT);
+    // Write the current command buffer directly, right after the prompt.
+    for (int i = 0; i < line_len; i++) {
+        video_memory[(current_row * 80) + prompt_len + i] = current_line[i] | (color << 8);
+    }
 
-    // Print the command buffer.
-    print_string(current_line);
-
-    // Restore the cursor to its correct logical position.
-    vga_set_cursor_pos(current_row, strlen(PROMPT) + cursor_pos);
+    // Finally, update the hardware cursor's position just once.
+    vga_set_cursor_pos(current_row, prompt_len + cursor_pos);
 }
