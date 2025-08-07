@@ -3,7 +3,7 @@
 # --- Variables ---
 BUILD_DIR := build
 QEMU_CMD := qemu-system-i386
-QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio
+QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio -audiodev alsa,id=speaker -machine pcspk-audiodev=speaker
 
 # --- Source Files ---
 # Find all .c and .asm files within the kernel directory and its subdirectories

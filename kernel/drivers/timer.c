@@ -120,10 +120,19 @@ void play_sound(uint32_t frequency) {
  	}
 }
  
-// Turns the speaker off.
+// Turns the speaker off and resets the PIT channel to a known state.
 void nosound() {
- 	uint8_t tmp = port_byte_in(0x61) & 0xFC;
+ 	// Disconnect the speaker from the PIT output by clearing the relevant bits.
+    uint8_t tmp = port_byte_in(0x61) & 0xFC;
  	port_byte_out(0x61, tmp);
+
+    // Per best practices, reset the PIT channel to a known state.
+    // We'll set it to a very high frequency (a small divisor) to ensure it's
+    // quiet and in a predictable state for any other potential driver.
+    uint16_t divisor = 1;
+ 	port_byte_out(0x43, 0xB6); // Select channel 2, square wave mode
+ 	port_byte_out(0x42, (uint8_t)(divisor & 0xFF));
+ 	port_byte_out(0x42, (uint8_t)((divisor >> 8) & 0xFF));
 }
  
 // A wrapper function to make a beep for a specific duration.
