@@ -3,5 +3,6 @@ backup/
 all_project_files.txt
 gdb_session.log
 commits.csv
+Run MyOS.bat
 .bin
 .o

@@ -3,7 +3,22 @@
 # --- Variables ---
 BUILD_DIR := build
 QEMU_CMD := qemu-system-i386
-QEMU_OPTS := -hda $(BUILD_DIR)/os_image.bin -debugcon stdio -audiodev alsa,id=speaker -machine pcspk-audiodev=speaker
+
+# Auto-detect OS for correct audio flags
+# Get the OS name from the 'uname' command
+UNAME_S := $(shell uname -s)
+
+# Default to Windows audio settings, using the 'dsound' driver we found.
+AUDIO_FLAGS := -audiodev dsound,id=speaker -machine pcspk-audiodev=speaker
+
+# If the OS name contains "Linux" (like in WSL), override with ALSA settings
+ifneq (,$(findstring Linux,$(UNAME_S)))
+    AUDIO_FLAGS := -audiodev alsa,id=speaker -machine pcspk-audiodev=speaker
+endif
+# End of auto-detect
+
+# Update QEMU_OPTS to use our new variable and the explicit -drive format
+QEMU_OPTS := -drive format=raw,file=$(BUILD_DIR)/os_image.bin -debugcon stdio $(AUDIO_FLAGS)
 
 # --- Source Files ---
 # Find all .c and .asm files within the kernel directory and its subdirectories
@@ -120,9 +135,15 @@ $(BUILD_DIR)/userspace/%.o: userspace/%.asm
 run: all
 	$(QEMU_CMD) $(QEMU_OPTS)
 
+	# This new target is ONLY for running on Windows AFTER you have already
+# compiled the code inside WSL. It does NOT have 'all' as a prerequisite.
+run-windows:
+	$(QEMU_CMD) $(QEMU_OPTS)
+
 debug: all
 	$(QEMU_CMD) -S -gdb tcp::1234 $(QEMU_OPTS)
 
+# Add a hyphen to the clean command to ignore errors
 clean:
 	@echo "Cleaning build directory..."
-	rm -rf $(BUILD_DIR)
+	-rm -rf $(BUILD_DIR)
