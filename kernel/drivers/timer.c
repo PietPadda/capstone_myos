@@ -113,11 +113,10 @@ void play_sound(uint32_t frequency) {
  	port_byte_out(0x42, (uint8_t)(divisor & 0xFF));
  	port_byte_out(0x42, (uint8_t)((divisor >> 8) & 0xFF));
  
- 	// And finally, enable the speaker by setting bit 1 of port 0x61.
+    // Unconditionally enable the speaker by setting bits 0 and 1 of port 0x61.
+    // We still read the port first to avoid changing the other bits.
  	uint8_t tmp = port_byte_in(0x61);
-  	if (tmp != (tmp | 3)) {
- 		port_byte_out(0x61, tmp | 3);
- 	}
+    port_byte_out(0x61, tmp | 3);
 }
  
 // Turns the speaker off and resets the PIT channel to a known state.

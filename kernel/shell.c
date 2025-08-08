@@ -428,8 +428,8 @@ void process_command() {
 
     // beep command
     } else if (strcmp(argv[0], "beep") == 0) {
-        print_string("Beeping!");
-        beep(440, 500); // Beep at 440Hz (Note A4) for 500ms
+        //print_string("Beeping!");
+        beep(440, 100); // Beep at X for Yms
 
     // start tone command
     } else if (strcmp(argv[0], "starttone") == 0) {
