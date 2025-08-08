@@ -11,9 +11,9 @@ UNAME_S := $(shell uname -s)
 # Default to Windows audio settings, using the 'dsound' driver we found.
 AUDIO_FLAGS := -audiodev dsound,id=speaker -machine pcspk-audiodev=speaker
 
-# If the OS name contains "Linux" (like in WSL), override with ALSA settings
+# If the OS name contains "Linux" (like in WSL), override with SDL settings
 ifneq (,$(findstring Linux,$(UNAME_S)))
-    AUDIO_FLAGS := -audiodev alsa,id=speaker -machine pcspk-audiodev=speaker
+    AUDIO_FLAGS := -audiodev sdl,id=speaker -machine pcspk-audiodev=speaker
 endif
 # End of auto-detect
 
@@ -132,10 +132,11 @@ $(BUILD_DIR)/userspace/%.o: userspace/%.asm
 	$(ASM) $(ASM_FLAGS) $< -o $@
 
 # --- Utility Targets ---
+# This is the standard target for building and running inside WSL
 run: all
 	$(QEMU_CMD) $(QEMU_OPTS)
 
-	# This new target is ONLY for running on Windows AFTER you have already
+# This new target is ONLY for running on Windows AFTER you have already
 # compiled the code inside WSL. It does NOT have 'all' as a prerequisite.
 run-windows:
 	$(QEMU_CMD) $(QEMU_OPTS)
