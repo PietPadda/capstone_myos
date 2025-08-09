@@ -120,9 +120,9 @@ void sleep(uint32_t milliseconds) {
     qemu_debug_hex(current_task->wakeup_time);
     qemu_debug_string(".\n");
 
-    // Yield the CPU by halting. The scheduler will not run this task again
-    // until the timer handler has woken it up.
-    __asm__ __volatile__("hlt");
+    // Atomically enable interrupts and then halt.
+    // This allows the timer interrupt to wake the CPU from its halted state.
+    __asm__ __volatile__("sti\n\thlt");
 }
 
 // PC SPEAKER CODE
