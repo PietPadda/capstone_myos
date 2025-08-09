@@ -27,13 +27,32 @@ static void timer_handler(registers_t *r) {
     tick++;
 
     // Check for any tasks that need to be woken up.
-    // This is the correct place for this logic.
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table[i].state == TASK_STATE_SLEEPING && tick >= process_table[i].wakeup_time) {
-            process_table[i].state = TASK_STATE_RUNNING;
+            // DEBUG: Print status of sleeping tasks once per second
+            if (tick % 100 == 0) {
+                qemu_debug_string("TIMER: Checking sleeping PID ");
+                qemu_debug_dec(i);
+                qemu_debug_string(". Tick=");
+                qemu_debug_dec(tick);
+                qemu_debug_string(", WakeupAt=");
+                qemu_debug_dec(process_table[i].wakeup_time);
+                qemu_debug_string("\n");
+            }
+
+            // The actual wake-up check
+            if (tick >= process_table[i].wakeup_time) {
+                qemu_debug_string("TIMER: Waking up PID ");
+                qemu_debug_dec(i);
+                qemu_debug_string(" at tick ");
+                qemu_debug_dec(tick);
+                qemu_debug_string("!\n");
+
+                process_table[i].state = TASK_STATE_RUNNING;
+            }
         }
     }
-    
+
     // Only call the scheduler if multitasking has officially started!
     if (multitasking_enabled) {
         // The C handler's only job is to call the assembly switcher.
