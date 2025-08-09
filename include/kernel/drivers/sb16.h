@@ -18,4 +18,7 @@
 // Initializes the Sound Blaster 16 driver.
 void sb16_init();
 
+// Plays a square wave of a given frequency and duration.
+void sb16_play_sound(uint16_t frequency, uint16_t duration_ms);
+
 #endif // SB16_H

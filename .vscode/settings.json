@@ -18,6 +18,7 @@
         "timer.h": "c",
         "process.h": "c",
         "tss.h": "c",
-        "pmm.h": "c"
+        "pmm.h": "c",
+        "sb16.h": "c"
     }
 }

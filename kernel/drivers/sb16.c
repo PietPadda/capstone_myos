@@ -5,6 +5,7 @@
 #include <kernel/vga.h> // For printing status messages
 #include <kernel/pmm.h>           // For pmm_alloc_frame()
 #include <kernel/drivers/dma.h>   // For our new DMA functions
+#include <kernel/timer.h> // For sleep()
 
 static uint8_t* dma_buffer = NULL; // A place to store our DMA buffer address
 
@@ -60,8 +61,48 @@ void sb16_init() {
         // 0x48 = Single Cycle, Auto-initialize, Write transfer (to device)
         dma_prepare_transfer(1, 0x48, (uint32_t)dma_buffer, PMM_FRAME_SIZE);
         print_string("  DMA channel 1 programmed for transfer.\n");
-        
+
     } else {
         print_string("  DSP reset failed. Card not found or not responding.\n");
     }
+}
+
+// Plays a square wave of a given frequency and duration.
+void sb16_play_sound(uint16_t frequency, uint16_t duration_ms) {
+    // A sample rate of 22050 Hz is well-supported and a good compromise.
+    const uint16_t sample_rate = 22050;
+
+    // Generate the square wave data and fill the DMA buffer
+    uint32_t period = sample_rate / frequency;
+    uint32_t half_period = period / 2;
+    for (uint32_t i = 0; i < PMM_FRAME_SIZE; i++) {
+        // The SB16 uses unsigned 8-bit audio data.
+        // 0xFF is max amplitude, 0x00 is min amplitude.
+        if ((i % period) < half_period) {
+            dma_buffer[i] = 0xFF; // High
+        } else {
+            dma_buffer[i] = 0x00; // Low
+        }
+    }
+
+    // Turn the speaker on (required before playback)
+    sb16_dsp_write(0xD1);
+
+    // Set the sample rate
+    sb16_dsp_write(0x41); // Command to set output sample rate
+    sb16_dsp_write((uint8_t)((sample_rate >> 8) & 0xFF)); // High byte
+    sb16_dsp_write((uint8_t)(sample_rate & 0xFF));        // Low byte
+
+    // Command the DSP to start the DMA transfer
+    uint16_t length = PMM_FRAME_SIZE - 1;
+    sb16_dsp_write(0xC6); // 8-bit auto-initialized DMA output
+    sb16_dsp_write(0x00); // Transfer mode (mono)
+    sb16_dsp_write((uint8_t)(length & 0xFF));        // Low byte of length
+    sb16_dsp_write((uint8_t)((length >> 8) & 0xFF)); // High byte of length
+
+    // Wait for the sound to finish playing
+    sleep(duration_ms);
+
+    // Turn the speaker off
+    sb16_dsp_write(0xD3);
 }
