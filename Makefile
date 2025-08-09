@@ -11,9 +11,13 @@ UNAME_S := $(shell uname -s)
 # Default to Windows audio settings, using the 'dsound' driver we found.
 AUDIO_FLAGS := -audiodev dsound,id=speaker -machine pcspk-audiodev=speaker
 
-# If the OS name contains "Linux" (like in WSL), override with SDL settings
+# If the OS name contains "Linux" (like in WSL), override with SB16 settings
 ifneq (,$(findstring Linux,$(UNAME_S)))
-    AUDIO_FLAGS := -audiodev sdl,id=speaker -machine pcspk-audiodev=speaker
+    # We will now emulate a Sound Blaster 16 card.
+	# First, we create a 'wav' audio backend named 'sound_backend'.
+	# Then, we create an 'sb16' device and connect it to that backend.
+	# This is a more robust way to handle audio than the PC speaker.
+	AUDIO_FLAGS := -audiodev wav,id=sound_backend,path=qemu.wav -device sb16,audiodev=sound_backend
 endif
 # End of auto-detect
 
