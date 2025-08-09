@@ -15,5 +15,6 @@ void delay_ms(uint32_t ms);
 void play_sound(uint32_t frequency);
 void nosound();
 void beep(uint32_t frequency, uint32_t duration_ms);
+void beep_blocking(uint32_t frequency, uint32_t duration_ms);
 
 #endif

@@ -140,3 +140,22 @@ void beep(uint32_t frequency, uint32_t duration_ms) {
     sleep(duration_ms); // Use the scheduler-aware sleep function.
     nosound();
 }
+
+// A new, blocking beep function for debugging purposes.
+// This function does NOT use the scheduler and will block all other tasks.
+void beep_blocking(uint32_t frequency, uint32_t duration_ms) {
+    play_sound(frequency);
+
+    // Use a busy-wait loop instead of sleeping
+    uint32_t start = timer_get_ticks();
+    uint32_t ticks_to_wait = duration_ms / 10;
+    if (ticks_to_wait == 0) {
+        ticks_to_wait = 1;
+    }
+    
+    while (timer_get_ticks() < start + ticks_to_wait) {
+        // Do nothing, just spin.
+    }
+
+    nosound();
+}

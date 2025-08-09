@@ -428,7 +428,7 @@ void process_command() {
 
     // beep command
     } else if (strcmp(argv[0], "beep") == 0) {
-        //print_string("Beeping!");
+        print_string("Beeping!");
         beep(440, 100); // Beep at X for Yms
 
     // start tone command

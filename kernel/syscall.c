@@ -69,13 +69,25 @@ static void sys_exit(registers_t *r) {
     __asm__ __volatile__("int $0x20"); // Fire timer IRQ to invoke scheduler
 }
 
+// Syscall 4: Play a sound with a given frequency.
+static void sys_play_sound(registers_t *r) {
+    uint32_t frequency = r->ebx;
+    play_sound(frequency);
+}
+
+// Syscall 5: Put the current task to sleep for a duration.
+static void sys_sleep(registers_t *r) {
+    uint32_t ms = r->ebx;
+    sleep(ms);
+}
+
 void syscall_install() {
-    // Install the test print syscall at index 1
+    // Install the syscalls at unique indexes
     syscall_table[1] = &sys_test_print;
-    // Install the new getchar syscall at index 2
     syscall_table[2] = &sys_getchar;
-    // Install the new exit syscall at index 3
     syscall_table[3] = &sys_exit;
+    syscall_table[4] = &sys_play_sound;
+    syscall_table[5] = &sys_sleep;
 }
 
 // The main C-level handler for all system calls

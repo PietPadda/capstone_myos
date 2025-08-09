@@ -1,5 +1,7 @@
 // myos/userspace/libc/include/syscall.h
 
+#include <kernel/types.h>
+
 #ifndef SYSCALL_H
 #define SYSCALL_H
 
@@ -27,6 +29,20 @@ static inline char syscall_getchar() {
 static inline void syscall_exit() {
     // EAX=3 for our exit syscall
     __asm__ __volatile__ ("int $0x80" : : "a"(3));
+}
+
+// Wrapper for the "play_sound" syscall.
+static inline void syscall_play_sound(uint32_t frequency) {
+    // EAX=4 for our play_sound syscall
+    // EBX=frequency
+    __asm__ __volatile__ ("int $0x80" : : "a"(4), "b"(frequency));
+}
+
+// Wrapper for the "sleep" syscall.
+static inline void syscall_sleep(uint32_t ms) {
+    // EAX=5 for our sleep syscall
+    // EBX=milliseconds
+    __asm__ __volatile__ ("int $0x80" : : "a"(5), "b"(ms));
 }
 
 #endif
