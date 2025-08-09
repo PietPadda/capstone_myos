@@ -17,6 +17,7 @@
         "exceptions.h": "c",
         "timer.h": "c",
         "process.h": "c",
-        "tss.h": "c"
+        "tss.h": "c",
+        "pmm.h": "c"
     }
 }

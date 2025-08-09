@@ -16,6 +16,7 @@
 #include <kernel/cpu/process.h> // process_init()
 #include <kernel/pmm.h> // physical memory manager
 #include <kernel/paging.h> // paging creator
+#include <kernel/drivers/sb16.h> // sound card
 
 // Make the global flag visible to kmain
 extern volatile int multitasking_enabled;
@@ -126,6 +127,10 @@ void kmain() {
     // Install the timer driver.
     timer_install(); // Install our new timer driver
     qemu_debug_string("pit_inst ");
+
+    // Initialize the Sound Blaster 16 driver
+    sb16_init();
+    qemu_debug_string("sb16_inst ");
 
     // clear the bios text
     delay_ms(800); // Use our blocking delay before the scheduler is active.
