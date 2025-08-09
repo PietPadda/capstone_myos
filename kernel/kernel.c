@@ -17,6 +17,7 @@
 #include <kernel/pmm.h> // physical memory manager
 #include <kernel/paging.h> // paging creator
 #include <kernel/drivers/sb16.h> // sound card
+#include <kernel/drivers/pci.h> // Peripheral Component Interconnect bus driver
 
 // Make the global flag visible to kmain
 extern volatile int multitasking_enabled;
@@ -128,12 +129,12 @@ void kmain() {
     timer_install(); // Install our new timer driver
     qemu_debug_string("pit_inst ");
 
-    // Initialize the Sound Blaster 16 driver
-    sb16_init();
-    qemu_debug_string("sb16_inst ");
+    // Scan the PCI bus to find our devices
+    pci_scan();
+    qemu_debug_string("pci_bus_scan ");
 
     // clear the bios text
-    delay_ms(800); // Use our blocking delay before the scheduler is active.
+    delay_ms(80000); // Use our blocking delay before the scheduler is active.
     clear_screen();
     qemu_debug_string("clear_bios_scr ");
 
