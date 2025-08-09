@@ -471,7 +471,12 @@ cpu_state_t* schedule(registers_t *r) {
     // not a zombie, save state
     // qemu_debug_string("schedule: State saved. Finding next task...\n");
 
-    // Wake up sleeping tasks
+
+    // The wake-up logic has been moved to timer_handler, where it belongs.
+    // We no longer check for sleeping tasks here.
+
+    /*
+    // Wake up sleeping tasks 
     uint32_t now = timer_get_ticks();
     for (int i = 0; i < MAX_PROCESSES; i++) {
         if (process_table[i].state == TASK_STATE_SLEEPING && now >= process_table[i].wakeup_time) {
@@ -480,7 +485,7 @@ cpu_state_t* schedule(registers_t *r) {
             // qemu_debug_hex(i);
             // qemu_debug_string(".\n");
         }
-    }
+    }*/
 
     // Find the next runnable task
     int next_pid = current_task->pid;
