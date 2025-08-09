@@ -18,6 +18,9 @@ extern task_struct_t process_table[MAX_PROCESSES];
 
 static volatile uint32_t tick = 0;
 
+// We will keep track of the currently playing frequency.
+static uint32_t current_frequency = 0;
+
 // This new assembly function will perform the actual context switch.
 // It is defined in the new switch.asm file.
 extern void task_switch(registers_t* r);
@@ -129,6 +132,11 @@ void sleep(uint32_t milliseconds) {
 
 // Plays a sound of a given frequency.
 void play_sound(uint32_t frequency) {
+    // If the requested frequency is already playing, do nothing.
+    if (frequency == current_frequency) {
+        return;
+    }
+
     // A frequency of 0 means stop the sound.
     if (frequency == 0) {
         nosound();
@@ -148,6 +156,9 @@ void play_sound(uint32_t frequency) {
     // We still read the port first to avoid changing the other bits.
  	uint8_t tmp = port_byte_in(0x61);
     port_byte_out(0x61, tmp | 3);
+
+    // Update the state.
+    current_frequency = frequency;
 }
  
 // Turns the speaker off and resets the PIT channel to a known state.
@@ -164,6 +175,9 @@ void nosound() {
  	port_byte_out(0x43, 0xB6); // Select channel 2, square wave mode
  	port_byte_out(0x42, (uint8_t)(divisor & 0xFF));
  	port_byte_out(0x42, (uint8_t)((divisor >> 8) & 0xFF));
+
+    // Set current frequency to 0Hz
+    current_frequency = 0;
 }
  
 // A wrapper function to make a beep for a specific duration.
