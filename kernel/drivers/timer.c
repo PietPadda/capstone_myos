@@ -157,9 +157,10 @@ void nosound() {
  	port_byte_out(0x61, tmp);
 
     // Per best practices, reset the PIT channel to a known state.
-    // We'll set it to a very high frequency (a small divisor) to ensure it's
-    // quiet and in a predictable state for any other potential driver.
-    uint16_t divisor = 1;
+    // Use a divisor of 0, which the PIT treats as 65536.
+    // This sets the PIT to its lowest, most stable frequency (~18.2Hz),
+    // preventing the high-frequency oscillation that was causing instability.
+    uint16_t divisor = 0;
  	port_byte_out(0x43, 0xB6); // Select channel 2, square wave mode
  	port_byte_out(0x42, (uint8_t)(divisor & 0xFF));
  	port_byte_out(0x42, (uint8_t)((divisor >> 8) & 0xFF));
