@@ -103,6 +103,9 @@ void sb16_play_sound(uint16_t frequency, uint16_t duration_ms) {
     // Wait for the sound to finish playing
     sleep(duration_ms);
 
+    // Pause the DMA transfer before doing anything else.
+    sb16_dsp_write(0xD0); // Pause 8-bit DMA mode playback
+
     // Turn the speaker off
     sb16_dsp_write(0xD3);
 }
