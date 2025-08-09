@@ -8,6 +8,14 @@
 // The base I/O port for the SB16 as emulated by QEMU
 #define SB16_BASE_PORT 0x220
 
+// Mixer Port Offsets from the base
+#define SB16_MIXER_ADDR     (SB16_BASE_PORT + 0x4) // Write
+#define SB16_MIXER_DATA     (SB16_BASE_PORT + 0x5) // Read/Write
+
+// Mixer Registers
+#define SB16_MIXER_MASTER_VOL 0x22
+#define SB16_MIXER_VOICE_VOL  0x04
+
 // DSP Port Offsets from the base
 #define SB16_DSP_RESET      (SB16_BASE_PORT + 0x6) // Write
 #define SB16_DSP_READ       (SB16_BASE_PORT + 0xA) // Read

@@ -45,11 +45,22 @@ static int sb16_reset_dsp() {
     return 0; // Failure
 }
 
+// Helper function to write a value to a mixer register
+static void sb16_mixer_write(uint8_t reg, uint8_t value) {
+    port_byte_out(SB16_MIXER_ADDR, reg);
+    port_byte_out(SB16_MIXER_DATA, value);
+}
+
 // Main initialization function for the driver
 void sb16_init() {
     print_string("Initializing Sound Blaster 16...\n");
     if (sb16_reset_dsp()) {
         print_string("  DSP reset successful!\n");
+
+        // Set mixer volumes to max
+        sb16_mixer_write(SB16_MIXER_MASTER_VOL, 0xFF); // Master volume
+        sb16_mixer_write(SB16_MIXER_VOICE_VOL, 0xFF);  // PCM Voice volume
+        print_string("  Mixer volume set to maximum.\n");
 
         // Allocate a 4KB page-aligned buffer from low memory for DMA
         dma_buffer = (uint8_t*)pmm_alloc_frame();
