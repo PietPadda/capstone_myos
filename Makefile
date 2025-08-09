@@ -9,12 +9,13 @@ QEMU_CMD := qemu-system-i386
 UNAME_S := $(shell uname -s)
 
 # Default to Windows audio settings, using the 'dsound' driver
-# We create a 'dsound' backend and connect our sb16 device to it.
-AUDIO_FLAGS := -audiodev dsound,id=sound_backend -device sb16,audiodev=sound_backend
+# NOTE: This connects the PC speaker to the dsound backend.
+AUDIO_FLAGS := -audiodev dsound,id=speaker -machine pcspk-audiodev=speaker
 
-# If the OS name contains "Linux" (like in WSL), override with SDL settings
+# If in Linux/WSL, use the PulseAudio backend 
+# and explicitly provide the server path for WSLg
 ifneq (,$(findstring Linux,$(UNAME_S)))
-    AUDIO_FLAGS := -audiodev sdl,id=sound_backend -device sb16,audiodev=sound_backend
+    AUDIO_FLAGS := -audiodev pa,id=speaker,server=/mnt/wslg/PulseServer -machine pcspk-audiodev=speaker
 endif
 # End of auto-detect
 
