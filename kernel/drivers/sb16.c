@@ -3,6 +3,10 @@
 #include <kernel/drivers/sb16.h>
 #include <kernel/io.h>
 #include <kernel/vga.h> // For printing status messages
+#include <kernel/pmm.h>           // For pmm_alloc_frame()
+#include <kernel/drivers/dma.h>   // For our new DMA functions
+
+static uint8_t* dma_buffer = NULL; // A place to store our DMA buffer address
 
 // Helper function to write a command/data to the DSP
 static void sb16_dsp_write(uint8_t value) {
@@ -45,6 +49,18 @@ void sb16_init() {
     print_string("Initializing Sound Blaster 16...\n");
     if (sb16_reset_dsp()) {
         print_string("  DSP reset successful!\n");
+
+        // Allocate a 4KB page-aligned buffer from low memory for DMA
+        dma_buffer = (uint8_t*)pmm_alloc_frame();
+        print_string("  DMA buffer allocated at physical address: ");
+        print_hex((uint32_t)dma_buffer);
+        print_string("\n");
+
+        // Prepare DMA Channel 1 for an 8-bit, single-cycle transfer
+        // 0x48 = Single Cycle, Auto-initialize, Write transfer (to device)
+        dma_prepare_transfer(1, 0x48, (uint32_t)dma_buffer, PMM_FRAME_SIZE);
+        print_string("  DMA channel 1 programmed for transfer.\n");
+        
     } else {
         print_string("  DSP reset failed. Card not found or not responding.\n");
     }
