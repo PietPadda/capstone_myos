@@ -134,7 +134,7 @@ void kmain() {
     qemu_debug_string("pci_bus_scan ");
 
     // clear the bios text
-    delay_ms(80000); // Use our blocking delay before the scheduler is active.
+    delay_ms(8000); // Use our blocking delay before the scheduler is active.
     clear_screen();
     qemu_debug_string("clear_bios_scr ");
 
