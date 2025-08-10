@@ -4,6 +4,11 @@
 #include <kernel/io.h>
 #include <kernel/vga.h>
 #include <kernel/drivers/virtio.h>
+#include <kernel/paging.h>      // Needed for paging_map_page
+#include <kernel/debug.h>       // For qemu_debug
+
+// The virtual address where we will map the virtio registers
+#define VIRTIO_SND_VIRT_ADDR 0xE0000000
 
 // We'll store the location of our found virtio device here
 static uint8_t virtio_sound_bus = 0;
@@ -38,58 +43,59 @@ static void pci_config_write_word(uint8_t bus, uint8_t slot, uint8_t func, uint8
     __asm__ __volatile__ ("outl %0, %1" : : "a"(value), "Nd"(PCI_CONFIG_DATA));
 }
 
+// Helper to read a single byte from PCI config space
+static uint8_t pci_config_read_byte(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
+    uint32_t word = pci_config_read_word(bus, slot, func, offset & 0xFC);
+    return (uint8_t)((word >> ((offset & 3) * 8)) & 0xFF);
+}
+
+// Helper to find a specific vendor capability
+static bool pci_find_capability(uint8_t bus, uint8_t slot, uint8_t func, uint8_t cap_id, virtio_pci_cap_t* cap_out) {
+    uint8_t cap_ptr = pci_config_read_byte(bus, slot, func, 0x34);
+    while (cap_ptr != 0) {
+        uint8_t current_cap_id = pci_config_read_byte(bus, slot, func, cap_ptr);
+        if (current_cap_id == 0x09) { // Vendor-specific capability ID
+            // Read the full capability structure to check the virtio type
+            cap_out->type = pci_config_read_byte(bus, slot, func, cap_ptr + 3);
+            if (cap_out->type == cap_id) {
+                // Found it! Read the rest of the struct.
+                cap_out->bar = pci_config_read_byte(bus, slot, func, cap_ptr + 4);
+                cap_out->offset = pci_config_read_word(bus, slot, func, cap_ptr + 8);
+                cap_out->length = pci_config_read_word(bus, slot, func, cap_ptr + 12);
+                return true;
+            }
+        }
+        cap_ptr = pci_config_read_byte(bus, slot, func, cap_ptr + 1); // Get next pointer
+    }
+    return false;
+}
+
 // Scans the PCI bus for our virtio-sound device.
 void pci_scan() {
     print_string("Scanning PCI bus...\n");
-
-    // Iterate through all possible buses, devices, and functions.
     for (int bus = 0; bus < 256; bus++) {
         for (int slot = 0; slot < 32; slot++) {
-            // We only need to check func=0 for the virtio-sound device
-            int func = 0;
-
             uint32_t first_dword = pci_config_read_word(bus, slot, 0, 0);
-            uint16_t vendor_id = first_dword & 0xFFFF;
-            uint16_t device_id = first_dword >> 16;
-
-            // Check if we found our virtio-sound device.
-            if (vendor_id == VIRTIO_VENDOR_ID && device_id == VIRTIO_DEV_ID_SOUND) {
+            if ((first_dword & 0xFFFF) == VIRTIO_VENDOR_ID && (first_dword >> 16) == VIRTIO_DEV_ID_SOUND) {
                 print_string("  Found virtio-sound device!\n");
-                print_string("    Location: bus="); print_dec(bus);
-                print_string(", slot="); print_dec(slot);
-                print_string(", func="); print_dec(func);
-                print_string("\n");
+                
+                virtio_pci_cap_t cap;
+                if (pci_find_capability(bus, slot, 0, VIRTIO_PCI_CAP_COMMON_CFG, &cap)) {
+                    print_string("    Found Common Config capability.\n");
+                    // Read the base address from the correct BAR
+                    uint32_t bar_val = pci_config_read_word(bus, slot, 0, 0x10 + (cap.bar * 4));
+                    uint32_t bar_base = bar_val & ~0xF;
+                    uint32_t phys_addr = bar_base + cap.offset;
 
-                // Enable Bus Mastering and Memory Space
-                // Read the command register (offset 0x04)
-                uint32_t command_reg = pci_config_read_word(bus, slot, func, 0x04);
-                // Set the Bus Master Enable (bit 2) and Memory Space Enable (bit 1) bits
-                command_reg |= (1 << 2) | (1 << 1);
-                // Write the new value back to the command register to enable the device
-                pci_config_write_word(bus, slot, func, 0x04, command_reg);
-                print_string("    Device enabled (Bus Master, Memory Space).\n");
+                    print_string("    Mapping registers at physical 0x"); print_hex(phys_addr); print_string("\n");
+                    paging_map_page(kernel_directory, VIRTIO_SND_VIRT_ADDR, phys_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
 
-                // Find the first valid MMIO BAR and initialize the driver
-                for (int bar_num = 0; bar_num < 6; bar_num++) {
-                    uint8_t bar_offset = 0x10 + (bar_num * 4);
-                    uint32_t bar_value = pci_config_read_word(bus, slot, func, bar_offset);
-
-                    if (bar_value == 0) continue; // Skip unused BARs
-
-                    // We are looking for a Memory-Mapped I/O region (last bit is 0)
-                    if ((bar_value & 0x1) == 0) {
-                        uint32_t mem_base = bar_value & ~0xF;
-                        print_string("    MMIO Base Address: 0x"); print_hex(mem_base);
-                        print_string("\n");
-
-                        // We found the MMIO base, now initialize the virtio driver with it.
-                        virtio_sound_init(mem_base);
-                        
-                        // Stop scanning for more BARs for this device.
-                        break;
-                    }
+                    // Initialize the driver with the correct virtual address
+                    virtio_sound_init((virtio_pci_common_cfg_t*)VIRTIO_SND_VIRT_ADDR);
+                } else {
+                    print_string("    ERROR: Could not find Common Config capability!\n");
                 }
-                return; // Found and handled our device, stop the entire scan.
+                return; // Stop scanning
             }
         }
     }

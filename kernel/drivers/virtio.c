@@ -10,17 +10,11 @@
 static virtio_pci_common_cfg_t* virtio_sound_cfg;
 
 // Initializes the virtio-sound driver.
-void virtio_sound_init(uint32_t mmio_base_phys) {
+void virtio_sound_init(virtio_pci_common_cfg_t* cfg) {
     print_string("Initializing virtio-sound driver...\n");
 
-    // Map the physical MMIO base address to our chosen virtual address.
-    paging_map_page(kernel_directory, VIRTIO_SND_VIRT_ADDR, mmio_base_phys, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
-    print_string("  MMIO region mapped to virtual address 0x");
-    print_hex(VIRTIO_SND_VIRT_ADDR);
-    print_string("\n");
-
-    // Create a pointer to the registers using our struct.
-    virtio_sound_cfg = (virtio_pci_common_cfg_t*)VIRTIO_SND_VIRT_ADDR;
+    // The mapping is now done by the PCI driver. We just receive and use the pointer.
+    virtio_sound_cfg = cfg;
 
     // Virtio Initialization Sequence
     // Reset the device by writing 0 to the status register.

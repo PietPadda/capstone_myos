@@ -15,6 +15,25 @@
 // Virtio Feature Bits
 #define VIRTIO_F_VERSION_1 32 // The modern device specification feature bit
 
+// Virtio PCI Capability IDs (from Virtio Spec 4.1.3)
+#define VIRTIO_PCI_CAP_COMMON_CFG   1
+#define VIRTIO_PCI_CAP_NOTIFY_CFG   2
+#define VIRTIO_PCI_CAP_ISR_CFG      3
+#define VIRTIO_PCI_CAP_DEVICE_CFG   4
+#define VIRTIO_PCI_CAP_PCI_CFG      5
+
+// The structure of a Virtio PCI capability
+typedef struct {
+    uint8_t cap_vndr;    // Should be 0x09 for PCI standard capabilities
+    uint8_t cap_next;    // Offset of the next capability in the list
+    uint8_t cap_len;     // Length of this capability structure
+    uint8_t type;        // Type of virtio capability (VIRTIO_PCI_CAP_*)
+    uint8_t bar;         // Which BAR the capability is in
+    uint8_t padding[3];
+    uint32_t offset;     // Offset within the BAR
+    uint32_t length;     // Length of the structure in the BAR
+} __attribute__((packed)) virtio_pci_cap_t;
+
 // Represents the "Common Configuration" registers for a virtio PCI device.
 // The 'volatile' keyword is crucial to prevent the compiler from optimizing
 // away our reads and writes to this memory-mapped hardware.
@@ -70,6 +89,7 @@ struct virtq_used {
 } __attribute__((packed));
 
 // Initializes the virtio-sound driver.
-void virtio_sound_init(uint32_t mmio_base);
+// The signature is changed to take a pointer to the already-mapped config.
+void virtio_sound_init(virtio_pci_common_cfg_t* cfg);
 
 #endif // VIRTIO_H
