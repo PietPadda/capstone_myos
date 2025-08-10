@@ -59,11 +59,15 @@ void pci_scan() {
                     uint32_t bar0 = pci_config_read_word(bus, slot, func, 0x10);
                     
                     // The last bit of the BAR indicates the type. 1 = I/O space.
-                    if (bar0 & 0x1) {
+                    if (bar0 & 0x1) { // Type 1: I/O Space
                         // For I/O space BARs, the address is in the upper bits.
                         // We mask off the lower 2 bits to get the base address.
                         uint32_t io_base = bar0 & ~0x3;
                         print_string("    I/O Port Base Address: 0x"); print_hex(io_base);
+                        print_string("\n");
+                    } else { // Type 0: Memory-Mapped I/O
+                        uint32_t mem_base = bar0 & ~0xF; // Mask off lower 4 bits
+                        print_string("    MMIO Base Address: 0x"); print_hex(mem_base);
                         print_string("\n");
                     }
 
