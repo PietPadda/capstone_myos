@@ -5,6 +5,13 @@
 
 #include <kernel/types.h>
 
+// Virtio Device Status Field bits
+#define VIRTIO_STATUS_ACKNOWLEDGE   1
+#define VIRTIO_STATUS_DRIVER        2
+#define VIRTIO_STATUS_DRIVER_OK     4
+#define VIRTIO_STATUS_FEATURES_OK   8
+#define VIRTIO_STATUS_FAILED        128
+
 // Represents the "Common Configuration" registers for a virtio PCI device.
 // The 'volatile' keyword is crucial to prevent the compiler from optimizing
 // away our reads and writes to this memory-mapped hardware.
