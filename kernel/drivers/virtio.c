@@ -35,10 +35,12 @@ void virtio_sound_init(uint32_t mmio_base_phys) {
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_DRIVER;
     print_string("  Status set to DRIVER.\n");
 
-    // Feature negotiation (for now, we accept all features).
+    // Feature negotiation
     uint32_t features = virtio_sound_cfg->device_feature;
-    virtio_sound_cfg->driver_feature = features;
-    print_string("  Features negotiated.\n");
+    print_string("  Device offers features: 0x"); print_hex(features); print_string("\n");
+    // Write back 0, indicating we support no optional features.
+    virtio_sound_cfg->driver_feature = 0;
+    print_string("  Driver accepts features: 0x0\n");
 
     // Set the FEATURES_OK status bit.
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
