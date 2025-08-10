@@ -4,6 +4,11 @@
 #include <kernel/io.h>
 #include <kernel/vga.h>
 
+// We'll store the location of our found virtio device here
+static uint8_t virtio_sound_bus = 0;
+static uint8_t virtio_sound_slot = 0;
+static uint8_t virtio_sound_func = 0;
+
 // Reads a 32-bit word from a device's PCI configuration space.
 static uint32_t pci_config_read_word(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset) {
     // Create the 32-bit address packet.
@@ -41,11 +46,28 @@ void pci_scan() {
                 // Check if we found our virtio-sound device.
                 if (vendor_id == VIRTIO_VENDOR_ID && device_id == VIRTIO_DEV_ID_SOUND) {
                     print_string("  Found virtio-sound device!\n");
+                    // Store the device's location
+                    virtio_sound_bus = bus;
+                    virtio_sound_slot = slot;
+                    virtio_sound_func = func;
                     print_string("    Location: bus="); print_dec(bus);
                     print_string(", slot="); print_dec(slot);
                     print_string(", func="); print_dec(func);
                     print_string("\n");
-                    return; // Found it, we're done.
+
+                    // Read BAR0 (at offset 0x10 in the PCI config space)
+                    uint32_t bar0 = pci_config_read_word(bus, slot, func, 0x10);
+                    
+                    // The last bit of the BAR indicates the type. 1 = I/O space.
+                    if (bar0 & 0x1) {
+                        // For I/O space BARs, the address is in the upper bits.
+                        // We mask off the lower 2 bits to get the base address.
+                        uint32_t io_base = bar0 & ~0x3;
+                        print_string("    I/O Port Base Address: 0x"); print_hex(io_base);
+                        print_string("\n");
+                    }
+
+                    return;
                 }
             }
         }
