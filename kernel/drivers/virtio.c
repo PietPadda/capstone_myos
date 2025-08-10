@@ -3,9 +3,25 @@
 #include <kernel/drivers/virtio.h>
 #include <kernel/paging.h>
 #include <kernel/vga.h>
+#include <kernel/memory.h> // For malloc
 
 // We will map the device's MMIO registers to this virtual address.
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
+
+// A struct to manage the state of a single virtqueue
+typedef struct {
+    // Virtual addresses of the queue components
+    struct virtq_desc* desc_table;
+    struct virtq_avail* avail_ring;
+    struct virtq_used* used_ring;
+    uint16_t size;
+    uint16_t last_used_idx;  // To track what the device has used
+    uint16_t next_avail_idx; // To track where we should place the next descriptor
+} virtqueue_info_t;
+
+// We will have multiple queues; this array will manage them.
+#define VIRTIO_SND_MAX_QUEUES 4
+static virtqueue_info_t queues[VIRTIO_SND_MAX_QUEUES];
 
 static virtio_pci_common_cfg_t* virtio_sound_cfg;
 

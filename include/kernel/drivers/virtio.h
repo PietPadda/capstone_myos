@@ -34,6 +34,24 @@ typedef struct {
     uint32_t length;     // Length of the structure in the BAR
 } __attribute__((packed)) virtio_pci_cap_t;
 
+// Virtio Sound Command Codes
+#define VIRTIO_SND_R_PCM_SET_PARAMS  0x0101
+#define VIRTIO_SND_R_PCM_PREPARE     0x0102
+#define VIRTIO_SND_R_PCM_RELEASE     0x0103
+#define VIRTIO_SND_R_PCM_START       0x0104
+#define VIRTIO_SND_R_PCM_STOP        0x0105
+
+// Generic command header for the control queue
+typedef struct {
+    uint32_t code;
+} __attribute__((packed)) virtio_snd_hdr_t;
+
+// Command structure for preparing, starting, or stopping a PCM stream
+typedef struct {
+    virtio_snd_hdr_t hdr;
+    uint32_t stream_id;
+} __attribute__((packed)) virtio_snd_pcm_hdr_t;
+
 // Represents the "Common Configuration" registers for a virtio PCI device.
 // The 'volatile' keyword is crucial to prevent the compiler from optimizing
 // away our reads and writes to this memory-mapped hardware.
