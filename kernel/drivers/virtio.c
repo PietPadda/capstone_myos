@@ -26,6 +26,9 @@ static virtqueue_info_t queues[VIRTIO_SND_MAX_QUEUES];
 
 static virtio_pci_common_cfg_t* virtio_sound_cfg;
 
+// A static, page-aligned buffer for DMA. Its virtual address will equal its physical address.
+static uint8_t dma_buffer[4096] __attribute__((aligned(4096)));
+
 // Helper to notify the device that a queue has new buffers.
 static void notify_queue(uint16_t queue_idx) {
     // The device tells us the memory-mapped offset for its notification register.
@@ -35,7 +38,13 @@ static void notify_queue(uint16_t queue_idx) {
 }
 
 // Submits a command and waits for a reply. This is a synchronous, blocking function.
+// Updated to use the DMA-safe buffer for all communication.
 static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size, void* resp, uint32_t resp_size) {
+    // Copy the command from its virtual stack address into our safe physical buffer.
+    memcpy(dma_buffer, cmd, cmd_size);
+    // The device will write the response right after the command data.
+    void* dma_resp_phys_addr = dma_buffer + cmd_size;
+
     virtqueue_info_t* q = &queues[q_idx];
 
     // We need two descriptors: one for the command we send, one for the response we receive.
@@ -43,13 +52,13 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
     uint16_t resp_idx = (head_idx + 1) % q->size;
     
     // Setup Descriptor 1: The Command (Driver -> Device)
-    q->desc_table[head_idx].addr = (uint64_t)cmd;
+        q->desc_table[head_idx].addr = (uint64_t)dma_buffer; // Use the PHYSICAL address of our DMA buffer.
     q->desc_table[head_idx].len = cmd_size;
     q->desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT; // Link to the response buffer descriptor
     q->desc_table[head_idx].next = resp_idx;
 
     // Setup Descriptor 2: The Response (Device -> Driver)
-    q->desc_table[resp_idx].addr = (uint64_t)resp;
+    q->desc_table[resp_idx].addr = (uint64_t)dma_resp_phys_addr; //  Use the PHYSICAL address for the response part of the buffer.
     q->desc_table[resp_idx].len = resp_size;
     q->desc_table[resp_idx].flags = VIRTQ_DESC_F_WRITE; // Device will WRITE to this buffer
     q->desc_table[resp_idx].next = 0;
@@ -73,6 +82,9 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
     }
     // "Consume" the used ring entry by incrementing our counter.
     q->last_used_idx++;
+
+    // Copy the response from the safe physical buffer back to the caller's virtual stack address.
+    memcpy(resp, dma_resp_phys_addr, resp_size);
 }
 
 // Initializes the virtio-sound driver.
