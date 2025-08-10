@@ -85,36 +85,66 @@ void virtio_sound_init(virtio_pci_common_cfg_t* cfg) {
     uint16_t num_queues = virtio_sound_cfg->num_queues;
     print_string("    Device has "); print_dec(num_queues); print_string(" queues.\n");
 
+    // QUEUE 0 (CONTROL)
     // Select the first queue (queue 0, the control queue).
     virtio_sound_cfg->queue_select = 0;
 
     // Read its size.
-    uint16_t queue_size = virtio_sound_cfg->queue_size;
-    print_string("    Queue 0 size: "); print_dec(queue_size); print_string("\n");
-    if (queue_size == 0) {
-        print_string("    ERROR: Queue 0 not available!\n");
+    uint16_t q0_size = virtio_sound_cfg->queue_size;
+    print_string("    Queue 0 (Control) size: "); print_dec(q0_size); print_string("\n");
+
+    // err handling
+    if (q0_size == 0) {
+        print_string("    ERROR: Queue 0 (Control) not available!\n");
         return;
     }
 
+    // Allocate and store pointers for Queue 0
     // Allocate memory for the three parts of the virtqueue.
     // For now, a single 4KB page for each is more than enough.
-    void* desc_table = pmm_alloc_frame();
-    void* avail_ring = pmm_alloc_frame();
-    void* used_ring = pmm_alloc_frame();
+    void* q0_desc  = pmm_alloc_frame();
+    void* q0_avail  = pmm_alloc_frame();
+    void* q0_used  = pmm_alloc_frame();
     print_string("    Virtqueue memory allocated.\n");
 
     // Tell the device the physical addresses of these memory regions.
-    virtio_sound_cfg->queue_desc_low = (uint32_t)desc_table;
-    virtio_sound_cfg->queue_desc_high = 0;
-    virtio_sound_cfg->queue_avail_low = (uint32_t)avail_ring;
-    virtio_sound_cfg->queue_avail_high = 0;
-    virtio_sound_cfg->queue_used_low = (uint32_t)used_ring;
-    virtio_sound_cfg->queue_used_high = 0;
+    queues[0].desc_table = (struct virtq_desc*)q0_desc;
+    queues[0].avail_ring = (struct virtq_avail*)q0_avail;
+    queues[0].used_ring  = (struct virtq_used*)q0_used;
+    queues[0].size = q0_size;
+    queues[0].last_used_idx = 0;
+    queues[0].next_avail_idx = 0;
+    
+    virtio_sound_cfg->queue_desc_low = (uint32_t)q0_desc;
+    virtio_sound_cfg->queue_avail_low = (uint32_t)q0_avail;
+    virtio_sound_cfg->queue_used_low = (uint32_t)q0_used;
     print_string("    Device notified of queue addresses.\n");
 
     // Enable the queue.
     virtio_sound_cfg->queue_enable = 1;
-    print_string("    Queue 0 is now enabled.\n");
+    print_string("    Queue 0 (Control) is now enabled.\n");
+
+    // QUEUE 2 (PLAYBACK/TX)
+    virtio_sound_cfg->queue_select = 2;
+    uint16_t q2_size = virtio_sound_cfg->queue_size;
+    print_string("    Queue 2 (Playback) size: "); print_dec(q2_size); print_string("\n");
+
+    // Allocate and store pointers for Queue 2
+    void* q2_desc = pmm_alloc_frame();
+    void* q2_avail = pmm_alloc_frame();
+    void* q2_used = pmm_alloc_frame();
+    queues[2].desc_table = (struct virtq_desc*)q2_desc;
+    queues[2].avail_ring = (struct virtq_avail*)q2_avail;
+    queues[2].used_ring  = (struct virtq_used*)q2_used;
+    queues[2].size = q2_size;
+    queues[2].last_used_idx = 0;
+    queues[2].next_avail_idx = 0;
+
+    virtio_sound_cfg->queue_desc_low = (uint32_t)q2_desc;
+    virtio_sound_cfg->queue_avail_low = (uint32_t)q2_avail;
+    virtio_sound_cfg->queue_used_low = (uint32_t)q2_used;
+    virtio_sound_cfg->queue_enable = 1;
+    print_string("    Queue 2 (Playback) is now enabled.\n");
 
     // End of Virtqueue Setup
 
