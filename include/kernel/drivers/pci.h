@@ -11,7 +11,7 @@
 
 // Virtio specific device identifiers
 #define VIRTIO_VENDOR_ID      0x1AF4
-#define VIRTIO_DEV_ID_SOUND   0x1054 // 0x1040 (base) + 20 (sound device)
+#define VIRTIO_DEV_ID_SOUND   0x1059 // 0x1040 (base) + 25 (sound device)
 
 // Scans the PCI bus for devices.
 void pci_scan();
