@@ -19,8 +19,8 @@ ifneq (,$(findstring Linux,$(UNAME_S)))
 endif
 # End of auto-detect
 
-# Update QEMU_OPTS to use our new variable and the explicit -drive format
-QEMU_OPTS := -drive format=raw,file=$(BUILD_DIR)/os_image.bin -debugcon stdio $(AUDIO_FLAGS)
+# Update QEMU_OPTS to use our new variable, explicit -drive format and enable KVM
+QEMU_OPTS := -drive format=raw,file=$(BUILD_DIR)/os_image.bin -debugcon stdio $(AUDIO_FLAGS) -enable-kvm
 
 # --- Source Files ---
 # Find all .c and .asm files within the kernel directory and its subdirectories
