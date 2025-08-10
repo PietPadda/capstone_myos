@@ -82,6 +82,22 @@ typedef struct {
 #define VIRTQ_DESC_F_NEXT  1 // This descriptor is part of a chain
 #define VIRTQ_DESC_F_WRITE 2 // The device will write to this buffer (as opposed to read from it)
 
+// Virtio Sound Sample Formats and Rates
+#define VIRTIO_SND_PCM_FMT_U8       2  // Unsigned 8-bit PCM
+#define VIRTIO_SND_PCM_RATE_44100   11 // 44100 Hz
+
+// Command structure for setting PCM stream parameters.
+typedef struct {
+    virtio_snd_pcm_hdr_t hdr;
+    uint32_t buffer_bytes;
+    uint32_t period_bytes;
+    uint32_t features;
+    uint8_t  channels;
+    uint8_t  format;
+    uint8_t  rate;
+    uint8_t  padding;
+} __attribute__((packed)) virtio_snd_pcm_set_params_t;
+
 // A Virtqueue Descriptor, which points to a buffer of data.
 struct virtq_desc {
     uint64_t addr;  // Physical address of the buffer

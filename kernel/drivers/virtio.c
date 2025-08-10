@@ -214,6 +214,22 @@ void virtio_sound_beep() {
     // We will use stream 0 for playback.
     uint32_t stream_id = 0;
 
+    // Set stream parameters
+    virtio_snd_pcm_set_params_t params_cmd;
+    params_cmd.hdr.hdr.code = VIRTIO_SND_R_PCM_SET_PARAMS;
+    params_cmd.hdr.stream_id = stream_id;
+    params_cmd.buffer_bytes = 4096; // Total size of buffers we'll use
+    params_cmd.period_bytes = 2048; // Device can interrupt after this many bytes
+    params_cmd.features = 0;        // No special features needed
+    params_cmd.channels = 1;        // Mono audio
+    params_cmd.format = VIRTIO_SND_PCM_FMT_U8;
+    params_cmd.rate = VIRTIO_SND_PCM_RATE_44100;
+    
+    virtio_snd_response_t params_resp;
+    print_string("\n  Sending SET_PARAMS command...");
+    virtq_send_command_sync(0, &params_cmd, sizeof(params_cmd), &params_resp, sizeof(params_resp));
+    print_string(" complete.");
+
     // Prepare the stream
     virtio_snd_pcm_hdr_t prepare_cmd = { .hdr.code = VIRTIO_SND_R_PCM_PREPARE, .stream_id = stream_id };
     virtio_snd_response_t prepare_resp;
