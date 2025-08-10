@@ -44,58 +44,62 @@ void pci_scan() {
     // Iterate through all possible buses, devices, and functions.
     for (int bus = 0; bus < 256; bus++) {
         for (int slot = 0; slot < 32; slot++) {
-            for (int func = 0; func < 8; func++) {
-                // Read the first 32 bits of the configuration space, which contains Vendor and Device ID.
-                uint32_t first_dword = pci_config_read_word(bus, slot, func, 0);
-                uint16_t vendor_id = first_dword & 0xFFFF;
-                uint16_t device_id = first_dword >> 16;
+            // We only need to check func=0 for the virtio-sound device
+            uint32_t first_dword = pci_config_read_word(bus, slot, 0, 0);
+            uint16_t vendor_id = first_dword & 0xFFFF;
+            uint16_t device_id = first_dword >> 16;
 
-                // A vendor ID of 0xFFFF means no device is present at this slot.
-                if (vendor_id == 0xFFFF) {
-                    continue; // No device, move to the next slot.
-                }
+            // Check if we found our virtio-sound device.
+            if (vendor_id == VIRTIO_VENDOR_ID && device_id == VIRTIO_DEV_ID_SOUND) {
+                print_string("  Found virtio-sound device!\n");
+                print_string("    Location: bus="); print_dec(bus);
+                print_string(", slot="); print_dec(slot);
+                print_string(", func=0\n");
 
-                // Check if we found our virtio-sound device.
-                if (vendor_id == VIRTIO_VENDOR_ID && device_id == VIRTIO_DEV_ID_SOUND) {
-                    print_string("  Found virtio-sound device!\n");
-                    // Store the device's location
-                    virtio_sound_bus = bus;
-                    virtio_sound_slot = slot;
-                    virtio_sound_func = func;
-                    print_string("    Location: bus="); print_dec(bus);
-                    print_string(", slot="); print_dec(slot);
-                    print_string(", func="); print_dec(func);
-                    print_string("\n");
+                // Enable Bus Mastering and Memory Space
+                // Read the command register (offset 0x04)
+                uint32_t command_reg = pci_config_read_word(bus, slot, 0, 0x04);
+                // Set the Bus Master Enable (bit 2) and Memory Space Enable (bit 1) bits
+                command_reg |= (1 << 2) | (1 << 1);
+                // Write the new value back to the command register to enable the device
+                pci_config_write_word(bus, slot, 0, 0x04, command_reg);
+                print_string("    Device enabled (Bus Master, Memory Space).\n");
 
-                    // Read the command register (offset 0x04)
-                    uint32_t command_reg = pci_config_read_word(bus, slot, func, 0x04);
-                    // Set the Bus Master Enable (bit 2) and Memory Space Enable (bit 1) bits
-                    command_reg |= (1 << 2) | (1 << 1);
-                    // Write the new value back to the command register to enable the device
-                    pci_config_write_word(bus, slot, func, 0x04, command_reg);
-                    print_string("    Device enabled (Bus Master, Memory Space).\n");
+                // Iterate through all 6 BARs
+                for (int bar_num = 0; bar_num < 6; bar_num++) {
+                    uint8_t bar_offset = 0x10 + (bar_num * 4);
+                    uint32_t bar_value = pci_config_read_word(bus, slot, 0, bar_offset);
 
-                    // Read BAR0 (at offset 0x10 in the PCI config space)
-                    uint32_t bar0 = pci_config_read_word(bus, slot, func, 0x10);
-                    
-                    // The last bit of the BAR indicates the type. 1 = I/O space.
-                    if (bar0 & 0x1) { // Type 1: I/O Space
-                        // For I/O space BARs, the address is in the upper bits.
-                        // We mask off the lower 2 bits to get the base address.
-                        uint32_t io_base = bar0 & ~0x3;
-                        print_string("    I/O Port Base Address: 0x"); print_hex(io_base);
-                        print_string("\n");
-                    } else { // Type 0: Memory-Mapped I/O
-                        uint32_t mem_base = bar0 & ~0xF; // Mask off lower 4 bits
-                        print_string("    MMIO Base Address: 0x"); print_hex(mem_base);
-                        print_string("\n");
+                    if (bar_value == 0) continue; // Skip unused BARs
+
+                    print_string("    BAR"); print_dec(bar_num); print_string(": ");
+
+                    if (bar_value & 0x1) {
+                        // Type 1: I/O Space
+                        uint32_t io_base = bar_value & ~0x3;
+                        print_string("I/O Port Base = 0x"); print_hex(io_base);
+                    } else {
+                        // Type 0: Memory-Mapped I/O
+                        uint8_t mem_type = (bar_value >> 1) & 0x3;
+                        if (mem_type == 0x00) { // 32-bit mapping
+                            uint32_t mem_base = bar_value & ~0xF;
+                            print_string("32-bit MMIO Base = 0x"); print_hex(mem_base);
+                        } else if (mem_type == 0x02) { // 64-bit mapping
+                            // For 64-bit, this BAR holds the lower 32 bits.
+                            // The next BAR holds the upper 32 bits.
+                            uint32_t mem_base_low = bar_value & ~0xF;
+                            uint32_t mem_base_high = pci_config_read_word(bus, slot, 0, bar_offset + 4);
+                            print_string("64-bit MMIO Base = 0x");
+                            print_hex(mem_base_high);
+                            print_hex(mem_base_low);
+                            bar_num++; // IMPORTANT: Skip the next BAR since we just used it
+                        }
                     }
-
-                    return;
+                    print_string("\n");
                 }
+                return; // Found our device, stop scanning
             }
         }
     }
-
     print_string("  virtio-sound device not found.\n");
 }
