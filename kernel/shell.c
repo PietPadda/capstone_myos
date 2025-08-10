@@ -12,6 +12,7 @@
 #include <kernel/keyboard.h> // We need this for keyboard_read_char
 #include <kernel/debug.h> // debug printing
 #include <kernel/drivers/sb16.h> // sound blaster 16
+#include <kernel/drivers/virtio.h> // virtio driver
 
 // Let the shell know about the process table defined in process.c
 extern task_struct_t process_table[MAX_PROCESSES];
@@ -203,7 +204,7 @@ void process_command() {
 
     // help command
     if (strcmp(argv[0], "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n  ps  - Show process list\n  kill - Reap a zombie process by PID\n  beep - A4 note using PC Speaker\n  sb16beep - A4 note using Sound Blaster 16\n\n  --- DEBUG COMMANDS ---\n  starttone - Starts a continuous tone\n  stoptone  - Stops the continuous tone\n\n");
+        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n  ps  - Show process list\n  kill - Reap a zombie process by PID\n  beep - A4 note using PC Speaker\n  sb16beep - A4 note using Sound Blaster 16\n  vsbeep - beep using Virtual I/O driver\n  --- DEBUG COMMANDS ---\n  starttone - Starts a continuous tone\n  stoptone  - Stops the continuous tone\n\n");
     
     // cls command
     } else if (strcmp(argv[0], "cls") == 0) {
@@ -447,6 +448,12 @@ void process_command() {
         print_string("Playing beep on Sound Blaster 16...");
         sb16_play_sound(440, 200); // Play 440Hz for 200ms
         print_string(" done.");
+
+    // vsbeep command
+    } else if (strcmp(argv[0], "vsbeep") == 0) {
+        print_string("Testing virtio-sound control queue...");
+        virtio_sound_beep();
+        print_string(" test complete.");
 
     // invalid command
     } else  { // Only show error for non-empty commands

@@ -114,4 +114,7 @@ struct virtq_used {
 // The signature is changed to take a pointer to the already-mapped config.
 void virtio_sound_init(virtio_pci_common_cfg_t* cfg);
 
+// Plays a test beep using the virtio-sound device.
+void virtio_sound_beep();
+
 #endif // VIRTIO_H

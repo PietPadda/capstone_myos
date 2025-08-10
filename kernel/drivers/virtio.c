@@ -202,3 +202,43 @@ void virtio_sound_init(virtio_pci_common_cfg_t* cfg) {
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
     print_string("  Status set to DRIVER_OK. Device is live!\n");
 }
+
+// This is a generic response struct for control commands.
+// The device writes a status code here (e.g., VIRTIO_SND_S_OK).
+typedef struct {
+    uint32_t code;
+} __attribute__((packed)) virtio_snd_response_t;
+
+// This function orchestrates the lifecycle of a sound stream.
+void virtio_sound_beep() {
+    // We will use stream 0 for playback.
+    uint32_t stream_id = 0;
+
+    // Prepare the stream
+    virtio_snd_pcm_hdr_t prepare_cmd = { .hdr.code = VIRTIO_SND_R_PCM_PREPARE, .stream_id = stream_id };
+    virtio_snd_response_t prepare_resp;
+    print_string("\n  Sending PREPARE command...");
+    virtq_send_command_sync(0, &prepare_cmd, sizeof(prepare_cmd), &prepare_resp, sizeof(prepare_resp));
+    print_string(" complete.");
+
+    // Start the stream
+    virtio_snd_pcm_hdr_t start_cmd = { .hdr.code = VIRTIO_SND_R_PCM_START, .stream_id = stream_id };
+    virtio_snd_response_t start_resp;
+    print_string("\n  Sending START command...");
+    virtq_send_command_sync(0, &start_cmd, sizeof(start_cmd), &start_resp, sizeof(start_resp));
+    print_string(" complete. Stream is active.");
+
+    // Stop the stream
+    virtio_snd_pcm_hdr_t stop_cmd = { .hdr.code = VIRTIO_SND_R_PCM_STOP, .stream_id = stream_id };
+    virtio_snd_response_t stop_resp;
+    print_string("\n  Sending STOP command...");
+    virtq_send_command_sync(0, &stop_cmd, sizeof(stop_cmd), &stop_resp, sizeof(stop_resp));
+    print_string(" complete.");
+
+    // Release the stream
+    virtio_snd_pcm_hdr_t release_cmd = { .hdr.code = VIRTIO_SND_R_PCM_RELEASE, .stream_id = stream_id };
+    virtio_snd_response_t release_resp;
+    print_string("\n  Sending RELEASE command...");
+    virtq_send_command_sync(0, &release_cmd, sizeof(release_cmd), &release_resp, sizeof(release_resp));
+    print_string(" complete. Stream is inactive.\n");
+}
