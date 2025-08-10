@@ -129,14 +129,16 @@ void kmain() {
     timer_install(); // Install our new timer driver
     qemu_debug_string("pit_inst ");
 
-    // Scan the PCI bus to find our devices
-    pci_scan();
-    qemu_debug_string("pci_bus_scan ");
-
     // clear the bios text
-    delay_ms(8000); // Use our blocking delay before the scheduler is active.
+    delay_ms(800); // Use our blocking delay before the scheduler is active.
     clear_screen();
     qemu_debug_string("clear_bios_scr ");
+
+    // Scan the PCI bus to find our devices
+    pci_scan();
+    delay_ms(4000);
+    clear_screen();
+    qemu_debug_string("pci_bus_scan ");
 
     // print the boot screen
     print_bootscreen();
