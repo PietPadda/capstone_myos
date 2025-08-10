@@ -25,6 +25,18 @@ static uint32_t pci_config_read_word(uint8_t bus, uint8_t slot, uint8_t func, ui
     return result;
 }
 
+// Writes a 32-bit word to a device's PCI configuration space.
+static void pci_config_write_word(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t value) {
+    // Create the 32-bit address packet.
+    uint32_t address = (uint32_t)((bus << 16) | (slot << 11) | (func << 8) | (offset & 0xFC) | 0x80000000);
+
+    // Write the address to the CONFIG_ADDRESS port.
+    __asm__ __volatile__ ("outl %0, %1" : : "a"(address), "Nd"(PCI_CONFIG_ADDR));
+
+    // Write the 32-bit data to the CONFIG_DATA port.
+    __asm__ __volatile__ ("outl %0, %1" : : "a"(value), "Nd"(PCI_CONFIG_DATA));
+}
+
 // Scans the PCI bus for our virtio-sound device.
 void pci_scan() {
     print_string("Scanning PCI bus...\n");
@@ -54,6 +66,14 @@ void pci_scan() {
                     print_string(", slot="); print_dec(slot);
                     print_string(", func="); print_dec(func);
                     print_string("\n");
+
+                    // Read the command register (offset 0x04)
+                    uint32_t command_reg = pci_config_read_word(bus, slot, func, 0x04);
+                    // Set the Bus Master Enable (bit 2) and Memory Space Enable (bit 1) bits
+                    command_reg |= (1 << 2) | (1 << 1);
+                    // Write the new value back to the command register to enable the device
+                    pci_config_write_word(bus, slot, func, 0x04, command_reg);
+                    print_string("    Device enabled (Bus Master, Memory Space).\n");
 
                     // Read BAR0 (at offset 0x10 in the PCI config space)
                     uint32_t bar0 = pci_config_read_word(bus, slot, func, 0x10);
