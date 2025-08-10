@@ -35,34 +35,40 @@ void virtio_sound_init(uint32_t mmio_base_phys) {
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_DRIVER;
     print_string("  Status set to DRIVER.\n");
 
-    // Feature negotiation
+    // Feature negotiation (Modern vs. Legacy)
     // Select the upper 32 bits of the feature flags (for bit 32 and above)
     virtio_sound_cfg->device_feature_select = 1;
     uint32_t features_high = virtio_sound_cfg->device_feature;
 
     // Check if the device offers the VIRTIO_F_VERSION_1 feature (bit 32)
     if (features_high & (1 << (VIRTIO_F_VERSION_1 - 32))) {
-        print_string("  Device supports VIRTIO_F_VERSION_1. Acknowledging.\n");
-        // Acknowledge this one feature
+        // Modern Device Path        
+        print_string("  Device is VIRTIO_F_VERSION_1 compliant.\n");
+
+         // Acknowledge this one feature
         virtio_sound_cfg->driver_feature_select = 1;
         virtio_sound_cfg->driver_feature = (1 << (VIRTIO_F_VERSION_1 - 32));
+
+        // Set the FEATURES_OK status bit.
+        virtio_sound_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
+        print_string("  Status set to FEATURES_OK.\n");
+
+        // Re-read device status to ensure FEATURES_OK is still set.
+        if (!(virtio_sound_cfg->device_status & VIRTIO_STATUS_FEATURES_OK)) {
+            print_string("  ERROR: Device rejected features!\n");
+            virtio_sound_cfg->device_status |= VIRTIO_STATUS_FAILED;
+            return;
+        }
     } else {
-        // This is a legacy device, which we aren't supporting for now.
-        print_string("  Device is not VIRTIO_F_VERSION_1 compliant. Halting.\n");
-        virtio_sound_cfg->device_status |= VIRTIO_STATUS_FAILED;
-        return;
+        // Legacy Device Path
+
+        print_string("  Device is legacy. Omitting FEATURES_OK.\n");
+        // For legacy, just write back 0 to the low 32 bits of features.
+        virtio_sound_cfg->driver_feature_select = 0;
+        virtio_sound_cfg->driver_feature = 0;
     }
 
-    // Set the FEATURES_OK status bit.
-    virtio_sound_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
-    print_string("  Status set to FEATURES_OK.\n");
-
-    // Re-read device status to ensure FEATURES_OK is still set.
-    if (!(virtio_sound_cfg->device_status & VIRTIO_STATUS_FEATURES_OK)) {
-        print_string("  ERROR: Device rejected features!\n");
-        virtio_sound_cfg->device_status |= VIRTIO_STATUS_FAILED;
-        return;
-    }
+    // Perform device-specific setup (coming in the next step!)
 
     // Set the DRIVER_OK status bit. Device is now live!
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
