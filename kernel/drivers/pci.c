@@ -10,6 +10,9 @@
 // The virtual address where we will map the virtio registers
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
 
+// Define a safe virtual address for temporary mappings.
+#define TEMP_VIRTIO_MAP_ADDR 0xFFBFC000
+
 // We'll store the location of our found virtio device here
 static uint8_t virtio_sound_bus = 0;
 static uint8_t virtio_sound_slot = 0;
@@ -79,19 +82,34 @@ void pci_scan() {
             if ((first_dword & 0xFFFF) == VIRTIO_VENDOR_ID && (first_dword >> 16) == VIRTIO_DEV_ID_SOUND) {
                 print_string("  Found virtio-sound device!\n");
                 
-                virtio_pci_cap_t cap;
-                if (pci_find_capability(bus, slot, 0, VIRTIO_PCI_CAP_COMMON_CFG, &cap)) {
+                virtio_pci_cap_t common_cap;
+                if (pci_find_capability(bus, slot, 0, VIRTIO_PCI_CAP_COMMON_CFG, &common_cap)) {
                     print_string("    Found Common Config capability.\n");
                     // Read the base address from the correct BAR
-                    uint32_t bar_val = pci_config_read_word(bus, slot, 0, 0x10 + (cap.bar * 4));
+                    uint32_t bar_val = pci_config_read_word(bus, slot, 0, 0x10 + (common_cap.bar * 4));
                     uint32_t bar_base = bar_val & ~0xF;
-                    uint32_t phys_addr = bar_base + cap.offset;
+                    uint32_t phys_addr = bar_base + common_cap.offset;
 
                     print_string("    Mapping registers at physical 0x"); print_hex(phys_addr); print_string("\n");
                     paging_map_page(kernel_directory, VIRTIO_SND_VIRT_ADDR, phys_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+                    virtio_pci_common_cfg_t* cfg = (virtio_pci_common_cfg_t*)VIRTIO_SND_VIRT_ADDR;
 
-                    // Initialize the driver with the correct virtual address
-                    virtio_sound_init((virtio_pci_common_cfg_t*)VIRTIO_SND_VIRT_ADDR);
+                    // Now, find the notification capability to get the multiplier.
+                    virtio_pci_cap_t notify_cap;
+                    if (pci_find_capability(bus, slot, 0, VIRTIO_PCI_CAP_NOTIFY_CFG, &notify_cap)) {
+                        uint32_t notify_bar_val = pci_config_read_word(bus, slot, 0, 0x10 + (notify_cap.bar * 4));
+                        uint32_t notify_phys_addr = (notify_bar_val & ~0xF) + notify_cap.offset;
+
+                        // Temporarily map the notification BAR to read the multiplier.
+                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, notify_phys_addr & ~0xFFF, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+                        uint32_t multiplier = *(volatile uint32_t*)(TEMP_VIRTIO_MAP_ADDR + (notify_phys_addr & 0xFFF));
+                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, 0, 0); // Unmap
+
+                        // Pass both the config pointer and the multiplier to the driver.
+                        virtio_sound_init(cfg, multiplier);
+                    } else {
+                        print_string("    ERROR: Could not find Notification capability!\n");
+                    }
                 } else {
                     print_string("    ERROR: Could not find Common Config capability!\n");
                 }

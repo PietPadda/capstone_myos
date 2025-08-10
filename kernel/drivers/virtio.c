@@ -9,6 +9,9 @@
 // We will map the device's MMIO registers to this virtual address.
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
 
+// We will have multiple queues; this array will manage them.
+#define VIRTIO_SND_MAX_QUEUES 4
+
 // A struct to manage the state of a single virtqueue
 typedef struct {
     // Virtual addresses of the queue components
@@ -20,20 +23,20 @@ typedef struct {
     uint16_t next_avail_idx; // To track where we should place the next descriptor
 } virtqueue_info_t;
 
-// We will have multiple queues; this array will manage them.
-#define VIRTIO_SND_MAX_QUEUES 4
 static virtqueue_info_t queues[VIRTIO_SND_MAX_QUEUES];
-
 static virtio_pci_common_cfg_t* virtio_sound_cfg;
+static uint32_t notify_off_multiplier; // Global to store the multiplier
 
 // A static, page-aligned buffer for DMA. Its virtual address will equal its physical address.
 static uint8_t dma_buffer[4096] __attribute__((aligned(4096)));
 
 // Helper to notify the device that a queue has new buffers.
+// Updated to use the multiplier in its calculation.
 static void notify_queue(uint16_t queue_idx) {
     // The device tells us the memory-mapped offset for its notification register.
     // We write the index of the queue that we've updated.
-    volatile uint16_t* notify_reg = (uint16_t*)((uint8_t*)virtio_sound_cfg + virtio_sound_cfg->queue_notify_off);
+    uint32_t notify_offset = virtio_sound_cfg->queue_notify_off * notify_off_multiplier;
+    volatile uint16_t* notify_reg = (uint16_t*)((uint8_t*)virtio_sound_cfg + notify_offset);
     *notify_reg = queue_idx;
 }
 
@@ -52,7 +55,7 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
     uint16_t resp_idx = (head_idx + 1) % q->size;
     
     // Setup Descriptor 1: The Command (Driver -> Device)
-        q->desc_table[head_idx].addr = (uint64_t)dma_buffer; // Use the PHYSICAL address of our DMA buffer.
+    q->desc_table[head_idx].addr = (uint64_t)dma_buffer; // Use the PHYSICAL address of our DMA buffer.
     q->desc_table[head_idx].len = cmd_size;
     q->desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT; // Link to the response buffer descriptor
     q->desc_table[head_idx].next = resp_idx;
@@ -88,11 +91,13 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
 }
 
 // Initializes the virtio-sound driver.
-void virtio_sound_init(virtio_pci_common_cfg_t* cfg) {
+// Updated to accept the multiplier.
+void virtio_sound_init(virtio_pci_common_cfg_t* cfg, uint32_t multiplier) {
     print_string("Initializing virtio-sound driver...\n");
 
     // The mapping is now done by the PCI driver. We just receive and use the pointer.
     virtio_sound_cfg = cfg;
+    notify_off_multiplier = multiplier; // Store the multiplier for later use.
 
     // Virtio Initialization Sequence
     // Reset the device by writing 0 to the status register.
