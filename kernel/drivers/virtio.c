@@ -36,11 +36,22 @@ void virtio_sound_init(uint32_t mmio_base_phys) {
     print_string("  Status set to DRIVER.\n");
 
     // Feature negotiation
-    uint32_t features = virtio_sound_cfg->device_feature;
-    print_string("  Device offers features: 0x"); print_hex(features); print_string("\n");
-    // Write back 0, indicating we support no optional features.
-    virtio_sound_cfg->driver_feature = 0;
-    print_string("  Driver accepts features: 0x0\n");
+    // Select the upper 32 bits of the feature flags (for bit 32 and above)
+    virtio_sound_cfg->device_feature_select = 1;
+    uint32_t features_high = virtio_sound_cfg->device_feature;
+
+    // Check if the device offers the VIRTIO_F_VERSION_1 feature (bit 32)
+    if (features_high & (1 << (VIRTIO_F_VERSION_1 - 32))) {
+        print_string("  Device supports VIRTIO_F_VERSION_1. Acknowledging.\n");
+        // Acknowledge this one feature
+        virtio_sound_cfg->driver_feature_select = 1;
+        virtio_sound_cfg->driver_feature = (1 << (VIRTIO_F_VERSION_1 - 32));
+    } else {
+        // This is a legacy device, which we aren't supporting for now.
+        print_string("  Device is not VIRTIO_F_VERSION_1 compliant. Halting.\n");
+        virtio_sound_cfg->device_status |= VIRTIO_STATUS_FAILED;
+        return;
+    }
 
     // Set the FEATURES_OK status bit.
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_FEATURES_OK;
