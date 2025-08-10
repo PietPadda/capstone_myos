@@ -78,6 +78,10 @@ typedef struct {
     volatile uint32_t queue_used_high;
 } __attribute__((packed)) virtio_pci_common_cfg_t;
 
+// Virtqueue Descriptor Flags
+#define VIRTQ_DESC_F_NEXT  1 // This descriptor is part of a chain
+#define VIRTQ_DESC_F_WRITE 2 // The device will write to this buffer (as opposed to read from it)
+
 // A Virtqueue Descriptor, which points to a buffer of data.
 struct virtq_desc {
     uint64_t addr;  // Physical address of the buffer

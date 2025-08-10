@@ -4,6 +4,7 @@
 #include <kernel/paging.h>
 #include <kernel/vga.h>
 #include <kernel/memory.h> // For malloc
+#include <kernel/timer.h> // For sleep()
 
 // We will map the device's MMIO registers to this virtual address.
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
@@ -24,6 +25,55 @@ typedef struct {
 static virtqueue_info_t queues[VIRTIO_SND_MAX_QUEUES];
 
 static virtio_pci_common_cfg_t* virtio_sound_cfg;
+
+// Helper to notify the device that a queue has new buffers.
+static void notify_queue(uint16_t queue_idx) {
+    // The device tells us the memory-mapped offset for its notification register.
+    // We write the index of the queue that we've updated.
+    volatile uint16_t* notify_reg = (uint16_t*)((uint8_t*)virtio_sound_cfg + virtio_sound_cfg->queue_notify_off);
+    *notify_reg = queue_idx;
+}
+
+// Submits a command and waits for a reply. This is a synchronous, blocking function.
+static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size, void* resp, uint32_t resp_size) {
+    virtqueue_info_t* q = &queues[q_idx];
+
+    // We need two descriptors: one for the command we send, one for the response we receive.
+    uint16_t head_idx = q->next_avail_idx;
+    uint16_t resp_idx = (head_idx + 1) % q->size;
+    
+    // Setup Descriptor 1: The Command (Driver -> Device)
+    q->desc_table[head_idx].addr = (uint64_t)cmd;
+    q->desc_table[head_idx].len = cmd_size;
+    q->desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT; // Link to the response buffer descriptor
+    q->desc_table[head_idx].next = resp_idx;
+
+    // Setup Descriptor 2: The Response (Device -> Driver)
+    q->desc_table[resp_idx].addr = (uint64_t)resp;
+    q->desc_table[resp_idx].len = resp_size;
+    q->desc_table[resp_idx].flags = VIRTQ_DESC_F_WRITE; // Device will WRITE to this buffer
+    q->desc_table[resp_idx].next = 0;
+
+    // Make the descriptor chain available to the device
+    q->avail_ring->ring[q->avail_ring->idx % q->size] = head_idx;
+    __asm__ __volatile__ ("" : : : "memory"); // Memory barrier
+    q->avail_ring->idx++; // This makes it visible
+    __asm__ __volatile__ ("" : : : "memory");
+
+    // Update our internal counter for the next free descriptor.
+    q->next_avail_idx = (resp_idx + 1) % q->size;
+
+    notify_queue(q_idx);
+
+    // Wait for the device to finish
+    while (q->last_used_idx == q->used_ring->idx) {
+        // In a real driver, we'd use interrupts. For now, polling with a small
+        // delay is simple and effective.
+        sleep(1); 
+    }
+    // "Consume" the used ring entry by incrementing our counter.
+    q->last_used_idx++;
+}
 
 // Initializes the virtio-sound driver.
 void virtio_sound_init(virtio_pci_common_cfg_t* cfg) {
