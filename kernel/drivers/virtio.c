@@ -68,7 +68,45 @@ void virtio_sound_init(uint32_t mmio_base_phys) {
         virtio_sound_cfg->driver_feature = 0;
     }
 
-    // Perform device-specific setup (coming in the next step!)
+    // Virtqueue Setup (Step 7 of the spec)
+    print_string("  Setting up virtqueues...\n");
+
+    // Read how many queues the device has.
+    uint16_t num_queues = virtio_sound_cfg->num_queues;
+    print_string("    Device has "); print_dec(num_queues); print_string(" queues.\n");
+
+    // Select the first queue (queue 0, the control queue).
+    virtio_sound_cfg->queue_select = 0;
+
+    // Read its size.
+    uint16_t queue_size = virtio_sound_cfg->queue_size;
+    print_string("    Queue 0 size: "); print_dec(queue_size); print_string("\n");
+    if (queue_size == 0) {
+        print_string("    ERROR: Queue 0 not available!\n");
+        return;
+    }
+
+    // Allocate memory for the three parts of the virtqueue.
+    // For now, a single 4KB page for each is more than enough.
+    void* desc_table = pmm_alloc_frame();
+    void* avail_ring = pmm_alloc_frame();
+    void* used_ring = pmm_alloc_frame();
+    print_string("    Virtqueue memory allocated.\n");
+
+    // Tell the device the physical addresses of these memory regions.
+    virtio_sound_cfg->queue_desc_low = (uint32_t)desc_table;
+    virtio_sound_cfg->queue_desc_high = 0;
+    virtio_sound_cfg->queue_avail_low = (uint32_t)avail_ring;
+    virtio_sound_cfg->queue_avail_high = 0;
+    virtio_sound_cfg->queue_used_low = (uint32_t)used_ring;
+    virtio_sound_cfg->queue_used_high = 0;
+    print_string("    Device notified of queue addresses.\n");
+
+    // Enable the queue.
+    virtio_sound_cfg->queue_enable = 1;
+    print_string("    Queue 0 is now enabled.\n");
+
+    // End of Virtqueue Setup
 
     // Set the DRIVER_OK status bit. Device is now live!
     virtio_sound_cfg->device_status |= VIRTIO_STATUS_DRIVER_OK;
