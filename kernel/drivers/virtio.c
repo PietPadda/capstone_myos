@@ -5,6 +5,10 @@
 #include <kernel/vga.h>
 #include <kernel/memory.h> // For malloc
 #include <kernel/timer.h> // For sleep()
+#include <kernel/string.h> // for memcpy
+
+// Forward-declare our new static function before it's used.
+static void virtq_send_buffer(uint16_t q_idx, void* data, uint32_t len);
 
 // We will map the device's MMIO registers to this virtual address.
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
@@ -266,6 +270,26 @@ void virtio_sound_beep() {
     virtq_send_command_sync(0, &start_cmd, sizeof(start_cmd), &start_resp, sizeof(start_resp));
     print_string(" complete. Stream is active.");
 
+    // Generate and Send Audio Data
+    print_string("\n  Generating and sending audio buffer...");
+    uint8_t* audio_buffer = dma_buffer; // Use our existing DMA-safe buffer
+    uint32_t buffer_size = 2048;
+    uint16_t freq = 440; // A4 note
+    uint16_t sample_rate = 44100;
+    
+    uint32_t period = sample_rate / freq;
+    for (uint32_t i = 0; i < buffer_size; i++) {
+        // Generate a square wave for U8 format (values 0-255, midpoint 127)
+        audio_buffer[i] = ((i % period) < (period / 2)) ? 127 + 50 : 127 - 50;
+    }
+
+    // Send the buffer to the PLAYBACK queue (queue 2).
+    virtq_send_buffer(2, audio_buffer, buffer_size);
+    
+    // Give it time to play. 2048 bytes at 44.1kHz is ~46ms.
+    sleep(100);
+    print_string(" complete.");
+
     // Stop the stream
     virtio_snd_pcm_hdr_t stop_cmd = { .hdr.code = VIRTIO_SND_R_PCM_STOP, .stream_id = stream_id };
     virtio_snd_response_t stop_resp;
@@ -298,4 +322,28 @@ void virtio_sound_probe() {
     virtio_sound_cfg->device_feature_select = 0; // Select the low bits
     print_hex(virtio_sound_cfg->device_feature);
     print_string("\n");
+}
+
+// Submits a single data buffer to a queue without waiting for a response.
+static void virtq_send_buffer(uint16_t q_idx, void* data, uint32_t len) {
+    virtqueue_info_t* q = &queues[q_idx];
+
+    uint16_t head_idx = q->next_avail_idx;
+
+    // --- Setup the single descriptor for our data buffer ---
+    q->desc_table[head_idx].addr = (uint64_t)(uint32_t)data;
+    q->desc_table[head_idx].len = len;
+    q->desc_table[head_idx].flags = 0; // No flags needed for a simple read-only buffer
+    q->desc_table[head_idx].next = 0;
+
+    // --- Make it available ---
+    q->avail_ring->ring[q->avail_ring->idx % q->size] = head_idx;
+    __asm__ __volatile__ ("" : : : "memory");
+    q->avail_ring->idx++;
+    __asm__ __volatile__ ("" : : : "memory");
+
+    // Update our internal index for the next free descriptor
+    q->next_avail_idx = (head_idx + 1) % q->size;
+
+    notify_queue(q_idx);
 }
