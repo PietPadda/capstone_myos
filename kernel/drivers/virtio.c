@@ -43,16 +43,12 @@ static void notify_queue(uint16_t queue_idx) {
 // Submits a command and waits for a reply. This is a synchronous, blocking function.
 // Updated to use the DMA-safe buffer for all communication.
 static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size, void* resp, uint32_t resp_size) {
-    qemu_debug_string("VIRTQ: send_command_sync on Q"); qemu_debug_dec(q_idx); qemu_debug_string(" BEGIN\n");
     // Copy the command from its virtual stack address into our safe physical buffer.
     memcpy(dma_buffer, cmd, cmd_size);
     // The device will write the response right after the command data.
     void* dma_resp_phys_addr = dma_buffer + cmd_size;
 
     virtqueue_info_t* q = &queues[q_idx];
-
-    qemu_debug_string("  - Avail idx (before): "); qemu_debug_hex(q->avail_ring->idx);
-    qemu_debug_string(", Next free desc: "); qemu_debug_hex(q->next_avail_idx); qemu_debug_string("\n");
 
     // We need two descriptors: one for the command we send, one for the response we receive.
     uint16_t head_idx = q->next_avail_idx;
@@ -63,27 +59,21 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
     q->desc_table[head_idx].len = cmd_size;
     q->desc_table[head_idx].flags = VIRTQ_DESC_F_NEXT; // Link to the response buffer descriptor
     q->desc_table[head_idx].next = resp_idx;
-    qemu_debug_string("  - Desc["); qemu_debug_dec(head_idx); qemu_debug_string("]: addr=0x"); qemu_debug_hex((uint32_t)dma_buffer);
-    qemu_debug_string(", len="); qemu_debug_hex(cmd_size); qemu_debug_string(", flags=NEXT\n");
 
     // Setup Descriptor 2: The Response (Device -> Driver)
     q->desc_table[resp_idx].addr = (uint64_t)dma_resp_phys_addr; //  Use the PHYSICAL address for the response part of the buffer.
     q->desc_table[resp_idx].len = resp_size;
     q->desc_table[resp_idx].flags = VIRTQ_DESC_F_WRITE; // Device will WRITE to this buffer
     q->desc_table[resp_idx].next = 0;
-    qemu_debug_string("  - Desc["); qemu_debug_dec(resp_idx); qemu_debug_string("]: addr=0x"); qemu_debug_hex((uint32_t)dma_resp_phys_addr);
-    qemu_debug_string(", len="); qemu_debug_hex(resp_size); qemu_debug_string(", flags=WRITE\n");
 
     // Make the descriptor chain available to the device
     q->avail_ring->ring[q->avail_ring->idx % q->size] = head_idx;
     __asm__ __volatile__ ("" : : : "memory"); // Memory barrier
     q->avail_ring->idx++; // This makes it visible
     __asm__ __volatile__ ("" : : : "memory");
-    qemu_debug_string("  - Avail idx (after): "); qemu_debug_hex(q->avail_ring->idx); qemu_debug_string("\n");
 
     // Update our internal counter for the next free descriptor.
     q->next_avail_idx = (resp_idx + 1) % q->size;
-    qemu_debug_string("  - Calling notify_queue...\n");
     notify_queue(q_idx);
 
     // Wait for the device to finish
@@ -93,12 +83,10 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
         sleep(1); 
     }
     // "Consume" the used ring entry by incrementing our counter.
-    qemu_debug_string("  - Wait loop exited. Device's used_ring->idx is now: 0x"); qemu_debug_hex(q->used_ring->idx); qemu_debug_string("\n");
     q->last_used_idx++;
 
     // Copy the response from the safe physical buffer back to the caller's virtual stack address.
     memcpy(resp, dma_resp_phys_addr, resp_size);
-    qemu_debug_string("VIRTQ: send_command_sync on Q"); qemu_debug_dec(q_idx); qemu_debug_string(" END\n");
 }
 
 // Initializes the virtio-sound driver.
