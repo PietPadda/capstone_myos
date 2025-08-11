@@ -91,7 +91,7 @@ void pci_scan() {
                     uint32_t phys_addr = bar_base + common_cap.offset;
 
                     print_string("    Mapping registers at physical 0x"); print_hex(phys_addr); print_string("\n");
-                    paging_map_page(kernel_directory, VIRTIO_SND_VIRT_ADDR, phys_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+                    paging_map_page(kernel_directory, VIRTIO_SND_VIRT_ADDR, phys_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_CACHE_DISABLE);
                     virtio_pci_common_cfg_t* cfg = (virtio_pci_common_cfg_t*)VIRTIO_SND_VIRT_ADDR;
 
                     // Now, find the notification capability to get the multiplier.
@@ -101,7 +101,7 @@ void pci_scan() {
                         uint32_t notify_phys_addr = (notify_bar_val & ~0xF) + notify_cap.offset;
 
                         // Temporarily map the notification BAR to read the multiplier.
-                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, notify_phys_addr & ~0xFFF, PAGING_FLAG_PRESENT | PAGING_FLAG_RW);
+                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, notify_phys_addr & ~0xFFF, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_CACHE_DISABLE);
                         uint32_t multiplier = *(volatile uint32_t*)(TEMP_VIRTIO_MAP_ADDR + (notify_phys_addr & 0xFFF));
                         paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, 0, 0); // Unmap
 

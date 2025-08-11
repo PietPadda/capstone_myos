@@ -16,6 +16,8 @@ typedef uint32_t pde_t;
 #define PAGING_FLAG_PRESENT       0x1 // Bit 0: Page is present in memory
 #define PAGING_FLAG_RW            0x2 // Bit 1: Read/Write access
 #define PAGING_FLAG_USER          0x4 // Bit 2: User-mode access
+#define PAGING_FLAG_WRITE_THROUGH 0x8 // Bit 3: Page Write-Through (PWT)
+#define PAGING_FLAG_CACHE_DISABLE 0x10 // Bit 4: Page Cache Disable (PCD)
 
 // A Page Table contains 1024 entries (4KB page size / 4-byte entry = 1024)
 #define PAGE_TABLE_ENTRIES 1024
