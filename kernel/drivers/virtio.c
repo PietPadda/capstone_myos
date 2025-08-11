@@ -83,6 +83,7 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
 
     // Update our internal counter for the next free descriptor.
     q->next_avail_idx = (resp_idx + 1) % q->size;
+    qemu_debug_string("  - Calling notify_queue...\n");
     notify_queue(q_idx);
 
     // Wait for the device to finish
@@ -284,4 +285,23 @@ void virtio_sound_beep() {
     print_string("\n  Sending RELEASE command...");
     virtq_send_command_sync(0, &release_cmd, sizeof(release_cmd), &release_resp, sizeof(release_resp));
     print_string(" complete. Stream is inactive.\n");
+}
+
+// Debug probing critical values
+void virtio_sound_probe() {
+    // This function assumes virtio_sound_init has already run and set the pointer.
+    if (!virtio_sound_cfg) {
+        print_string("  ERROR: virtio_sound_cfg is NULL. Was init successful?\n");
+        return;
+    }
+
+    // Read registers directly from the mapped MMIO structure.
+    print_string("  Device Status: 0x");
+    print_hex(virtio_sound_cfg->device_status);
+    print_string("\n  Number of Queues: ");
+    print_dec(virtio_sound_cfg->num_queues);
+    print_string("\n  Device Features (Low 32 bits): 0x");
+    virtio_sound_cfg->device_feature_select = 0; // Select the low bits
+    print_hex(virtio_sound_cfg->device_feature);
+    print_string("\n");
 }

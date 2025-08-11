@@ -136,13 +136,13 @@ void kmain() {
 
     // Scan the PCI bus to find our devices
     pci_scan();
-    delay_ms(4000);
+    delay_ms(800);
     clear_screen();
     qemu_debug_string("pci_bus_scan ");
 
     // print the boot screen
     print_bootscreen();
-    delay_ms(1800); // Use our blocking delay before the scheduler is active.
+    delay_ms(1200); // Use our blocking delay before the scheduler is active.
     qemu_debug_string("print_boot_scr ");
     clear_screen();
 

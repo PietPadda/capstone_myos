@@ -204,7 +204,24 @@ void process_command() {
 
     // help command
     if (strcmp(argv[0], "help") == 0) {
-        print_string("Available commands:\n  help - Display this message\n  cls  - Clear the screen\n  uptime  - Shows OS running time\n  reboot  - Reset the OS\n  memtest  - Allocate, free then recycle memory\n  cat  - Reads .txt file contents (needs arg)\n  disktest  - Read LBA19 (root dir)\n  sleep  - Stops OS for X ticks\n  ls  - List files in root dir\n  dump  - Dump the first 128b of root dir buffer\n  run  - Run user mode program\n  ps  - Show process list\n  kill - Reap a zombie process by PID\n  beep - A4 note using PC Speaker\n  sb16beep - A4 note using Sound Blaster 16\n  vsbeep - beep using Virtual I/O driver\n  --- DEBUG COMMANDS ---\n  starttone - Starts a continuous tone\n  stoptone  - Stops the continuous tone\n\n");
+        print_string("Available commands:\n");
+        print_string("  help - Display this message\n");
+        print_string("  cls  - Clear the screen\n");
+        print_string("  uptime  - Shows OS running time\n");
+        print_string("  reboot  - Reset the OS\n");
+        print_string("  memtest  - Allocate, free then recycle memory\n");
+        print_string("  cat  - Reads .txt file contents (needs arg)\n");
+        print_string("  disktest  - Read LBA19 (root dir)\n");
+        print_string("  sleep  - Stops OS for X ticks\n");
+        print_string("  ls  - List files in root dir\n");
+        print_string("  ls  - List files in root dir\n");
+        print_string("  dump  - Dump the first 128b of root dir buffer\n");
+        print_string("  run  - Run user mode program\n");
+        print_string("  ps  - Show process list\n");
+        print_string("  kill - Reap a zombie process by PID\n");
+        print_string("  vsbeep - beep using Virtual I/O driver\n");
+        print_string("  vsprobe - debug Virtual I/O critical values\n");
+        print_string("\n");
     
     // cls command
     } else if (strcmp(argv[0], "cls") == 0) {
@@ -428,7 +445,8 @@ void process_command() {
             }
         }
 
-    // beep command
+    // deprecated pc spkr and sb16 beep cmds
+    /* // beep command
     } else if (strcmp(argv[0], "beep") == 0) {
         print_string("Beeping!");
         beep(440, 100); // Beep at X for Yms
@@ -447,13 +465,18 @@ void process_command() {
     } else if (strcmp(argv[0], "sb16beep") == 0) {
         print_string("Playing beep on Sound Blaster 16...");
         sb16_play_sound(440, 200); // Play 440Hz for 200ms
-        print_string(" done.");
+        print_string(" done."); */
 
     // vsbeep command
     } else if (strcmp(argv[0], "vsbeep") == 0) {
         print_string("Testing virtio-sound control queue...");
         virtio_sound_beep();
         print_string(" test complete.");
+
+    // vsprobe command
+    } else if (strcmp(argv[0], "vsprobe") == 0) {
+        print_string("Probing virtio-sound device...\n");
+        virtio_sound_probe();
 
     // invalid command
     } else  { // Only show error for non-empty commands

@@ -134,4 +134,7 @@ void virtio_sound_init(virtio_pci_common_cfg_t* cfg, uint32_t notify_multiplier)
 // Plays a test beep using the virtio-sound device.
 void virtio_sound_beep();
 
+// Probes the device to read and display its configuration registers.
+void virtio_sound_probe();
+
 #endif // VIRTIO_H
