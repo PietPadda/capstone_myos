@@ -20,13 +20,13 @@ start:
     call enable_a20
 
     ; --- Load Kernel using modern LBA Extended Read in a loop ---
-    ; We will read 8 chunks of 32KB each to load a total of 256KB.
+    ; We will read 16 chunks of 32KB each to load a total of 512KB.
     ; 256KB = 512 sectors. 512 sectors / 64 sectors_per_chunk = 8 chunks.
-    mov cx, 8                   ; CX will be our loop counter (8 chunks)
+    mov cx, 16                   ; CX will be our loop counter (16 chunks)
     mov dword [current_lba], 5  ; The kernel starts at LBA 5
     
     ; Set the initial memory destination segment to 0x1000 (for physical addr 0x10000)
-    mov ax, 0x1000
+    mov ax, 0x1000 ; Set initial destination segment to 0x1000
     mov es, ax
 
 load_loop:
@@ -34,7 +34,7 @@ load_loop:
     mov si, dap                 ; Point SI to our Disk Address Packet
     mov word [si + 2], 64       ; Read 64 sectors per loop (32KB) -- BIOS limit
     mov word [si + 4], 0x0000   ; Target buffer offset
-    mov word [si + 6], 0x1000   ; Target buffer segment (ES:BX -> 0x1000:0000 = 0x10000)
+    mov word [si + 6], es       ; Target buffer segment (Use the CURRENT segment in ES)
     mov ebx, [current_lba]
     mov [si + 8], ebx           ; LBA start for this chunk
 
@@ -44,7 +44,15 @@ load_loop:
     int 0x13
     jc disk_error               ; If any chunk fails, we abort
 
-    ; --- Enter Protected Mode ---
+    ; Update state for the next chunk
+    add ax, 0x800               ; Advance destination by 32KB (32768 bytes / 16 = 2048 paragraphs = 0x800)
+    mov es, ax                  ; Update the segment register
+    add dword [current_lba], 64 ; Advance the LBA start sector
+
+    dec cx
+    jnz load_loop
+
+    ; --- Enter Protected Mode (AFTER loading loop is finished) ---
     cli                         ; Disable interrupts
     lgdt [gdt_descriptor]       ; Load our GDT
     
