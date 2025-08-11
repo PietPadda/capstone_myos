@@ -273,7 +273,7 @@ void virtio_sound_beep() {
     // Generate and Send Audio Data
     print_string("\n  Generating and sending audio buffer...");
     // Cast our buffer to signed 16-bit for easier access.
-    uint8_t* audio_buffer = (int16_t*)dma_buffer; // Use our existing DMA-safe buffer
+    uint16_t* audio_buffer = (int16_t*)dma_buffer; // Use our existing DMA-safe buffer
     uint32_t buffer_size_bytes  = 2048; // bytes
     // Each sample is 2 bytes, and it's stereo, so we have buffer_size_bytes / 4 audio frames.
     uint32_t frame_count = buffer_size_bytes  / 4;
