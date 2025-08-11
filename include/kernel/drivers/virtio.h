@@ -83,8 +83,9 @@ typedef struct {
 #define VIRTQ_DESC_F_WRITE 2 // The device will write to this buffer (as opposed to read from it)
 
 // Virtio Sound Sample Formats and Rates
-#define VIRTIO_SND_PCM_FMT_U8       2  // Unsigned 8-bit PCM
-#define VIRTIO_SND_PCM_RATE_44100   11 // 44100 Hz
+#define VIRTIO_SND_PCM_FMT_U8           2  // Unsigned 8-bit PCM
+#define VIRTIO_SND_PCM_FMT_S16_LE       10 // Signed 16-bit Little Endian PCM
+#define VIRTIO_SND_PCM_RATE_44100       11 // 44100 Hz
 
 // Command structure for setting PCM stream parameters.
 typedef struct {

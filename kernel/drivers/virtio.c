@@ -247,8 +247,8 @@ void virtio_sound_beep() {
     params_cmd.buffer_bytes = 4096; // Total size of buffers we'll use
     params_cmd.period_bytes = 2048; // Device can interrupt after this many bytes
     params_cmd.features = 0;        // No special features needed
-    params_cmd.channels = 1;        // Mono audio
-    params_cmd.format = VIRTIO_SND_PCM_FMT_U8;
+    params_cmd.channels = 2;        // Request stereo
+    params_cmd.format = VIRTIO_SND_PCM_FMT_S16_LE; // 16-bit signed
     params_cmd.rate = VIRTIO_SND_PCM_RATE_44100;
     
     virtio_snd_response_t params_resp;
@@ -272,19 +272,26 @@ void virtio_sound_beep() {
 
     // Generate and Send Audio Data
     print_string("\n  Generating and sending audio buffer...");
-    uint8_t* audio_buffer = dma_buffer; // Use our existing DMA-safe buffer
-    uint32_t buffer_size = 2048;
+    // Cast our buffer to signed 16-bit for easier access.
+    uint8_t* audio_buffer = (int16_t*)dma_buffer; // Use our existing DMA-safe buffer
+    uint32_t buffer_size_bytes  = 2048; // bytes
+    // Each sample is 2 bytes, and it's stereo, so we have buffer_size_bytes / 4 audio frames.
+    uint32_t frame_count = buffer_size_bytes  / 4;
     uint16_t freq = 440; // A4 note
     uint16_t sample_rate = 44100;
+    int16_t amplitude = 8000; // A good volume for 16-bit audio
     
-    uint32_t period = sample_rate / freq;
-    for (uint32_t i = 0; i < buffer_size; i++) {
-        // Generate a square wave for U8 format (values 0-255, midpoint 127)
-        audio_buffer[i] = ((i % period) < (period / 2)) ? 127 + 50 : 127 - 50;
+    uint32_t period_frames = sample_rate / freq;
+    for (uint32_t i = 0; i < frame_count; i++) {
+        // Generate a square wave. Midpoint is 0 for signed audio.
+        int16_t sample_value = ((i % period_frames) < (period_frames / 2)) ? amplitude : -amplitude;
+        // Write the same sample to both left and right channels.
+        audio_buffer[i * 2 + 0] = sample_value; // Left channel
+        audio_buffer[i * 2 + 1] = sample_value; // Right channel
     }
 
     // Send the buffer to the PLAYBACK queue (queue 2).
-    virtq_send_buffer(2, audio_buffer, buffer_size);
+    virtq_send_buffer(2, audio_buffer, buffer_size_bytes );
     
     // Give it time to play. 2048 bytes at 44.1kHz is ~46ms.
     sleep(100);
