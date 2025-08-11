@@ -10,6 +10,9 @@
 // The virtual address where we will map the virtio registers
 #define VIRTIO_SND_VIRT_ADDR 0xE0000000
 
+// Define for the notification area's virtual address.
+#define VIRTIO_SND_NOTIFY_VIRT_ADDR 0xE0001000
+
 // Define a safe virtual address for temporary mappings.
 #define TEMP_VIRTIO_MAP_ADDR 0xFFBFC000
 
@@ -100,13 +103,14 @@ void pci_scan() {
                         uint32_t notify_bar_val = pci_config_read_word(bus, slot, 0, 0x10 + (notify_cap.bar * 4));
                         uint32_t notify_phys_addr = (notify_bar_val & ~0xF) + notify_cap.offset;
 
-                        // Temporarily map the notification BAR to read the multiplier.
-                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, notify_phys_addr & ~0xFFF, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_CACHE_DISABLE);
-                        uint32_t multiplier = *(volatile uint32_t*)(TEMP_VIRTIO_MAP_ADDR + (notify_phys_addr & 0xFFF));
-                        paging_map_page(kernel_directory, TEMP_VIRTIO_MAP_ADDR, 0, 0); // Unmap
+                        // Permanently map the notification region with caching disabled.
+                        paging_map_page(kernel_directory, VIRTIO_SND_NOTIFY_VIRT_ADDR, notify_phys_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_CACHE_DISABLE);
+                        
+                        // The multiplier is the FIRST 4 bytes of this newly mapped region.
+                        uint32_t multiplier = *(volatile uint32_t*)VIRTIO_SND_NOTIFY_VIRT_ADDR;
 
-                        // Pass both the config pointer and the multiplier to the driver.
-                        virtio_sound_init(cfg, multiplier);
+                        // Pass the config pointer, the notification base VIRTUAL address, and the multiplier.
+                        virtio_sound_init(cfg, (void*)VIRTIO_SND_NOTIFY_VIRT_ADDR, multiplier);
                     } else {
                         print_string("    ERROR: Could not find Notification capability!\n");
                     }

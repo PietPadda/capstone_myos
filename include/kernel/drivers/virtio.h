@@ -128,8 +128,8 @@ struct virtq_used {
 
 // Initializes the virtio-sound driver.
 // The signature is changed to take a pointer to the already-mapped config.
-// The signature is changed to accept the notification multiplier.
-void virtio_sound_init(virtio_pci_common_cfg_t* cfg, uint32_t notify_multiplier);
+// The signature is changed to accept the otification base address and multiplier.
+void virtio_sound_init(virtio_pci_common_cfg_t* cfg, void* notify_base, uint32_t notify_multiplier);
 
 // Plays a test beep using the virtio-sound device.
 void virtio_sound_beep();

@@ -12,6 +12,10 @@
 // We will have multiple queues; this array will manage them.
 #define VIRTIO_SND_MAX_QUEUES 4
 
+// global for the notification base address.
+static volatile void* notify_base_addr;
+static uint32_t notify_off_multiplier;
+
 // A struct to manage the state of a single virtqueue
 typedef struct {
     // Virtual addresses of the queue components
@@ -34,9 +38,10 @@ static uint8_t dma_buffer[4096] __attribute__((aligned(4096)));
 // Updated to use the multiplier in its calculation.
 static void notify_queue(uint16_t queue_idx) {
     // The device tells us the memory-mapped offset for its notification register.
-    // We write the index of the queue that we've updated.
+    // The offset is calculated from the common config struct.
     uint32_t notify_offset = virtio_sound_cfg->queue_notify_off * notify_off_multiplier;
-    volatile uint16_t* notify_reg = (uint16_t*)((uint8_t*)virtio_sound_cfg + notify_offset);
+    // But the base address is the separate notification region we just mapped.
+    volatile uint16_t* notify_reg = (uint16_t*)((uint8_t*)notify_base_addr + notify_offset);
     *notify_reg = queue_idx;
 }
 
@@ -91,11 +96,12 @@ static void virtq_send_command_sync(uint16_t q_idx, void* cmd, uint32_t cmd_size
 
 // Initializes the virtio-sound driver.
 // Updated to accept the multiplier.
-void virtio_sound_init(virtio_pci_common_cfg_t* cfg, uint32_t multiplier) {
+void virtio_sound_init(virtio_pci_common_cfg_t* cfg, void* notify_base, uint32_t multiplier){
     print_string("Initializing virtio-sound driver...\n");
 
     // The mapping is now done by the PCI driver. We just receive and use the pointer.
     virtio_sound_cfg = cfg;
+    notify_base_addr = notify_base; // Store the notification base virtual address
     notify_off_multiplier = multiplier; // Store the multiplier for later use.
 
     // Virtio Initialization Sequence
