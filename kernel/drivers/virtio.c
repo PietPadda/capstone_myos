@@ -108,6 +108,12 @@ void virtio_sound_init(virtio_pci_common_cfg_t* cfg, void* notify_base, uint32_t
     notify_base_addr = notify_base; // Store the notification base virtual address
     notify_off_multiplier = multiplier; // Store the multiplier for later use.
 
+    // The DMA buffer is in identity-mapped low memory, so its virtual address equals
+    // its physical address. We remap this page with the cache disable flag to
+    // ensure the hardware sees our CPU's writes.
+    uint32_t dma_addr = (uint32_t)dma_buffer;
+    paging_map_page(kernel_directory, dma_addr, dma_addr, PAGING_FLAG_PRESENT | PAGING_FLAG_RW | PAGING_FLAG_CACHE_DISABLE);
+
     // Virtio Initialization Sequence
     // Reset the device by writing 0 to the status register.
     virtio_sound_cfg->device_status = 0;
@@ -279,7 +285,7 @@ void virtio_sound_beep() {
     uint32_t frame_count = buffer_size_bytes  / 4;
     uint16_t freq = 440; // A4 note
     uint16_t sample_rate = 44100;
-    int16_t amplitude = 8000; // A good volume for 16-bit audio
+    int16_t amplitude = 80000; // A good volume for 16-bit audio
     
     uint32_t period_frames = sample_rate / freq;
     for (uint32_t i = 0; i < frame_count; i++) {
@@ -290,11 +296,18 @@ void virtio_sound_beep() {
         audio_buffer[i * 2 + 1] = sample_value; // Right channel
     }
 
+    // Let's see the state of queue 2's used ring before we send the buffer.
+    print_string("\n  DEBUG: Before send, Queue 2 used_ring->idx is: ");
+    print_dec(queues[2].used_ring->idx);
+
     // Send the buffer to the PLAYBACK queue (queue 2).
     virtq_send_buffer(2, audio_buffer, buffer_size_bytes );
     
     // Give it time to play. 2048 bytes at 44.1kHz is ~46ms.
-    sleep(100);
+    sleep(1000);
+    // Now, let's see if the device updated the used ring index.
+    //print_string("\n  DEBUG: After sleep, Queue 2 used_ring->idx is: ");
+    print_dec(queues[2].used_ring->idx);
     print_string(" complete.");
 
     // Stop the stream
