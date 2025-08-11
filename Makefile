@@ -11,12 +11,12 @@ UNAME_S := $(shell uname -s)
 # Default to Windows audio settings, using the 'dsound' driver
 # We add streams=1 to configure the device with one playback stream.
 # We add disable-legacy=on to ensure we get a modern virtio device.
-AUDIO_FLAGS := -audiodev dsound,id=sound_backend -device virtio-sound-pci,audiodev=sound_backend,streams=1,disable-legacy=on
+AUDIO_FLAGS := -audiodev dsound,id=sound_backend,out.format=s16,out.channels=2 -device virtio-sound-pci,audiodev=sound_backend,streams=1,disable-legacy=on
 
 # If in Linux/WSL, use the PulseAudio backend and connect it to a modern
 # virtio-sound-pci device. This is our new, stable architecture.
 ifneq (,$(findstring Linux,$(UNAME_S)))
-    AUDIO_FLAGS := -audiodev pa,id=sound_backend,server=/mnt/wslg/PulseServer -device virtio-sound-pci,audiodev=sound_backend,streams=1,disable-legacy=on
+    AUDIO_FLAGS := -audiodev pa,id=sound_backend,server=/mnt/wslg/PulseServer,out.format=s16,out.channels=2 -device virtio-sound-pci,audiodev=sound_backend,streams=1,disable-legacy=on
 endif
 # End of auto-detect
 
